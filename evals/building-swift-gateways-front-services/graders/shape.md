@@ -1,0 +1,6 @@
+---
+type: llm
+---
+
+PASS if the package has exactly two targets (API and an executable), no Core or Postgres target and no database; openapi.yaml sits in Sources/API beside a generator configuration that generates types only; request contexts chain BasicRequestContext → IdentityRequestContext → AdminRequestContext carrying coreContext across; the router registers sign-in and refresh routes outside any authenticating middleware, an identifying tier under BearerAuthenticationMiddleware (from AuthenticationHummingbird, taking an authenticator), and a requiring tier under IsAuthenticatedMiddleware; the serve command builds JWTAuthenticator<UserIdentity> from the public key, one GRPCClient per upstream with BearerPropagationInterceptor<UserIdentity> applied only to the user-service descriptors, and one generated stub per proto service; and failures are answered as RFC 9457 problem details with RPCError mapped by code.
+FAIL if sign-in or refresh sits behind the authenticating middleware or is excluded by a path check inside it, if the identity type is UserPayload or the middleware is TokenAuthenticationMiddleware, if the propagating interceptor is applied to a public service or per call, if upstream failures are all mapped to 500, or if the gateway declares repositories or a database.
