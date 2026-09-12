@@ -13,6 +13,7 @@ Keep every Postgres type in the module's `<Module>Postgres` target (`<Service>Po
 - One database, many modules
 - The roles
 - Row-level security
+- Caching
 - Transaction policy
 
 ## Scope and database
@@ -51,7 +52,7 @@ For duplicate detection, inspect the server error code and the exact constraint 
 
 ## Identifiers, dates, and secrets
 
-Use database-owned UUIDv7 identifiers and timestamps (`uuidv7()` is built into PostgreSQL 18):
+The owning database generates identifiers and stamps persistence-owned dates. Default: `uuidv7()`, built into PostgreSQL 18, whose time-ordered values keep the primary-key index local. Alternative: `gen_random_uuid()` on an older instance, at the cost of that locality; nothing in Swift changes, because Core never sees how the value was made.
 
 ```sql
 CREATE TABLE items (
@@ -162,7 +163,7 @@ Consolidating existing per-service instances into one cluster is a `pg_dump --no
 
 A service owns the whole database. Use unqualified names such as `items`, not `<service>.items`, and do not create a service-named schema.
 
-Name migrations for their result, such as `CreateItemsTable`. Do not prefix a migration with the service name; it already lives inside the service-owned Postgres module. Give each table its own create migration; keep that table's indexes and constraints with it rather than combining several tables into one migration. Keep migrations under `Migrations/<Entity>` and register them explicitly in dependency order in the executable's migration list, parents before children — `serve --migrate-database` applies it at boot (see *Migrations at boot* in composition.md).
+Name migrations for their result, such as `CreateItemsTable`. Do not prefix a migration with the service name; it already lives inside the service-owned Postgres module. Give each table its own create migration; keep that table's indexes and constraints with it rather than combining several tables into one migration. Keep migrations under `Migrations/<Entity>` and register them explicitly in dependency order in the executable's migration list, parents before children. The list is applied before the process serves: by default `serve --migrate-database` at boot, or a `migrate` one-shot before the rollout (see *Migrations at boot* in composition.md).
 
 Write single-column uniqueness inline, such as `email TEXT NOT NULL UNIQUE`; use table-level `UNIQUE (...)` only for multi-column uniqueness. Do not add `CHECK (... IN (...))` constraints unless the user explicitly requests them.
 
@@ -207,6 +208,8 @@ Migrations run as the owner — the instance's own `POSTGRES_USER` / `POSTGRES_P
 | `<service>_worker` | `CreateWorkerRole` | `USING (true)` | the worker, on its own service's database |
 
 A process with no tenant tables has the service role alone. One with tenant tables has the internal role too; one with a Temporal worker has the worker role too. Each has its own secret — `POSTGRES_SERVICE_*`, `POSTGRES_INTERNAL_*`, `POSTGRES_WORKER_*` — so the wider view is a credential held only by the connection that needs it, and a leaked service-role password still sees one tenant.
+
+The rule here is the separation: the owner migrates and never serves, no role bypasses row-level security, and a tenant-scoped role and an unscoped one are distinct roles with distinct secrets. The names and the three-migration shape are the default. A project that already names its roles differently, or provisions them outside the migration list, keeps its naming provided the roles exist before the tables and the migration client is the only owner connection.
 
 ```swift
 let migrations = DatabaseMigrations()
@@ -266,6 +269,10 @@ The two databases are built the same way; what differs is the role each client c
 **`RETURNING` is a read.** Postgres applies the `SELECT` policy to the row an `INSERT … RETURNING` hands back, and a caller the policy excludes gets `new row violates row-level security policy`, not the row. An insert made by a caller who may not read — the anonymous sign-up — must not `RETURNING`, and the RPC then answers with acceptance rather than the record. Change the contract to say so rather than stamping the record's dates in the service.
 
 **Verify as the roles.** Run the service against the roles the policies apply to and probe as a user, another user, an administrator, and a process: the tenant role sees one tenant, the internal and worker roles see everything, and the owner proves nothing because the policies are off for it. Check the policy text itself too (`pg_policies`), since a renamed setting in code and an unrenamed one in a migration already applied fails only at query time.
+
+## Caching
+
+A cache is infrastructure, like a database client, and the composition root owns it. Core reaches it through a narrow port declared in the consumer's `Ports/` — `ItemCache` with `get(id:)` and `set(_:ttl:)` — and a `<Module><Technology>` target such as `CatalogValkey` implements the port over the client; the port is a protocol because substitution is real (a test uses an in-memory one). A cache never holds a decision: a use case reads through it and decides against what it read, and on a miss or an error it reads the database and continues, because the database is the source of truth and the cache is a copy that may be stale or gone. The TTL is the use case's staleness budget, stated where the use case is composed, not a constant in the adapter. A tenant-scoped value is keyed by the tenant as well as the entity, so one caller can never read another's copy through a key the policy never saw. Add a cache only for a measured read the database cannot serve at the required latency; a cache added on suspicion is a second store to keep consistent for nothing.
 
 ## Transaction policy
 

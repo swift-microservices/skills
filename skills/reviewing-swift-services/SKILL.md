@@ -13,9 +13,11 @@ argument-hint: [path]
 
 An audit of one service package against the rules the building, orchestrating, and delivering skills state. It reads, greps, builds, and tests; it changes nothing. Do not edit, write, move, or delete a file, and do not run a formatter. If a fix is obvious, describe it in the finding and leave it to the user.
 
+Rules in this skill are conventions the packages and the shared code shape depend on; keep them unless the user changes the vocabulary. Where a rule says *default* and names an alternative, that is a project choice: take the default unless the project's decision record says otherwise, and never switch it per file.
+
 ## Locate the package
 
-The package is `$ARGUMENTS` when given, otherwise the current directory. Confirm it before auditing: a `Package.swift` whose targets follow `<Service>Core`, `<Service>Postgres`, `<Service>GRPC`, `<Service>`, or an API gateway with `API` and `<Project>`. If neither shape is present, report that the directory is not a service or gateway package and stop.
+The package is `$ARGUMENTS` when given, otherwise the current directory. Confirm it before auditing: a `Package.swift` whose targets follow `<Service>Core`, `<Service>Postgres`, `<Service>GRPC` or `<Service>HTTP`, `<Service>`; a monolith with the same targets per module and one `<Project>` executable; or an API gateway with `API` and `<Project>`. If none of these shapes is present, report that the directory is not a service, monolith, or gateway package and stop. In a monolith, read `<Service>` below as each module and the executable as `<Project>`.
 
 Read `Package.swift` in full first, then `Sources/<Service>/Serve/Serve.swift` and `Sources/<Service>/Database/Migrations.swift`. Everything else is reached by the checks below; open a file only when a check names it.
 
@@ -62,11 +64,11 @@ Review progress:
 - Authorization is a `guard` at the top of the body throwing the use case's own `.forbidden`; fixed invariants are guards before any I/O. A validator type with an error-mapping initializer, or an injected concrete collaborator with no protocol, is a finding.
 - Every unit of work is `database.withTransaction`; no remote call inside it. Evidence: grep for client calls inside a `withTransaction` closure.
 - Every use case takes a `Logger` as its last initializer parameter and logs the domain event; the catch-all that maps to `.unknown` logs `String(reflecting: error)`. Evidence: the `catch {` block.
-- No `Date()`, clock, or `now` closure is injected to stamp a record.
+- No `Date()`, clock, or `now` closure is injected to stamp a record; a `Clock` injected where a use case decides on time (an expiry, a grace period) is the allowed alternative, not a finding.
 
 **3. Persistence** — read `Sources/<Service>Postgres` and the migration list.
-- The first registered migration is `CreateServiceRole`; a tenant service registers `CreateInternalRole`, a service with a worker `CreateWorkerRole`; no role has `BYPASSRLS` (`grep -rn BYPASSRLS Sources`).
-- Every table's identifier is `UUID PRIMARY KEY DEFAULT uuidv7()`; dates are nouns (`creation_date`, not `created_at`; `creationDate`, not `createdAt`). Evidence: `grep -rn "_at\b\|At:" Sources`.
+- The role migrations precede every table, and the serving process never connects as the owner: by default `CreateServiceRole` first, then `CreateInternalRole` on a tenant service and `CreateWorkerRole` with a worker; other names are a project choice, not a finding, provided a tenant-scoped role and an unscoped role are distinct with distinct secrets. No role has `BYPASSRLS` (`grep -rn BYPASSRLS Sources`).
+- Every table's identifier is database-generated, `UUID PRIMARY KEY DEFAULT uuidv7()` by default or `gen_random_uuid()` on an older instance; a create command or request carrying an id is a finding. Dates are nouns (`creation_date`, not `created_at`; `creationDate`, not `createdAt`). Evidence: `grep -rn "_at\b\|At:" Sources`.
 - Every table whose rows belong to users has a tenant-isolation policy on `app.caller_user_id`, in both `USING` and `WITH CHECK`, and the internal and worker roles get their own `TO "<role>" USING (true)` version. Evidence: `grep -rn "CREATE POLICY" -A 3 Sources/<Service>Postgres/Migrations`. A tenant table with no policy, a policy without `WITH CHECK`, or a predicate that admits rows beyond the caller's own, is blocking.
 - One scope type per database role, each conforming to `PostgresScope` and to the use-case scopes it admits. Evidence: `Sources/<Service>Postgres/Scopes`.
 - Statements are `PostgresPreparedStatement` values in `Statements/<Entity>`; repositories translate `PSQLError` and SQLSTATE into `XRepositoryError`, naming the constraint that exists. A `PSQLError` reaching Core is a finding.
@@ -74,14 +76,14 @@ Review progress:
 - Migrations are named for their result, one create per table, unqualified table names, no service-named schema.
 
 **4. Contracts and transport** — read `Sources/<Service>GRPC` and the proto dependency.
-- Canonical protos come from `<project>-protos` by tag; no `.proto` in the service.
+- Canonical protos have one home: `<project>-protos` by tag in microservices, with no `.proto` in a service; `Sources/<Module>GRPC/Protos/` with the generator plugin in a gRPC monolith. A `.proto` duplicated in a second package is a finding.
 - The contract is split by audience: `<Entity>PublicService`, `<Entity>Service`, `<Entity>InternalService`, one conformance each at the feature root, holding only that audience's use cases.
 - Conversions live in the feature's `Protobuf/` directory as `X+Protobuf.swift`; transport validation (UUID parsing, enum recognition) happens in the conversion initializer; `.unspecified` and `.UNRECOGNIZED` are refused, not defaulted.
 - Each handler on the user or internal service first requires its identity from `ServiceContext` with a private guard answering `.unauthenticated`, then maps use-case failures to stable codes: `.forbidden` to `permissionDenied`, not found to `notFound`, `.unknown` to `internalError`. A handler that decides authorization itself is blocking.
 - UUIDs are lowercased on the wire. Generated messages appear only in this target and consumer adapters.
 
 **5. Identity and access** — read `Serve.swift` and the manifest.
-- Verification uses `JWTAuthenticator<UserIdentity>(publicKey:)`; only the authenticating service builds `JWTIssuer<UserIdentity>(privateKey:)`. A symmetric secret shared between processes, a private key outside the authenticating service, or a key read from an environment variable rather than a path, is blocking; a symmetric key inside a single-process monolith is not a finding.
+- `UserIdentity` is the one `JWTPayload` type, keys `sub` as a `UUID`, and verifies expiry in `verify(using:)`; additional claims are stored properties on it, and a second payload type or a converting initializer is a finding. Verification uses `JWTAuthenticator<UserIdentity>(publicKey:)`; only the authenticating service builds `JWTIssuer<UserIdentity>(privateKey:)`. A symmetric secret shared between processes, a private key outside the authenticating service, or a key read from an environment variable rather than a path, is blocking; a symmetric key inside a single-process monolith is not a finding.
 - `BearerAuthenticationInterceptor` is applied to the user service, then `UserSettingsInterceptor` on a tenant service, `CertificateAuthenticationInterceptor(authenticator: ServiceAuthenticator())` to the internal service, nothing to the public service, each with `.apply(_, to: .services([descriptor]))`. Evidence: `interceptorPipeline:`. An interceptor on the public service, a per-method exclusion list, or a settings interceptor before the bearer interceptor, is a finding.
 - Outgoing clients carry `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors alone; a client that speaks as the process carries no interceptor and no token.
 - No `@TaskLocal` carries a caller (`grep -rn "@TaskLocal" Sources`). The logging bootstrap passes `.user`, and `.service` where processes are admitted.
@@ -89,11 +91,11 @@ Review progress:
 
 **6. Composition** — read `Serve.swift` and `Configuration/`.
 - `// MARK:` sections in the order Configuration, Logging, Infrastructure, Composition, gRPC, Lifecycle.
-- `serve` is the default subcommand with `--migrate-database`; there is no migrate subcommand; a Temporal worker is `worker run` on the same executable with its own composition root.
+- `serve` is the default subcommand, and migrations run before serving: `serve --migrate-database` by default, or a `migrate` subcommand used as a one-shot job before the rollout; a migrate path the serving container also runs unguarded, or no migration path at all, is a finding. A Temporal worker is `worker run` on the same executable with its own composition root.
 - Configuration is read through `ConfigReader` scoped by concern; infrastructure hosts and secrets are required; only listen address, port, log level, and the service's own identity default. An upstream host defaulting to `localhost` is a finding.
 - Key material is configured by path and opened in a `Configuration/` extension. Two `static func mTLS(config:)` factories exist, one per direction; a plaintext mode or a mode variable is blocking.
 - One `PostgresClient` per role; one `PostgresDatabase` per database built with `PostgresDatabase(client:logger:)`; a comment says which database each use case runs on.
-- Logging is bootstrapped inline with stdout plus in-process shipping and the service name as label; every long-lived client, server, and worker is in one `ServiceGroup` with graceful shutdown.
+- Logging is bootstrapped inline with the service name as label and the identity metadata providers, shipping structured logs to one aggregator: stdout plus in-process shipping by default, or stdout alone where the platform collects it; every long-lived client, server, and worker is in one `ServiceGroup` with graceful shutdown.
 
 **7. Tests** — read `Tests/<Service>CoreTests`.
 - The target depends on Core, `Logging`, `<Project>Authentication`, and `<Project>Testing`; it is swift-testing, with no `@testable` and no XCTest.
@@ -104,7 +106,7 @@ Review progress:
 **8. Delivery** — read `.github/workflows`, the Containerfile, and `Package.resolved`.
 - The executable commits `Package.resolved`; CI resolves from it. The image is built for the deployment architecture with the static Linux SDK.
 - Every commit to a deployment branch publishes a SHA tag and the branch tag; the deploy step is mandatory, not skipped on a missing secret. A pre-existing infrastructure failure, such as a runner the account cannot bill, is reported as a decision, not a defect of the service.
-- Migrations run at boot with `serve --migrate-database` from a short-lived owner client; the serving clients never hold owner credentials.
+- Migrations run before serving, with `serve --migrate-database` at boot or a `migrate` one-shot ordered before the rollout, from a short-lived owner client; the serving clients never hold owner credentials.
 
 ## Report
 

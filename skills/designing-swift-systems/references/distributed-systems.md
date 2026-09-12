@@ -52,7 +52,7 @@ Choose the least complex mechanism that satisfies the interaction:
 
 Do not turn a local function graph into a chain of RPCs without revisiting the boundary. Avoid chatty protocols; expose capability-level operations and return the data needed to complete the caller's step.
 
-gRPC is the default synchronous internal transport. Introduce a broker or workflow engine only from explicit delivery/durability requirements, not because the system has multiple services.
+gRPC is the default synchronous internal transport. Introduce a broker or workflow engine only from explicit delivery/durability requirements, not because the system has multiple services. When the interaction is a fact rather than a request, events-and-projections.md owns the outbox, the consumer, and the projection.
 
 ## Contracts and compatibility
 
@@ -64,7 +64,7 @@ Design contracts before implementations:
 4. Include stable identifiers and timestamps only when consumers need them.
 5. Establish deadlines and maximum payload expectations.
 6. Decide idempotency for mutations before permitting retries.
-7. Keep canonical contracts in the shared versioned proto package, `<project>-protos`, nested by organization, service, and version.
+7. Keep canonical contracts in one home, nested by organization, service, and version: the shared versioned proto package `<project>-protos` by default, because more than one package consumes them (a gRPC monolith may keep them in its own package until that is true).
 
 Evolve `v1` additively. Add fields using new numbers, preserve existing semantics, reserve removed numbers/names, and create `v2` for breaking behavior. Deploy compatible producers before consumers that require new fields or methods.
 
@@ -74,7 +74,7 @@ Generated protobuf values are transport DTOs. Map them at service/client boundar
 
 Give every service an exclusive database and migration history. Other services use contracts, never SQL access, shared tables, or foreign keys across service databases.
 
-Identifier ownership follows data ownership. The database that owns the canonical entity generates its UUIDv7 identifier. Create contracts omit that identifier, and consumers store the returned foreign identifier only after successful creation. A pending process in another service uses its own locally generated record identifier; it must not reserve the future canonical identifier.
+Identifier ownership follows data ownership. The database that owns the canonical entity generates its identifier (`uuidv7()` by default, `gen_random_uuid()` on an older instance). Create contracts omit that identifier, and consumers store the returned foreign identifier only after successful creation. A pending process in another service uses its own locally generated record identifier; it must not reserve the future canonical identifier.
 
 Classify each invariant:
 
@@ -151,7 +151,7 @@ Establish consistent signals across services:
 
 Log domain events in use cases through the `swift-log` facade, and request, transport, and infrastructure events at the executable and transport boundaries. Keep error messages safe for clients while retaining diagnostic context in internal logs. Ship logs to one aggregator so a single query spans services: each process pushes in-process (no scraping agent), each line carries a `service` label and its logger label, with a request or correlation id as metadata, and the bound `user_id` or `service_name` from the metadata providers. The building-swift-services skill has the bootstrap; the delivering-swift-services skill has the aggregator.
 
-Use graceful shutdown signals and lifecycle management. Stop accepting work, allow bounded in-flight completion, close clients/servers, and make restart behavior safe. Migrations run in the serving container at boot, behind `serve --migrate-database`, before the server binds.
+Use graceful shutdown signals and lifecycle management. Stop accepting work, allow bounded in-flight completion, close clients/servers, and make restart behavior safe. Migrations run before the server binds: in the serving container at boot behind `serve --migrate-database` by default, or as a `migrate` one-shot ahead of the rollout when the platform orders jobs.
 
 Define alerts from user-impacting symptoms and service objectives, not every logged error.
 

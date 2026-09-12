@@ -9,6 +9,8 @@ One way to decide what a system is, how its modules are cut, and how they talk, 
 
 Building a module or service, the HTTP surface, and the gateway a design calls for, orchestrating Temporal workflows, and delivering images are separate skills; this one produces the design.
 
+Rules in this skill are conventions the packages and the shared code shape depend on; keep them unless the user changes the vocabulary. Where a rule says *default* and names an alternative, that is a project choice: take the default unless the project's decision record says otherwise, and never switch it per file.
+
 ## Load the references
 
 Read the reference that owns a topic before touching that topic. Each topic has exactly one home.
@@ -17,6 +19,7 @@ Read the reference that owns a topic before touching that topic. Each topic has 
 | --- | --- |
 | Every design: the shape and transport axes, the module, the monolith's rules, where identity is verified, when a module becomes a service | [shapes.md](references/shapes.md) — read in full first |
 | Once the shape is microservices: boundaries, communication, contracts, consistency, resilience, security, identity across processes, observability, the greenfield sequence | [distributed-systems.md](references/distributed-systems.md) |
+| An interaction that is a fact rather than a request, in either shape: events, the transactional outbox, consumer idempotency, projections | [events-and-projections.md](references/events-and-projections.md) |
 
 ## Principles
 
@@ -49,35 +52,38 @@ The rules follow from these. When a situation is not covered, decide from the pr
 7. A module never imports another module's Core, Postgres, or transport target; only the composition root sees more than one module. A consumer module declares the use-case protocol it needs in its own Core, and the root injects the producer's use case (monolith) or a gRPC client adapter conforming to the same protocol (microservices).
 8. Draw dependency direction between modules and reject cycles. Break one by reconsidering ownership, extracting a third module, or replacing a synchronous edge with a fact the other side reacts to.
 9. Prefer fewer modules when boundaries are uncertain and fewer services always; two modules merge for free, two services cost a data migration.
-10. Generate every entity identifier in the owning database with `UUID DEFAULT uuidv7()`; a create contract omits it, a consumer stores the returned identifier only after success, and a pending process elsewhere uses its own local identifier.
+10. The owning database generates every entity identifier; default `UUID DEFAULT uuidv7()` (Postgres 18), alternative `gen_random_uuid()` on an older instance at the cost of index locality. A create contract omits it, a consumer stores the returned identifier only after success, and a pending process elsewhere uses its own local identifier.
 11. Never share a database between services, query another module's tables, join across modules or databases, or make a distributed transaction.
 
 ### Communication
 
 12. Choose the least complex mechanism per interaction: a direct use-case call inside one module, a use-case protocol across modules in a monolith, gRPC for an immediate typed result across processes, an event for a fact many consumers react to, a durable workflow for a multi-step process with retries, timers, or waits, a projection for a read model that spans services.
 13. Do not turn a local function graph into a chain of RPCs; expose capability-level operations that return what the caller's step needs.
-14. Design contracts before implementations: name RPCs for capabilities, define validation, response meaning, stable status mapping, deadlines, and idempotency, and keep canonical protos only in `<project>-protos`, evolving `v1` additively.
+14. Design contracts before implementations: name RPCs for capabilities, define validation, response meaning, stable status mapping, deadlines, and idempotency, and give canonical protos one home, evolving `v1` additively. Default in microservices: the tagged `<project>-protos` package, because two or more packages consume them. Alternative in a gRPC monolith: in the package itself, until a second package consumes them.
 15. Split every contract by audience — `<Entity>PublicService`, `<Entity>Service`, `<Entity>InternalService` — so identification applies per service, never per method. A monolith rarely has an internal audience; a microservice that another process calls always does.
+16. An event is the mechanism for a fact that more than one consumer reacts to and that the producer needs no answer to. The owner publishes it through a transactional outbox written in the same transaction as the mutation; a consumer is idempotent by event id; no broker exists before a second consumer does. In a monolith the default publisher is in-process, still through the outbox when the consumer's effect must survive a crash (events-and-projections.md).
+17. A projection is a consumer-owned read model kept by idempotent upsert and rebuildable from the owner. It never becomes a source of truth, never replaces a synchronous ask when the answer must be current, and is added from a measured read the owner cannot serve at the needed latency.
 
 ### Consistency and reliability
 
-16. Keep a strong invariant inside one module and one local transaction. For a cross-module or cross-service decision, ask the owner and define the timeout behavior; for eventual consistency, publish a fact and keep an idempotent local projection; for a multi-step process, persist workflow state with compensation.
-17. Never hold a local transaction across a call to another module or service. Never claim exactly-once delivery; design consumers to tolerate duplicates. Use a transactional outbox only when an atomic mutation plus publication is required.
-18. Set caller deadlines from the latency budget; retry only transient failures on idempotent operations, with bounded attempts, backoff, and jitter, and one owner of retries per call chain.
-19. Add circuit breaking, load shedding, bulkheads, caching, or hedging only when measured failure or latency patterns justify them, at the caller or transport boundary.
+18. Keep a strong invariant inside one module and one local transaction. For a cross-module or cross-service decision, ask the owner and define the timeout behavior; for eventual consistency, publish a fact and keep an idempotent local projection; for a multi-step process, persist workflow state with compensation.
+19. Never hold a local transaction across a call to another module or service. Never claim exactly-once delivery; design consumers to tolerate duplicates. Use a transactional outbox only when an atomic mutation plus publication is required.
+20. Set caller deadlines from the latency budget; retry only transient failures on idempotent operations, with bounded attempts, backoff, and jitter, and one owner of retries per call chain.
+21. Add circuit breaking, load shedding, bulkheads, caching, or hedging only when measured failure or latency patterns justify them, at the caller or transport boundary.
+22. A cache is a read optimization decided from a measured read the database cannot serve, never a consistency mechanism: it holds no decision, has a TTL from the interaction's staleness budget, and is reached through a port and adapter the building-swift-services skill describes in its persistence reference.
 
 ### Security and observability
 
-20. Terminate public TLS at the ingress or gateway; keep every internal gRPC connection mutually authenticated with the stack's CA; keep internal ports off the public ingress.
-21. Model process identity as a certificate (`ServiceIdentity`) and user identity as a token (`UserIdentity`). In a monolith, verify the token once at the transport. In microservices, verify it at the gateway and again at every service that receives it, with the issuer's public key; forward it unchanged with `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors alone; reach internal services by certificate; never trust an identity a caller asserts in metadata, and never mint a credential on a user's behalf.
-22. Authorize inside the owning use case. Keep secrets as mounted files configured by path; connect as least-privilege database roles, one set per process; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, in both shapes, and keep what a caller may do in the use case.
-23. Establish structured logs with a service label and correlation id shipped in-process to one aggregator, request and error rates and latency per operation, pool and migration health, and graceful shutdown in every process.
+23. Terminate public TLS at the ingress or gateway; keep every internal gRPC connection mutually authenticated with the stack's CA; keep internal ports off the public ingress.
+24. Model process identity as a certificate (`ServiceIdentity`) and user identity as a token (`UserIdentity`). In a monolith, verify the token once at the transport. In microservices, verify it at the gateway and again at every service that receives it, with the issuer's public key; forward it unchanged with `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors alone; reach internal services by certificate; never trust an identity a caller asserts in metadata, and never mint a credential on a user's behalf.
+25. Authorize inside the owning use case. Keep secrets as mounted files configured by path; connect as least-privilege database roles, one set per process; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, in both shapes, and keep what a caller may do in the use case.
+26. Establish structured logs with a service label and correlation id shipped in-process to one aggregator, request and error rates and latency per operation, pool and migration health, and graceful shutdown in every process.
 
 ### Turning a module into a service
 
-24. Do it only for a reason from shapes.md that has become concrete, and say which. A separate concept is not a reason; the module boundary already gives that.
-25. Release the contract in `<project>-protos` first, split by audience; give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are; in each consumer keep the use-case protocol and swap the injected implementation for a gRPC client adapter built in the consumer's composition root over mTLS with the propagating interceptor.
-26. Never infer permission to move or drop rows, discard data, or delete a migration; finish the non-destructive work and surface the decision.
+27. Do it only for a reason from shapes.md that has become concrete, and say which. A separate concept is not a reason; the module boundary already gives that.
+28. Release the contract in `<project>-protos` first, split by audience; give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are; in each consumer keep the use-case protocol and swap the injected implementation for a gRPC client adapter built in the consumer's composition root over mTLS with the propagating interceptor.
+29. Never infer permission to move or drop rows, discard data, or delete a migration; finish the non-destructive work and surface the decision.
 
 ## Workflow
 
@@ -104,6 +110,7 @@ Do not call a design complete until every applicable gate passes.
 - Every module or service in the map owns one capability and its data; no table is read by two modules; no identifier is generated outside its owner; the dependency graph has no cycle; no module imports another module's targets.
 - Every cross-module interaction has a chosen mechanism and a consistency record naming source of truth, staleness, duplicates, and failure behavior; every remote boundary also has a stated reason and a versioned contract split by audience.
 - No local transaction spans a call to another module or service; every retry is bounded and limited to idempotent operations; every mutation that may be retried has an owner-enforced key.
+- Every event has an owner-side outbox written in the mutation's transaction, a consumer that tolerates duplicates by event id, and, where a projection exists, one that is rebuildable from the owner; no broker exists with fewer than two consumers.
 - Every internal connection is mTLS from the stack's CA; users are tokens, processes are certificates; the token is verified once at the transport in a monolith and at every receiving process in microservices; authorization is placed in use cases only; every policy is tenant isolation and nothing else.
 - Turning a module into a service leaves the consumer's use-case protocol intact, the contract released and tagged, and every destructive data step decided by the user, not inferred.
 

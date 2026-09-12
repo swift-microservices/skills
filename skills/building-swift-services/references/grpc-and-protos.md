@@ -11,7 +11,7 @@ The gRPC transport of a module or a service: the contract package, the contract'
 
 ## Canonical proto package
 
-Store contracts in a separate `<project>-protos` SwiftPM repository — for services, and for a monolith the moment it exposes gRPC to a client or splits a module out at `https://github.com/<organization>/<project>-protos.git`. Give each service its own library target/product and nest proto paths by organization, service, and API version:
+Canonical `.proto` files have one home, nested by organization, module, and API version, and every consumer generates from that one home. Where the home is follows the shape. Default in microservices: a separate `<project>-protos` SwiftPM repository at `https://github.com/<organization>/<project>-protos.git`, consumed by tag, because two or more packages generate from the same contract. Alternative in a gRPC monolith: `Sources/<Module>GRPC/Protos/<organization>/<module>/v1/` inside the one package, with the same generator plugin on the `<Module>GRPC` target, because one package consumes them; the files move to `<project>-protos` unchanged the day a second package does, since the path below the target is the same. In the separate repository, give each service its own library target/product:
 
 ```text
 <project>-protos/
@@ -60,7 +60,7 @@ Each target uses the `GRPCProtobufGenerator` plugin with this configuration:
 
 The proto package exports a `.library(name: "<Service>Protos", targets: ["<Service>Protos"])`. Its target directly depends on `GRPCCore`, `GRPCProtobuf`, and `SwiftProtobuf`. Keep an empty marker Swift file when SwiftPM needs a Swift source beside proto resources.
 
-Release and tag the proto package before adding a remote dependency to producer and consumer. Do not use local path dependencies in the finished integration, and do not duplicate `.proto` files in service repositories.
+Release and tag the proto package before adding a remote dependency to producer and consumer. Do not use local path dependencies in the finished integration, and do not duplicate `.proto` files in service repositories: a contract has one home, and in microservices that home is never a service.
 
 ## Contract design
 

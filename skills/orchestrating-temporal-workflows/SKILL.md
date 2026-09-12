@@ -10,6 +10,8 @@ One way to add durable orchestration to a service built with the building-swift-
 
 Temporal is added from a stated requirement — durable waiting, timers, retries across an outage, a multi-step process that must finish — never speculatively. A synchronous capability call stays a gRPC call.
 
+Rules in this skill are conventions the packages and the shared code shape depend on; keep them unless the user changes the vocabulary. Where a rule says *default* and names an alternative, that is a project choice: take the default unless the project's decision record says otherwise, and never switch it per file.
+
 ## Load the references
 
 | Task | Read |

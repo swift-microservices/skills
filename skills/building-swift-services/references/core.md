@@ -127,7 +127,7 @@ An input carries a value in the type the transport already validated it into: an
 
 When a lookup inside a transaction finds nothing, throw the use case's own typed error from inside the closure and rethrow it by type outside — `catch let error as CreateItemUseCaseError { throw error }` — before the named repository errors and the catch-all. Do not return an optional from the closure and unwrap it afterwards, and do not invent a private sentinel error to carry the refusal out of the closure.
 
-Do not pass `Date`, a clock, or a `now` closure into a use case merely to stamp a record. The repository, in practice the database default, owns that persistence concern.
+Do not pass `Date`, a clock, or a `now` closure into a use case merely to stamp a record. The repository, in practice the database default, owns that persistence concern. The default is therefore no clock in a use case at all. The alternative is a `Clock` injected where the use case *decides* on time — whether a token has expired, whether a grace period has passed — so a test can fix the instant; the clock is then a real seam, and the stored dates still come from the database.
 
 ## Ports to other modules
 

@@ -130,6 +130,8 @@ accessModifier: package
 
 Routes are registered by hand on Hummingbird, so generated server stubs would be a second routing mechanism maintained for the same endpoints. Use `package`, not `public` — the types cross target boundaries inside one package.
 
+The rule is one routing mechanism and one contract. Types-only with hand-registered routes is the default because the router is where the middleware tiers live, and a tier is a group. The alternative is generated server stubs (`generate: [types, server]`) mounted on the router, for a team that wants the compiler to hold the document and the handlers together; it is a valid surface, at the cost of tiering by middleware on the generated transport rather than by route group, and it is chosen once per surface, never per route.
+
 One document per surface. A monolith has one, in `<Project>HTTP`, describing every module's routes; a gateway has one in `API`. Two documents produce two unrelated Swift types for every schema they share. Unimplemented paths in the document cost nothing while types are all that is generated, so the document can lead the implementation and serve as the checklist.
 
 ## Request contexts
@@ -348,11 +350,11 @@ A gateway needs no database, so it has no migration job and no ordering constrai
 
 ## The Vapor alternative
 
-A surface on Vapor 4 keeps every rule above and changes three mechanics.
+A surface on Vapor 4 keeps every rule above and changes three mechanics, in a gateway and in a module's `<Module>HTTP` alike. Hummingbird is the default because its request-context chain carries the tiers in the type system; a project on Vapor chooses it once, for every surface.
 
-The middleware is swift-authentication-vapor's `BearerAuthenticationMiddleware`, an `AsyncMiddleware` over an identity that is `Authenticatable & Sendable`; `UserIdentity` needs that conformance declared in the surface's target. It logs the identity in to `request.auth`, so `guardMiddleware()` and `req.auth.require(UserIdentity.self)` are the requiring tier, and the admin check is a route-group middleware rather than a context conversion, since Vapor has no request-context chain. `UserSettingsMiddleware` has a Vapor form that writes the tenant setting into `request.serviceContext`.
+The middleware is swift-authentication-vapor's `BearerAuthenticationMiddleware`, an `AsyncMiddleware` over an identity that is `Authenticatable & Sendable`; `UserIdentity` needs that conformance declared in the surface's target. It logs the identity in to `request.auth`, so `guardMiddleware()` and `req.auth.require(UserIdentity.self)` are the requiring tier, and the admin check is a route-group middleware rather than a context conversion, since Vapor has no request-context chain.
 
-Vapor 4 bridges its responder chain through event-loop futures, so a task-local bound in middleware does not reach a route. The middleware therefore also writes the principal into `request.serviceContext`, and that is where a route reads it. A use case whose transaction must carry the tenant, or an outgoing gRPC call that must carry the caller's token, runs under it:
+Vapor 4 bridges its responder chain through event-loop futures, so a task-local bound in middleware does not reach a route. The middleware therefore also writes the principal into `request.serviceContext`, and that is where a route reads it. The Vapor form of `UserSettingsMiddleware`, in `<Project>Persistence` beside the Hummingbird one, follows the same path: it reads the principal from `request.serviceContext` and writes `postgresSettings = .user(identity)` back into it, rather than binding a task-local nothing downstream would see. The org layer ships the Hummingbird middleware by default and adds the Vapor one when the project uses Vapor. A use case whose transaction must carry the tenant, or an outgoing gRPC call that must carry the caller's token, then runs under that context:
 
 ```swift
 app.get("orders") { req in
@@ -362,7 +364,9 @@ app.get("orders") { req in
 }
 ```
 
-Tiers are route groups: session-issuing routes on the bare application, an identifying group with the bearer middleware and the settings middleware, and a guarded group with `UserIdentity.guardMiddleware()` on top. The same structural rule holds — no path exception inside a middleware.
+In a module's surface, a controller is a `RouteCollection` holding the module's use-case protocols, with one `boot(routes:)` that registers into the groups the composition root hands it, and the `ServiceContext.withValue` wrapper sits in the handler, once, around the use-case call. Conversions stay in `Schemas/Requests/` and `Schemas/Responses/` as `X+Schema.swift`, and problem details come from a custom `ErrorMiddleware` registered first on the application, mapping the use case's typed errors and `Abort` to `application/problem+json` exactly as the Hummingbird `ErrorMiddleware` does. A gateway's controller is the same collection over generated client protocols with `X+RPC.swift` conversions.
+
+Tiers are route groups: session-issuing routes on the bare application, an identifying group with the bearer middleware and the settings middleware, and a guarded group with `UserIdentity.guardMiddleware()` on top; the admin group adds a middleware that requires `.admin` from `req.auth` and answers `403`. The same structural rule holds — no path exception inside a middleware.
 
 ## Tests
 

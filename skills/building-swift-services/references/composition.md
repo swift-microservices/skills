@@ -19,13 +19,14 @@ The composition root is the one place that knows the shape. It composes one modu
 
 ## Command tree
 
-Name the executable target after the service or the project, not `<Service>Server`. The root command defaults to serving, and there is no migrate subcommand: migrations are a `serve` flag, applied in-process before the server binds (see *Migrations at boot* below).
+Name the executable target after the service or the project, not `<Service>Server`. The root command defaults to serving. Migrations run before the process serves; by default they are a `serve` flag applied in-process before the server binds, and a platform that orders jobs or starts several replicas at once runs them as a `migrate` subcommand one-shot instead (see *Migrations at boot* below).
 
 ```text
 backend                          # a monolith; a service reads `catalog`
 backend serve
 backend serve --migrate-database # apply pending migrations, then serve
 backend worker run               # only with Temporal: the worker's composition root, same executable
+backend migrate                  # the alternative: the same list as a one-shot before the rollout
 ```
 
 ```swift
@@ -142,7 +143,7 @@ func run() async throws {
 
 A process serving both transports has one root, one set of use cases, and one `ServiceGroup` holding both the application and the server. Do not write two roots for two transports.
 
-**Logging.** Bootstrap the logging system inline, never behind a shared helper or module. Build one in-process log shipper, then `LoggingSystem.bootstrap` a `MultiplexLogHandler` of `StreamLogHandler.standardOutput` and the shipper's handler, so every line reaches both the container's stdout and the aggregator. Pass the process name as the handler's service label, and `<Project>Authentication`'s metadata providers as the bootstrap's, so every log line inside a request carries the bound caller, `user_id`, and `service_name` on a process that admits other processes, with no handler naming them. The default aggregator is Grafana Loki through `swift-log-loki`; substituting another in-process shipper changes only this block.
+**Logging.** Bootstrap the logging system inline, never behind a shared helper or module. Build one in-process log shipper, then `LoggingSystem.bootstrap` a `MultiplexLogHandler` of `StreamLogHandler.standardOutput` and the shipper's handler, so every line reaches both the container's stdout and the aggregator. Pass the process name as the handler's service label, and `<Project>Authentication`'s metadata providers as the bootstrap's, so every log line inside a request carries the bound caller, `user_id`, and `service_name` on a process that admits other processes, with no handler naming them. The rule is the shape: structured logs, one aggregator, the label and the providers on every line. The default shipper is `swift-log-loki` to Grafana Loki; the alternative is any `LogHandler` the deployment prefers — `StreamLogHandler` alone where the platform collects stdout, or an OTLP handler — and substituting one changes only this block.
 
 ```swift
 // MARK: - Logging
@@ -499,6 +500,8 @@ try await migrations.apply(client: client, logger: logger, dryRun: false)
 ```
 
 A service has one module, so its list is the roles and one module's migrations. The library refuses a reordered list, so a module that gains a migration appends it to its own list and never reorders another's; a new module appends its whole list after the existing ones. The long-lived clients the `ServiceGroup` owns are built from `postgres.service` and `postgres.internalService` and never hold owner credentials; the owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
+
+The flag is the default because it needs no platform support: one container, one command, and the schema is current before the port opens. The alternative is a `migrate` subcommand running the same `Migrations.run()` and exiting, deployed as a one-shot job before the rollout, for a platform that orders jobs (an init container, a pre-deploy hook) or starts several replicas at once, where N containers racing the same list at boot is what the library's ordering check would refuse. Either way the rule holds: nothing serves an unmigrated schema, and only the migration client ever connects as the owner.
 
 ## Operator commands
 

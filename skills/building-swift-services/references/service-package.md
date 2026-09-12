@@ -34,7 +34,7 @@ These are the packages the architecture is built on. The versions are a floor fr
 | `swift-configuration` | `1.2.0` | `Configuration` and `EnvironmentVariablesProvider` |
 | `swift-service-lifecycle` | `2.11.0` | `ServiceLifecycle` and `ServiceGroup` |
 | `swift-log` | `1.15.0` | `Logging` facade (also linked by every Core so use cases log domain events) |
-| `swift-log-loki` | `2.0.0` | `LoggingLoki`: in-process log shipping to the aggregator |
+| `swift-log-loki` | `2.0.0` | `LoggingLoki`: the default in-process log shipper; any `LogHandler` the deployment prefers may take its place |
 | `swift-nio` | `2.65.0` | `NIOFoundationCompat`, declared on an executable that links `LoggingLoki` but not PostgresNIO (a gateway); swift-log-loki 2.0.0 omits it |
 | `postgres-migrations` | `1.2.0` | `PostgresMigrations` |
 | `postgres-nio` | `1.33.1` | `PostgresNIO`, `PostgresClient`, prepared statements, transactions |
@@ -392,6 +392,26 @@ The same block in every shape; the executable that links them differs.
 ```
 
 A `<Module>GRPC` that consumes another service adds that service's `<Producer>Protos` product for its client adapter and nothing else; a `<Module>Core` never adds a protos product.
+
+A gRPC monolith that keeps its contracts in the package (the default is `<project>-protos`; see *Canonical proto package* in [grpc-and-protos.md](grpc-and-protos.md)) drops the `<Module>Protos` product, puts the files under `Sources/<Module>GRPC/Protos/`, and generates in place:
+
+```swift
+.target(
+    name: "CatalogGRPC",
+    dependencies: [
+        "CatalogCore",
+        .product(name: "GRPCCore", package: "grpc-swift-2"),
+        .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
+        .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+        .product(name: "Logging", package: "swift-log"),
+        .product(name: "ServiceContextModule", package: "swift-service-context"),
+        .product(name: "<Project>Authentication", package: "<project>-core"),
+    ],
+    plugins: [.plugin(name: "GRPCProtobufGenerator", package: "grpc-swift-protobuf")]
+),
+```
+
+The generated types stay `package`, and the day a second package needs the contract the `Protos/` folder moves into `<project>-protos` as that module's target and the plugin line goes with it.
 
 ## Manifest of a monolith
 

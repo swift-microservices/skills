@@ -203,7 +203,7 @@ A module owns:
 - its persistence timestamps, identifiers, and constraints;
 - in a service, its runtime and deployment lifecycle.
 
-The database that owns an entity also owns generation of that entity's identifier. Define UUID primary keys with `DEFAULT uuidv7()`, omit them from create commands and create requests, and return the inserted entity with its generated identifier. A caller may provide a separate idempotency key when required, but it must not masquerade as the owned entity identifier. Treat the key as an opaque request identity, not a secret or authorization credential; the receiving module owns atomic enforcement and payload-conflict detection.
+The database that owns an entity also owns generation of that entity's identifier. Define UUID primary keys with a database default — `uuidv7()` by default on Postgres 18, `gen_random_uuid()` on an older instance — omit them from create commands and create requests, and return the inserted entity with its generated identifier. A caller may provide a separate idempotency key when required, but it must not masquerade as the owned entity identifier. Treat the key as an opaque request identity, not a secret or authorization credential; the receiving module owns atomic enforcement and payload-conflict detection.
 
 When one module creates an entity through another, keep the caller's pending state under a caller-owned identifier. Store the foreign identifier only after the owning module returns it. Never preallocate an identifier in the caller, pass it into the owner, or create a matching identifier independently in two tables or two databases.
 

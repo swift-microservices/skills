@@ -2,6 +2,8 @@
 
 How the system runs as a whole on one machine or one host: images, Compose, ports, secrets, certificates, the address the gateway is reached at, log aggregation, and the order a stack comes up in. Everything about the environment lives here; the building, gateway, and workflow skills describe the code and say only that a value "comes from the environment".
 
+This file is the worked default: a Compose suite, a `step`-issued CA, Loki. Every section satisfies a principle the skill's rules state, and the rules name the alternative for a platform that provides the same thing differently (a mesh for identity, a collector for logs, a managed cluster for Postgres); satisfy the principle, then keep whichever mechanism the platform gives you.
+
 ## Contents
 
 - Container build

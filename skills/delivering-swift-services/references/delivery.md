@@ -2,6 +2,8 @@
 
 How a service moves from a commit to a running process: branches and environments, the CI that gates them, the image build, per-commit publishing, and deployment. This file owns the pipeline; environment.md owns what the deployed system looks like once it is running, and says only that images "come from delivery".
 
+This file is the worked default: GitHub Actions, a container registry, a Dokploy-style platform reached by API. The skill's rules state the principle each piece satisfies and name the alternative, so another CI or platform passes the same gates by satisfying the same principle.
+
 ## Contents
 
 - Branches are environments

@@ -9,6 +9,10 @@ How a service gets from a merged commit to a process that answers, and how the w
 
 Designing the shape, building the modules, services, and HTTP surface, and running workflows are separate skills; this one publishes and runs what they produce.
 
+Rules in this skill are conventions the packages and the shared code shape depend on; keep them unless the user changes the vocabulary. Where a rule says *default* and names an alternative, that is a project choice: take the default unless the project's decision record says otherwise, and never switch it per file.
+
+The references describe one worked default end to end: GitHub Actions, a Compose suite, a `step`-issued CA, Loki, a Dokploy-style platform. Every rule below leads with the principle that default satisfies, so another platform can satisfy it differently and still pass the gates.
+
 ## Load the references
 
 Each topic has exactly one home. Every other skill says only that a value "comes from the environment" or that images "come from delivery".
@@ -24,9 +28,9 @@ The rules follow from these. When a situation is not covered, decide from the pr
 
 1. **The commit is the version.** A service publishes an image per commit and carries no SemVer; the SHA is the deploy identifier and the rollback target. SemVer belongs to the packages consumers resolve by range.
 2. **A pipeline that does less than it claims is worse than a red one.** Deploy steps are mandatory; a missing secret fails the run loudly. A green run is not proof a tag exists; check the manifest.
-3. **Nothing is plaintext and nothing is published.** Every internal connection is mutually authenticated by a CA the stack issues itself; no internal port reaches a host interface; the gateway is reached only through its sidecar or the platform ingress.
+3. **Nothing is plaintext and nothing is published.** Every internal connection is mutually authenticated by a CA the stack controls; no internal port reaches a host interface; the gateway is reached only through its sidecar or the platform ingress.
 4. **Key material is a file; configuration carries a path.** Secrets are mounted, never environment variables; the certificate volume is issued by the stack on first start and reaches only the stack.
-5. **A container cannot serve an unmigrated schema.** Migrations run in the serving container at boot, and they are expand/contract because deploys roll back and schemas do not.
+5. **A container cannot serve an unmigrated schema.** Migrations run before the process binds, by default in the serving container at boot, and they are expand/contract because deploys roll back and schemas do not.
 6. **Share the machinery, duplicate the declarations.** Logic that churns is centralized and versioned; a cron line, a retention count, a package name stays in each repository.
 7. **Fail at `up`, not at the first request.** `${VAR:?message}` guards, secret source files, and health-gated `depends_on` make a misconfigured stack refuse to start.
 
@@ -51,20 +55,20 @@ The rules follow from these. When a situation is not covered, decide from the pr
 ### Deploying
 
 11. Deploy is a single trigger-only step bound to plain secrets, SHA-pinned; rollback is pinning an older SHA on the platform application by hand, outside the pipeline.
-12. One platform application per process, image-sourced, tracking the branch tag, with `./<service> serve --migrate-database` as its command; `command` replaces the entrypoint, so name the binary.
+12. One platform application per process, image-sourced and tracking the branch tag, so a rollout is a tag move and a rollback is a pin. Default: a Dokploy-style application whose `command` is `./<service> serve --migrate-database` (`command` replaces the entrypoint, so name the binary). Alternative: any platform that pins an image by SHA and rolls back by hand, such as a Kubernetes Deployment or a Fly app, with the same command, or with `migrate` as a pre-rollout job when the platform orders jobs.
 13. Staging and production are two environments of one project. Shared values live in each environment's scope, referenced by every application as `${{environment.KEY}}`; the project scope stays empty; a per-tier secret never goes project-wide. Each environment owns its database instance, signing keypair, cache, and CA; platform services are shared with a namespace per environment.
 14. Provisioning jobs are disposable one-shots with restart policy `none`, log-verified, deleted after use. A crash-looping application is stopped, then deployed, never deployed over.
 15. Migrations run at boot in the serving container over a short-lived owner client. They are expand/contract: add tables, nullable columns, and indexes freely; ship renames, drops, and tightened constraints in a later commit once no deployed code references the old shape.
 
 ### The environment
 
-16. Keep every environment concern in environment.md alone. One `compose.yml` runs the whole stack from published images and never builds them; a `.env.example` names every variable and a git-ignored `.env` fills it; required values are `${VAR:?message}` guards; every anchor is referenced; render with `docker compose config` before `up`.
-17. Publish nothing that nothing outside the stack calls: no `ports:` on Postgres, the cache, the workflow engine, the log store, or the gateway. The gateway gets its address from a tailnet sidecar or the platform ingress; internal services are reached by name.
-18. Mount secrets as files and configure them by path. The signing pair is the only secret file: only the authenticating service mounts the private key, every verifying service mounts the public key, a worker mounts neither.
-19. The certificate volume is issued by a one-shot `step` service on the first `up`: one root CA, one leaf per process with `spiffe://<project>/<process>` as a URI SAN beside its DNS names, mounted read-only by `subpath` so each process sees its own leaf and the CA. There is no plaintext mode and no mode variable. A process's certificate is its only credential; there is no service token and no `service` role. Rotation is reissue plus `up --force-recreate`.
-20. One Postgres instance per service in the suite, healthy before the service starts, with no init job: the image provisions the database and owner, and the service migrates at boot. A deployment may consolidate to one shared instance with a database per service.
-21. Every process ships its own logs in-process to the aggregator; there is no scraping agent. Dashboards sit behind their own sidecar with no host port.
-22. The first start is not staged: generate the signing pair, fill `.env`, `docker compose up -d`. Verify with `docker compose config <service>`, `pg_stat_activity` for the roles, and a request through the public hostname.
+16. The whole stack is declared in one place from published images, never built there, and a missing value stops it before anything starts; keep every environment concern in environment.md alone. Default: one `compose.yml`, a `.env.example` naming every variable, a git-ignored `.env` filling it, `${VAR:?message}` guards on required values, every anchor referenced, rendered with `docker compose config` before `up`. Alternative: a Helm chart or platform manifest with the same three properties (images only, every variable named with a required guard, rendered and reviewed before apply).
+17. Publish nothing that nothing outside the stack calls; internal services are reached by name on a private network. Default: no `ports:` on Postgres, the cache, the workflow engine, the log store, or the gateway, and the gateway addressed through a tailnet sidecar or the platform ingress. Alternative: cluster-internal services with no node port or load balancer and the gateway behind an ingress, when the platform is Kubernetes.
+18. Secrets are mounted as files and configured by path, never environment variables; the signing pair is the only secret file, and only the authenticating service mounts the private key, every verifying process the public key, a worker neither. Default: Compose secrets or files bind-mounted from a git-ignored directory. Alternative: the platform's secret mounts projected as files (a Kubernetes Secret volume, a managed secret store), whatever the platform offers, as long as the process reads a path.
+19. Every process presents a certificate from a CA the stack controls, carrying `spiffe://<project>/<process>` as a URI SAN beside its DNS names; there is no plaintext mode and no mode variable, and a process's certificate is its only credential. Default: a one-shot `step` service on the first `up` issues one root CA and one leaf per process into a volume mounted read-only by `subpath`, so each process sees its own leaf and the CA, and rotation is reissue plus `up --force-recreate`. Alternative: a mesh or platform that issues SPIFFE identities (cert-manager, SPIRE, a managed mesh) with the same URI SAN, when the platform already provides identity; the interceptors do not change.
+20. One database per service (one for a monolith), owned by that process's owner role, healthy before the process starts, migrated by the process itself. Default: one Postgres container per service in the suite with no init job, the image provisioning the database and owner. Alternative: one managed cluster with a database and an owner per service; role names are cluster-wide, so each service's roles must be named distinctly there.
+21. Every process ships its own structured logs to one aggregator, and dashboards are never on a host port. Default: in-process shipping (swift-log-loki to Loki, Grafana behind its own sidecar), no scraping agent. Alternative: stdout to the platform's collector when the platform provides one, keeping the service label and the identity metadata on every line.
+22. The first start is one step and verifiable. Default: generate the signing pair, fill `.env`, `docker compose up -d`, then verify with `docker compose config <service>`, `pg_stat_activity` for the roles, and a request through the public hostname. Alternative: the platform's apply followed by the same three verifications.
 
 ## Workflows
 
@@ -94,7 +98,7 @@ First start of a stack:
 
 Do not call work complete until every applicable gate passes.
 
-- Every commit to a deployment branch publishes one image per service with SHA and branch tags; the staging branch's deploy trigger rolls the service application, which migrates at boot before it serves, and the worker application, which runs the same image with `worker run`.
+- Every commit to a deployment branch publishes one image per service with SHA and branch tags; the staging branch's deploy trigger rolls the service application, which is migrated before it serves (at boot, or by the migrate one-shot), and the worker application, which runs the same image with `worker run`.
 - CI resolves from the committed `Package.resolved` and tests the architecture production runs; the static SDK build passes where the local image is musl; a missing deploy secret or variable fails the pipeline rather than skipping the deploy.
 - Nothing is published that nothing outside the stack calls; `docker compose config` renders every required value; a stack missing a key or a secret file fails at `up`.
 - Every gRPC server refuses a client without a certificate the stack's CA signed; every client verifies the server's name; every process missing its own certificate fails at startup naming the path; every leaf carries its `spiffe://` URI SAN; no plaintext mode exists.

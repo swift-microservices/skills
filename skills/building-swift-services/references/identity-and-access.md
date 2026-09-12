@@ -97,6 +97,8 @@ One type, no wire twin, no converting initializer. The subject is a `UUID` keyed
 
 `UserRole` is an open string, not an enum. An authenticator that meets a role it has no name for decodes it and grants it nothing, rather than refusing the whole token — so adding a role breaks no consumer, only the checks meant to admit it. A process is proved by its certificate, not by a token.
 
+The rule is the shape: one `JWTPayload` type that is the identity, `sub` carrying the user id as a `UUID`, expiry verified in `verify(using:)`, no wire twin, no converting initializer. The claim set above is the default, and `.user` and `.admin` are the default named roles; a project names the roles its use cases check. A claim the project's use cases read — a tenant or organization id, a plan — is a stored property on the same type with the same `CodingKeys` treatment, and nothing else changes: the issuer sets it where it sets `role`, and a use case reads it off `subject:`. What must not be added is anything *What belongs in the token* below rules out.
+
 ## What belongs in the token
 
 A token answers *who is calling*. It never answers *what they may do*. Carry the authentication claims and the identity attributes a service needs in order to decide for itself — the subject, the issuer, the validity window, and a role. Keep permissions, scopes, entitlements, and feature grants out of it.
@@ -107,7 +109,7 @@ Every claim is a copy of state that can go stale. It is fixed at signing and onl
 
 ## Signing
 
-Only the authenticating service holds the private key and builds a `JWTIssuer<UserIdentity>`, in its entry point, through the EdDSA initializer `<Project>Authentication` adds. Its token issuer, in `<Service>Core`, takes `any CredentialIssuer<UserIdentity, String>` and builds the identity itself, so `<Service>Core` holds no key even here:
+Only the authenticating service holds the private key and builds a `JWTIssuer<UserIdentity>`, in its entry point, through the EdDSA initializer `<Project>Authentication` adds. EdDSA is the default algorithm; `JWTKeyCollection` accepts any algorithm jwt-kit ships, and a project that must interoperate with an existing verifier configures that one in the same initializer. Its token issuer, in `<Service>Core`, takes `any CredentialIssuer<UserIdentity, String>` and builds the identity itself, so `<Service>Core` holds no key even here:
 
 ```swift
 package struct AccessTokenIssuer: Sendable {
