@@ -1,12 +1,11 @@
 # swift-microservices skills
 
-Agent skills for building Swift services the [swift-microservices](https://github.com/swift-microservices) way, packaged as one Claude Code plugin. Each skill covers one activity, carries its own references, and is tested with evals.
+Agent skills for building Swift systems the [swift-microservices](https://github.com/swift-microservices) way — a modular monolith or microservices, over HTTP, gRPC, or both — packaged as one Claude Code plugin. Each skill covers one activity, carries its own references, and is tested with evals.
 
 | Skill | Use it when |
 | --- | --- |
-| `designing-swift-systems` | drawing service boundaries, choosing communication, consistency, or extracting a bounded context from a monolith |
-| `building-swift-services` | creating or changing a service package: Core, Postgres, GRPC, the executable, and its tests |
-| `building-swift-gateways` | putting an HTTP surface on Hummingbird or Vapor in front of services |
+| `designing-swift-systems` | choosing the shape (a modular monolith or microservices) and the transport (HTTP, gRPC, or both), cutting modules, communication, consistency, and when a module becomes a service |
+| `building-swift-services` | creating or changing a module or a service: Core, Postgres with row-level security, the HTTP or gRPC transport, the executable, a gateway in front of services, and the tests |
 | `orchestrating-temporal-workflows` | workflows, Activities, signals, queries, and workers |
 | `delivering-swift-services` | images, Compose, secrets, certificates, CI, per-commit publishing, migrations in the pipeline |
 | `reviewing-swift-services` | auditing an existing service against the rules, read-only, on request |
@@ -49,7 +48,7 @@ claude plugin validate .           # Claude Code's own structural check
 claude plugin eval .               # run every eval case with and without the plugin
 ```
 
-Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-tenant-service --runs 1 --ablation none`.
+Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`.
 
 ## Contributing
 

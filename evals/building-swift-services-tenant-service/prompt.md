@@ -1,5 +1,5 @@
 ---
-max_turns: 30
+max_turns: 80
 allowed_tools: [Read, Glob, Grep, Write, Edit, Skill]
 tags: [building]
 ---

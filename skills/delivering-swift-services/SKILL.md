@@ -7,7 +7,7 @@ description: Delivers Swift services from a commit to a running process: the Con
 
 How a service gets from a merged commit to a process that answers, and how the whole stack runs on one host: the pipeline that publishes and deploys, and the environment the deployed system runs in. Preserve every convention unless the user explicitly changes it; where the repository already has an established convention that differs, the repository wins for unrelated code.
 
-Building the service itself, fronting it with a gateway, and running workflows are separate skills; this one publishes and runs what they produce.
+Designing the shape, building the modules, services, and HTTP surface, and running workflows are separate skills; this one publishes and runs what they produce.
 
 ## Load the references
 

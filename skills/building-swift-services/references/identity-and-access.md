@@ -14,6 +14,7 @@ How a caller is identified across services, who may mint a token, how the creden
 - Authorization lives in the use case
 - One RPC service per audience
 - Propagating the caller
+- Validation at every process boundary
 - Processes: the certificate is the credential
 - The three rules
 - Reading the credential
@@ -22,7 +23,7 @@ How a caller is identified across services, who may mint a token, how the creden
 
 ## The packages
 
-Every service shares one shape for a proven caller, consumed by tagged URL beside `<project>-protos`. The generic half is the [swift-microservices](https://github.com/swift-microservices) authentication family, which knows nothing about the organization, its token, or its roles. Every type in it is generic over the credential that was presented and the identity it proves.
+Every module and service shares one shape for a proven caller, consumed by tagged URL beside `<project>-protos`. The generic half is the [swift-microservices](https://github.com/swift-microservices) authentication family, which knows nothing about the organization, its token, or its roles. Every type in it is generic over the credential that was presented and the identity it proves.
 
 | Package | Product | Depends on | For |
 | --- | --- | --- | --- |
@@ -41,10 +42,10 @@ An `Authenticator` answers one of three ways, and every transport honours them t
 | Product | Depends on | For |
 | --- | --- | --- |
 | `<Project>Authentication` | Authentication, AuthenticationJWT, AuthenticationX509, jwt-kit, swift-certificates, swift-service-context, swift-log | `UserIdentity`, `UserRole`, `ServiceIdentity`, `ServiceContext.user` and `.service`, the `.user` and `.service` log metadata providers, the EdDSA key initializers for `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>`, `ServiceAuthenticator` |
-| `<Project>Persistence` | `<Project>Authentication`, PersistencePostgres, grpc-swift-2 | `PostgresSettings.user(_:)` and `UserSettingsInterceptor` — the bound user as the tenant setting |
+| `<Project>Persistence` | `<Project>Authentication`, PersistencePostgres, grpc-swift-2, hummingbird (and vapor where used) | `PostgresSettings.user(_:)`, `UserSettingsInterceptor` for gRPC, and `UserSettingsMiddleware` for HTTP — the bound user as the tenant setting |
 | `<Project>Testing` | `<Project>Authentication`, Persistence | `MockDatabase`, `MockUserAuthenticator` — test targets only |
 
-The dependency graph is the design. A `<Service>Core` target links `<Project>Authentication` to name the user a use case decides on and the process that calls it, and gets the claims type, swift-service-context, and jwt-kit behind them — never a driver, never gRPC, never a server framework. The certificate library comes with jwt-kit either way. A key, a signer, a verifier, an interceptor: those reach only the executable, which builds them, and the authenticating service's token issuer.
+The dependency graph is the design. A `<Module>Core` or `<Service>Core` target links `<Project>Authentication` to name the user a use case decides on and the process that calls it, and gets the claims type, swift-service-context, and jwt-kit behind them — never a driver, never gRPC, never a server framework. The certificate library comes with jwt-kit either way. A key, a signer, a verifier, an interceptor: those reach only the executable, which builds them, and the authenticating service's token issuer.
 
 Where does a type go? If it would make sense in a company that is not this one, in a swift-microservices package. If it names `UserIdentity`, `UserRole`, `ServiceIdentity`, the `emberfilm`-style trust domain, or `app.caller_user_id`, in `<project>-core`. Neither ships wrappers over the other's interceptors or middleware: a service builds the packages' types itself.
 
@@ -150,18 +151,18 @@ private func requireUser() throws -> UserIdentity {
 }
 ```
 
-On HTTP, Hummingbird ships the second half already, so the split is `BearerAuthenticationMiddleware` and `IsAuthenticatedMiddleware`; on Vapor it is `BearerAuthenticationMiddleware` and `guardMiddleware()`.
+On HTTP, Hummingbird ships the second half already, so the split is `BearerAuthenticationMiddleware` and `IsAuthenticatedMiddleware`; on Vapor it is `BearerAuthenticationMiddleware` and `guardMiddleware()`. The middleware is applied to the identifying tier and the requiring middleware to the tier above it, so a route's tier says which kind of caller it assumes, exactly as an RPC service's audience does (see *Router tiers* in [http.md](http.md)).
 
 ## Where the caller lives
 
 What a call proved lives in the task's `ServiceContext` — [swift-service-context](https://github.com/apple/swift-service-context), the one request-scoped carrier the server ecosystem shares — under a key per kind of caller, for the length of the call:
 
-- `ServiceContext.current?.user` is a `Principal<UserIdentity, String>`: the verified identity and the token that proved it. The bearer interceptor and the middleware set it.
+- `ServiceContext.current?.user` is a `Principal<UserIdentity, String>`: the verified identity and the token that proved it. The bearer interceptor sets it on gRPC and the bearer middleware on HTTP.
 - `ServiceContext.current?.service` is a `Principal<ServiceIdentity, Certificate>`: the process and the certificate that named it. The certificate interceptor sets it.
 
 They are separate keys in the same context — `PrincipalKey` is generic over both the identity and the credential — so a request can carry both: a service relaying a person's call arrives with its own certificate *and* the person's token, and neither interceptor touches the other's. A handler reads whichever it is written for; a test binds one with the standard `ServiceContext.withValue`.
 
-It is `ServiceContext` rather than a task-local of a package's own because that is the context tracing spans and logging metadata providers already read. `<Project>Authentication` ships two `Logger.MetadataProvider`s, `.user` and `.service`; a composition root passes them to `LoggingSystem.bootstrap` and every log line inside a request carries `user_id` or `service_name` with no handler naming them (see *Serve composition root* in [composition.md](composition.md)). The tenant setting the database reads travels in the same context, under `postgresSettings`, bound by `UserSettingsInterceptor` right after the user is (see *Row-level security* in [persistence.md](persistence.md)). Do not declare a `@TaskLocal` for a caller anywhere: a value that belongs to the request belongs in `ServiceContext`, under a key.
+It is `ServiceContext` rather than a task-local of a package's own because that is the context tracing spans and logging metadata providers already read. `<Project>Authentication` ships two `Logger.MetadataProvider`s, `.user` and `.service`; a composition root passes them to `LoggingSystem.bootstrap` and every log line inside a request carries `user_id` or `service_name` with no handler naming them (see *Serve composition root* in [composition.md](composition.md)). The tenant setting the database reads travels in the same context, under `postgresSettings`, bound by `UserSettingsInterceptor` on gRPC and `UserSettingsMiddleware` on HTTP right after the user is (see *Row-level security* in [persistence.md](persistence.md)). Do not declare a `@TaskLocal` for a caller anywhere: a value that belongs to the request belongs in `ServiceContext`, under a key.
 
 ## Authorization lives in the use case
 
@@ -169,9 +170,11 @@ The token supplies the role and the certificate supplies the name. What that cal
 
 | Kind | Use case | Reached through | Bound by |
 | --- | --- | --- | --- |
-| Public | `callAsFunction(input:)` | `<Entity>PublicService` | nothing |
-| User | `callAsFunction(subject: UserIdentity, input:)` | `<Entity>Service` | the bearer interceptor |
+| Public | `callAsFunction(input:)` | `<Entity>PublicService`, or an HTTP route in tier 1 | nothing |
+| User | `callAsFunction(subject: UserIdentity, input:)` | `<Entity>Service`, or an HTTP route in tier 2 or 3 | the bearer interceptor or middleware |
 | Internal | `callAsFunction(service: ServiceIdentity, input:)` | `<Entity>InternalService` | the certificate interceptor |
+
+A use case does not know which transport reached it, or whether it runs inside a monolith or a service: the identity arrives as a value either way, and in a monolith a module's use case is called by the transport target of its own module or, through its protocol, by another module's use case that received the same `subject:`.
 
 A use case that serves two audiences has two overloads, and the shared work is a private method:
 
@@ -249,6 +252,14 @@ GRPCClient(
 
 A call made outside a caller's request — startup work, a workflow Activity, a scheduled job — has nothing to forward, and the interceptor sends it out unauthenticated rather than failing. A process identifies itself on such calls with its certificate, not a token — see below.
 
+## Validation at every process boundary
+
+A token is verified by every process that receives it, with the issuer's public key, and it crosses a process boundary only as the original bearer credential. No process trusts an identity a caller asserts in metadata, a header, or a request field; no process mints a credential on a user's behalf; no process strips the token and forwards a user id in its place on a user-facing call. This is the rule that makes a chain of services one security domain rather than a chain of trust: the gateway verifies the token, service A verifies it again, service B verifies it again, and each one's use case decides against the identity it verified itself. Verification is a signature check against a key already in memory, so the cost is nothing and the property is everything — a compromised process in the middle can forward what it received and nothing more.
+
+Processes prove themselves the other way, by certificate, over mTLS from the stack's CA (*Processes* below). A call that carries both — a service relaying a person's request — is verified twice at the destination, once per credential, by two interceptors that never touch each other's key.
+
+In a monolith no process boundary is crossed between the transport and the tables, so the token is verified exactly once, at the bearer interceptor or middleware, and the identity travels between modules as a `subject:` value on a local call. That is not a relaxation of the rule; it is the rule with one process. The day a module becomes a service, its own bearer interceptor starts verifying the same token again, and nothing else changes.
+
 ## Processes: the certificate is the credential
 
 A worker, a service reacting to a provider's webhook, the authenticating service reaching the users service before any caller exists — anything that calls other services with no inbound request behind it — is a principal of a second kind, and it is proved by a second mechanism. Every process in the mesh already presents one mTLS leaf on every connection it opens (*Transport security* in the delivering skill's environment reference). That certificate is the process's credential: there is no service token, no client secret, no exchange with the authenticating service, and no `service` role.
@@ -265,12 +276,13 @@ The same shape applies to the issuer: the authenticating service reaches the use
 
 ## The three rules
 
-Every flow in the system is a combination of the same parts. A user is proved by a token, bound as `ServiceContext.user`, and handed to a use case as `subject:`. A process is proved by its certificate, bound as `ServiceContext.service`, and handed to a use case as `service:`. Every gRPC connection is mTLS, so a process is always identifiable; whether anything reads that is per RPC service.
+Every flow in the system is a combination of the same parts. A user is proved by a token, bound as `ServiceContext.user`, and handed to a use case as `subject:`. A process is proved by its certificate, bound as `ServiceContext.service`, and handed to a use case as `service:`. Every gRPC connection is mTLS, so a process is always identifiable; whether anything reads that is per RPC service. On HTTP the same parts apply with the middleware in the interceptor's place, and a monolith is the table with one process in it.
 
 | Flow | Identity at the destination | Bound by | Use case | Database |
 | --- | --- | --- | --- | --- |
 | Anonymous → gateway → service | none | nothing | `input:` on the public service | tenant-scoped with no user, or a table without tenants |
 | User → gateway → service | the user | bearer interceptor on the user service | `subject:input:` | tenant-scoped, narrowed to the user |
+| User → monolith, HTTP or gRPC → module | the user, verified once | bearer middleware or interceptor at the transport | `subject:input:`, passed on to any other module's use case as the same value | the one database, tenant-scoped |
 | User → gateway → service A → service B | the same user, at B | B's bearer interceptor, reading the token A forwarded | `subject:input:` at B | B's tenant-scoped |
 | Administrator → service | the user, checked for `.admin` in the use case | bearer interceptor | `subject:input:` | unscoped |
 | Service A → service B, no user | process A, at B | certificate interceptor on B's internal service | `service:input:` with the user id in the input | B's unscoped |

@@ -1,10 +1,23 @@
 {
   "name": "swift-microservices",
-  "description": "Design, build, front, orchestrate, deliver, and review Swift services, microservices or a monolith, over gRPC, HTTP, or both, on the swift-microservices packages.",
+  "description": "Design, build, orchestrate, deliver, and review Swift systems on the swift-microservices packages: modular monoliths or microservices, over HTTP, gRPC, or both, with Postgres row-level security.",
   "version": "0.1.0",
-  "author": { "name": "Zaid Rahhawi" },
+  "author": {
+    "name": "Zaid Rahhawi"
+  },
   "homepage": "https://github.com/swift-microservices",
   "repository": "https://github.com/swift-microservices/skills",
   "license": "MIT",
-  "keywords": ["swift", "server", "grpc", "hummingbird", "vapor", "postgres", "temporal", "microservices"]
+  "keywords": [
+    "swift",
+    "server",
+    "monolith",
+    "microservices",
+    "grpc",
+    "http",
+    "hummingbird",
+    "vapor",
+    "postgres",
+    "temporal"
+  ]
 }

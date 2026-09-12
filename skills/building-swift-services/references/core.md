@@ -4,7 +4,10 @@
 
 - Database boundary
 - Feature structure
+- Ports to other modules
 - Logging in use cases
+
+Core is the same target in every shape. A module's Core knows nothing about whether the module ships alone as a service or beside others in a monolith, and nothing about whether its use cases are reached by a route, an RPC, or both.
 
 ## Database boundary
 
@@ -20,9 +23,9 @@ public protocol Database<Scope>: Sendable {
 }
 ```
 
-There is one entry point. Every unit of work is a transaction — one read included — because under row-level security the tenant is set on the transaction and the policies read it from there, so a read outside one sees no rows rather than failing. A service with no policies pays a transaction it did not need; a service with them cannot forget. Do not declare a `Database` protocol of the service's own, and do not add a `withConnection`: the shape is the package's so that `<Project>Persistence` and `<Project>Testing` fit every service. See *Scope and database* in [persistence.md](persistence.md).
+There is one entry point. Every unit of work is a transaction, one read included, because under row-level security the tenant is set on the transaction and the policies read it from there, so a read outside one sees no rows rather than failing. A module with no policies pays a transaction it did not need; a module with them cannot forget. Do not declare a `Database` protocol of the module's own, and do not add a `withConnection`: the shape is the package's so that `<Project>Persistence` and `<Project>Testing` fit every module. See *Scope and database* in [persistence.md](persistence.md).
 
-Do not hold a transaction across a remote call. The connection is pooled, so a slow dependency becomes pool exhaustion and one service's latency spike takes this service down with it.
+Do not hold a transaction across a remote call, nor across a call into another module's port. The connection is pooled, so a slow dependency becomes pool exhaustion and one module's latency spike takes this one down with it; and in a monolith the port may become a remote call the day the producer ships alone, so the consumer is written as if it already were.
 
 The narrow exception is rotating a single-use secret: consume the old row, call the dependency, insert the replacement. If the call instead runs after the commit, a dependency outage destroys a credential whose validity that dependency has nothing to do with — a brief blip logs out every caller that happens to rotate during it. Take the exception only when the remote call is one fast read, the transaction is short, the alternative is destroying a caller's credential, and the call carries a deadline well under the pool's wait time. Set that deadline explicitly; without one the pool is bounded by the dependency's worst case.
 
@@ -118,13 +121,42 @@ package struct CreateItemUseCase<DatabaseType>: CreateItemUseCaseProtocol where 
 
 The guards are the use case's business rules, stated where they apply; see *Business rules, policies, and adapters* in [architecture.md](architecture.md). Build the command inside the closure and execute it on the next line rather than nesting the construction in the call.
 
-**The identity is in the signature.** A use case names the kind of caller it serves: a public one takes `input:` alone, a user's takes `subject: UserIdentity, input:`, and one another process calls takes `service: ServiceIdentity, input:`. Both identity types come from `<Project>Authentication`, which Core links: `UserIdentity` is the token's claims and `ServiceIdentity` a process's name, and neither carries a key, a signer, or a certificate. Authorization is a guard against that principal at the top of the body, before any I/O, throwing the use case's own `.forbidden`: whether the subject is an administrator, whether the row named in the input is the subject's own. A use case both a user and a process reach has two overloads sharing a private method. The handler's only job is to insist that the principal is present. See *Authorization lives in the use case* in [identity-and-access.md](identity-and-access.md).
+**The identity is in the signature.** A use case names the kind of caller it serves: a public one takes `input:` alone, a user's takes `subject: UserIdentity, input:`, and one another process calls takes `service: ServiceIdentity, input:`. Both identity types come from `<Project>Authentication`, which Core links: `UserIdentity` is the token's claims and `ServiceIdentity` a process's name, and neither carries a key, a signer, or a certificate. Authorization is a guard against that principal at the top of the body, before any I/O, throwing the use case's own `.forbidden`: whether the subject is an administrator, whether the row named in the input is the subject's own. A use case both a user and a process reach has two overloads sharing a private method. The handler's or controller's only job is to insist that the principal is present. See *Authorization lives in the use case* in [identity-and-access.md](identity-and-access.md).
 
 An input carries a value in the type the transport already validated it into: an enum as the enum, a timestamp as a `Date`, so the use case does not re-parse it. The caller's own id arrives in the `subject`, already a `UUID`. A value the wire still carries as a string — a target user's id in a request body — is parsed by the use case, which owns that error.
 
 When a lookup inside a transaction finds nothing, throw the use case's own typed error from inside the closure and rethrow it by type outside — `catch let error as CreateItemUseCaseError { throw error }` — before the named repository errors and the catch-all. Do not return an optional from the closure and unwrap it afterwards, and do not invent a private sentinel error to carry the refusal out of the closure.
 
-Do not pass `Date`, a clock, or a `now` closure into a use case merely to stamp a record. The repository — in practice the database default — owns that persistence concern.
+Do not pass `Date`, a clock, or a `now` closure into a use case merely to stamp a record. The repository, in practice the database default, owns that persistence concern.
+
+## Ports to other modules
+
+A module that needs another module's behavior declares, in its own Core, the protocol it needs. When the producer's use-case protocol is the right shape, the consumer depends on that shape by re-declaring it, never by importing the producer's Core; more often the consumer needs less, and declares a narrow port naming only the operation and the values it uses:
+
+```swift
+package protocol AccountClient: Sendable {
+    func account(id: UUID) async throws(AccountClientError) -> Account?
+}
+
+package struct Account: Equatable, Sendable {
+    package let id: UUID
+    package let status: AccountStatus
+}
+```
+
+The `Account` here is the consumer's own value, carrying only what the consumer reads; it is not the producer's entity and not a generated message. The use case takes the port in its initializer beside the database and calls it outside `withTransaction`:
+
+```swift
+package struct CreateItemUseCase<DatabaseType, Accounts>: CreateItemUseCaseProtocol
+where DatabaseType: Database, DatabaseType.Scope: CreateItemUseCaseScope, Accounts: AccountClient {
+    private let database: DatabaseType
+    private let accounts: Accounts
+    private let logger: Logger
+    // …
+}
+```
+
+What satisfies the port is the composition root's decision and the root's alone. In a monolith it is the producer module's use case, wrapped in a few lines that convert the producer's entity into the consumer's value; in microservices it is `GRPCAccountClient` in the consumer's GRPC target, over a `GRPCClient` (the consumer adapter in [grpc-and-protos.md](grpc-and-protos.md)). Core cannot tell the two apart, which is the point: the day the producer becomes a service, the consumer's Core does not change. Mock the port in `<Module>CoreTests` exactly as a repository is mocked.
 
 ## Logging in use cases
 

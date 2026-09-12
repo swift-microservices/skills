@@ -1,6 +1,6 @@
-# Distributed-system design
+# Distributed systems: the microservices section
 
-Use this reference when designing more than one service, introducing a remote dependency, or creating a system from scratch.
+Use this reference once the shape is microservices (shapes.md decides that): more than one process, a remote dependency, a gateway in front. Everything here builds on the modules the shape reference defines; a service is a module with its own process and database.
 
 ## Contents
 
@@ -10,6 +10,7 @@ Use this reference when designing more than one service, introducing a remote de
 - Data ownership and consistency
 - Reliability and failure semantics
 - Security and trust boundaries
+- Identity across processes
 - Observability and operations
 - Greenfield delivery sequence
 
@@ -25,9 +26,9 @@ Capture requirements before drawing services:
 - operational team size and deployment maturity;
 - external integrations and their failure behavior.
 
-Define a service around a cohesive business capability and the data it owns. A boundary should give the service independent behavior, persistence, release, and failure semantics. Do not create one service per entity, table, endpoint, or team name.
+Define a service around a cohesive business capability and the data it owns. A boundary should give the service independent behavior, persistence, release, and failure semantics. Do not create one service per entity, table, endpoint, or team name; the reasons that earn a service are listed in shapes.md, and a module that has none of them stays a module.
 
-Prefer fewer services when boundaries are uncertain. A modular monolith with the same Core conventions is a valid starting deployment; split only when independent scaling, ownership, security, release cadence, or failure isolation provides concrete value.
+Prefer fewer services when boundaries are uncertain. Two modules in one process cost nothing to merge later; two services with two databases cost a data migration.
 
 Produce a service map before implementation:
 
@@ -58,15 +59,16 @@ gRPC is the default synchronous internal transport. Introduce a broker or workfl
 Design contracts before implementations:
 
 1. Name RPCs for business capabilities rather than CRUD tables.
-2. Define request validation, response meaning, and stable error/status mapping.
-3. Include stable identifiers and timestamps only when consumers need them.
-4. Establish deadlines and maximum payload expectations.
-5. Decide idempotency for mutations before permitting retries.
-6. Keep canonical contracts in the shared versioned proto package.
+2. Split every contract by audience: `<Entity>PublicService` for anyone, `<Entity>Service` for a signed-in user, `<Entity>InternalService` for another process. Identification is applied per proto service, never per method.
+3. Define request validation, response meaning, and stable error/status mapping.
+4. Include stable identifiers and timestamps only when consumers need them.
+5. Establish deadlines and maximum payload expectations.
+6. Decide idempotency for mutations before permitting retries.
+7. Keep canonical contracts in the shared versioned proto package, `<project>-protos`, nested by organization, service, and version.
 
 Evolve `v1` additively. Add fields using new numbers, preserve existing semantics, reserve removed numbers/names, and create `v2` for breaking behavior. Deploy compatible producers before consumers that require new fields or methods.
 
-Generated protobuf values are transport DTOs. Map them at service/client boundaries and keep each service's Core model independent.
+Generated protobuf values are transport DTOs. Map them at service/client boundaries and keep each service's Core model independent. A consumer keeps its own use-case protocol and entity; the generated client is an implementation behind that protocol, which is why a consumer does not change when a module becomes a service.
 
 ## Data ownership and consistency
 
@@ -115,16 +117,26 @@ For mutations, define a request identity when clients may retry after an ambiguo
 Identify public, private, administrative, and data-sensitive boundaries. Keep internal service ports off the public ingress by default.
 
 - Terminate public TLS at the platform ingress or the gateway's sidecar.
-- Mutually authenticate every internal gRPC connection with the stack's own CA; a process is its certificate, and there is no plaintext mode. The certificate names the process (`ServiceIdentity`, from its SPIFFE URI) and the token names the user (`UserIdentity`); authorization is decided in the use case against whichever it was handed, never in a policy or an interceptor.
-- Authenticate callers at the edge and propagate only required identity claims.
-- Authorize inside the service that owns the protected capability.
-- Model process identity separately from end-user identity — a certificate, not a token — and do not trust a caller merely because it is on an internal network.
+- Mutually authenticate every internal gRPC connection with the stack's own CA; a process is its certificate, and there is no plaintext mode. The certificate names the process (`ServiceIdentity`, from its `spiffe://<project>/<process>` URI) and the token names the user (`UserIdentity`); authorization is decided in the use case against whichever it was handed, never in a policy or an interceptor.
+- Model process identity separately from end-user identity, a certificate rather than a token, and do not trust a caller merely because it is on an internal network.
 - Keep secrets as mounted files configured by path, never in source control or environment variables.
 - Mark secret configuration values with `isSecret: true`.
 - Avoid logging tokens, credentials, sensitive payloads, or raw database errors.
 - Connect as a least-privilege database role; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, and nothing else in a policy.
 
-How a caller is signed, verified, identified per transport, and forwarded between services, and how the roles and row-level security work, is the building-swift-services skill's subject (its identity-and-access and persistence references).
+## Identity across processes
+
+This is the rule that makes microservices different from a monolith, where the token is verified once at the transport.
+
+**A token is verified by every process that receives it.** The gateway verifies it with the issuer's public key and binds the caller; each service it calls verifies the same token again with the same public key before its own interceptor binds the caller for its own use cases. Verification is a signature check against a public key, cheap enough to repeat, and it is the only thing that makes a service's authorization decision its own rather than an inherited assumption.
+
+**A token crosses a process boundary only as the original bearer credential.** The gateway and any service that calls a user-facing service forward the caller's token unchanged with `BearerPropagationInterceptor<UserIdentity>`, applied to that upstream's user-service descriptors alone, so a public service is dialled with nothing and an internal one is reached by certificate. No process forwards an identity as metadata it asserts, no process trusts a `user_id` header, and no process mints a credential on a user's behalf: there is one issuer, the authenticating service, with the private key, and everyone else holds the public key.
+
+**A process proves itself by certificate.** Worker-to-service and service-to-service calls on internal contracts carry no user token; the caller is its certificate over mTLS, verified by `CertificateAuthenticationInterceptor` against the stack's trust domain, and the internal use case is handed a `ServiceIdentity`. When such a call acts for a named user, the user id is a field of the request, the internal use case checks the process is one it expects, and it reaches every row through the internal role rather than by impersonating the user.
+
+**The tenant reaches the policy in each service on its own.** Each service's `UserSettingsInterceptor` binds `PostgresSettings.user(_:)` from the caller it verified, so the tenant policy in each database sees the user that service verified, not one a caller claimed.
+
+The mechanics of signing, verifying, binding, and forwarding are the building-swift-services skill's (its identity-and-access and http references); this section fixes where they apply.
 
 ## Observability and operations
 
@@ -145,13 +157,13 @@ Define alerts from user-impacting symptoms and service objectives, not every log
 
 ## Greenfield delivery sequence
 
-1. Write the capability map, service ownership table, interaction map, and non-functional requirements.
-2. Challenge every proposed remote boundary; merge services that lack independent ownership or operating value.
-3. Define the first vertical user journey and the contracts it needs.
-4. Create and release the shared proto package and the organization's core package, `<project>-core`, over the swift-microservices packages.
-5. Initialize each required SwiftPM service package with `swift package init --type executable`.
-6. Build the owning service from Core outward through Postgres, gRPC, composition, and environment.
-7. Build consumers against their local use-case protocols and generated clients.
+1. Write the capability map, the shape decision record, the service ownership table, the interaction map, and the non-functional requirements.
+2. Challenge every proposed remote boundary against the reasons in shapes.md; merge services that lack one into a module of another, or into a monolith.
+3. Define the first vertical user journey and the contracts it needs, split by audience.
+4. Create and release the shared proto package, `<project>-protos`, and the organization's core package, `<project>-core`, over the swift-microservices packages.
+5. Initialize each service package with `swift package init --type executable`, and the gateway package `<organization>-api` when browsers or REST clients are among the callers.
+6. Build the owning service from Core outward through Postgres, gRPC, composition, and environment, with the building-swift-services skill.
+7. Build consumers against their local use-case protocols and generated clients, verifying the token at each service and forwarding it on user-facing descriptors alone.
 8. Add dedicated databases, migration jobs, private networking, certificates, secrets, lifecycle, and observability.
 9. Verify the first journey end to end, including dependency failure and retry/idempotency behavior.
 10. Add the next vertical capability; do not scaffold unused services or infrastructure in advance.

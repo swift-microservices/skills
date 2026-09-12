@@ -1,6 +1,6 @@
 # Postgres persistence
 
-Keep every Postgres type in `<Service>Postgres`, except executable configuration and client construction.
+Keep every Postgres type in the module's `<Module>Postgres` target (`<Service>Postgres` when the module is a service), except executable configuration and client construction. The rules are the same in a monolith and in a service; what differs is how many modules share one database, which *One database, many modules* below covers.
 
 ## Contents
 
@@ -10,6 +10,7 @@ Keep every Postgres type in `<Service>Postgres`, except executable configuration
 - Idempotent writes
 - State transitions and liveness-scoped uniqueness
 - Database ownership and migrations
+- One database, many modules
 - The roles
 - Row-level security
 - Transaction policy
@@ -40,7 +41,7 @@ At the start of each transaction the database applies `PostgresSettings`: the co
 
 Add repositories to a scope as features are introduced. Do not expose the raw connection to Core, and do not write a `Database`, `PostgresDatabase` or `PostgresScope` of the service's own: those shapes were once duplicated per service and now live in the packages, and a service that redeclares them stops being able to use `<Project>Persistence` or `<Project>Testing`.
 
-A service with more than one database role builds one scope type per database — `PostgresBillingScope`, `PostgresBillingInternalScope`, `PostgresBillingWorkerScope` — each conforming to the use-case scopes that may run over it. That is how a use case declares which database it needs and the compiler refuses the other; see *Row-level security* below.
+A module with more than one database role builds one scope type per role — `PostgresBillingScope`, `PostgresBillingInternalScope`, `PostgresBillingWorkerScope` — each conforming to the use-case scopes that may run over it. That is how a use case declares which database it needs and the compiler refuses the other; see *Row-level security* below.
 
 ## Repositories and statements
 
@@ -169,17 +170,43 @@ The migration library refuses a list whose order differs from what a database ha
 
 Dropping a table, deleting a migration, or moving data is a destructive product decision. Do it only when the user has chosen the strategy; otherwise finish the non-destructive work and surface the decision.
 
+## One database, many modules
+
+A monolith has one database, owned by its executable, and every module owns its own tables inside it. The ownership rules between modules are the ones between services, enforced by review rather than by a network: a module creates and migrates its tables, generates its identifiers, and reads and writes them through its own repositories; no other module queries them, joins to them, or declares a foreign key onto them. A relationship across modules is a stored identifier plus a call through the other module's use-case protocol, exactly as it would be a stored identifier plus an RPC between services. Table names stay unqualified and there is no schema per module: the boundary is the target graph, not a namespace, and a module that later becomes a service takes its tables to its own database with a `pg_dump` of those tables and no renames.
+
+Roles are per process, not per module. A monolith therefore has one set — `<project>_service`, `<project>_internal`, `<project>_worker` — created by the same three migrations, and one `PostgresClient` per role in its composition root; a module's tenant-scoped scope and its internal scope are built over the shared clients. Each module's Postgres target exposes its migrations as an ordered list, and the composition root registers the role migrations first and then every module's list in module dependency order:
+
+```swift
+// Sources/CatalogPostgres/Migrations/CatalogMigrations.swift
+package enum CatalogMigrations {
+    package static func migrations(internalRole: String) -> [any DatabaseMigration] {
+        [CreateItemsTable(), CreateItemsRLSPolicy(internalRole: internalRole)]
+    }
+}
+
+// Sources/Backend/Database/Migrations.swift
+await migrations.add(CreateServiceRole(...))
+await migrations.add(CreateInternalRole(...))
+for migration in UsersMigrations.migrations(internalRole: internalRole) + CatalogMigrations.migrations(internalRole: internalRole) {
+    await migrations.add(migration)
+}
+```
+
+The list is append-only across modules as much as within one: adding a module appends its migrations after every existing module's, so an existing database applies them in place. Row-level security is unchanged — the tenant predicate on each tenant table, the internal role's `USING (true)` policy, the setting bound per request — and a module that owns no tenant table simply has no policies; the roles exist once for the process regardless.
+
+A service is the one-module case of all of this, with its own database and its own roles, and that is the whole difference.
+
 ## The roles
 
 Migrations run as the owner — the instance's own `POSTGRES_USER` / `POSTGRES_PASSWORD`, verbatim — and the owner owns every table. Nothing that serves data ever connects as the owner: Postgres applies no policy to a table's owner, so a service that ran as it could not add row-level security later without changing what it connects as. Every other connection is a role a migration creates, one per way of seeing the data:
 
 | Role | Created by | Policy on a tenant table | Connects |
 | --- | --- | --- | --- |
-| `<service>_service` | `CreateServiceRole`, the **first** migration | the tenant predicate | `serve`, for public and user use cases |
+| `<service>_service` (`<project>_service` in a monolith) | `CreateServiceRole`, the **first** migration | the tenant predicate | `serve`, for public and user use cases |
 | `<service>_internal` | `CreateInternalRole` | `USING (true)` | `serve`, for admin use cases and the internal use cases another process calls |
 | `<service>_worker` | `CreateWorkerRole` | `USING (true)` | the worker, on its own service's database |
 
-A service with no tenant tables has the service role alone. A tenant service has the internal role too; a service with a Temporal worker has the worker role too. Each has its own secret — `POSTGRES_SERVICE_*`, `POSTGRES_INTERNAL_*`, `POSTGRES_WORKER_*` — so the wider view is a credential held only by the connection that needs it, and a leaked service-role password still sees one tenant.
+A process with no tenant tables has the service role alone. One with tenant tables has the internal role too; one with a Temporal worker has the worker role too. Each has its own secret — `POSTGRES_SERVICE_*`, `POSTGRES_INTERNAL_*`, `POSTGRES_WORKER_*` — so the wider view is a credential held only by the connection that needs it, and a leaked service-role password still sees one tenant.
 
 ```swift
 let migrations = DatabaseMigrations()
@@ -208,7 +235,7 @@ CREATE POLICY user_isolation ON documents
 
 Whether a caller is an administrator, and what they may do, is the use case's decision in Swift, against the `subject:` it was handed (see *Authorization lives in the use case* in [identity-and-access.md](identity-and-access.md)). No role travels to the database. A policy that admitted `admin` or `service` beside the tenant would be authorization written twice — once in a use case, once in SQL — with the SQL copy invisible to the use case's tests.
 
-**Stamp the transaction, not the connection.** `<Project>Persistence`'s `UserSettingsInterceptor`, applied on the user service right after the bearer interceptor, turns the bound user into `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — in the task's `ServiceContext`, and every transaction begun under that call applies it: `set_config(name, value, true)` with bound parameters, so nothing is spliced into SQL, and transaction-local, so the value reverts at commit and rollback and a pooled connection carries nothing to its next borrower. With no user bound it sets nothing, and a policy then admits no rows — which is what an anonymous transaction on a tenant table deserves. There is no role setting: a policy isolates a tenant, and nothing else travels to the database this way.
+**Stamp the transaction, not the connection.** `<Project>Persistence`'s `UserSettingsInterceptor`, applied on the user service right after the bearer interceptor — or `UserSettingsMiddleware`, its HTTP counterpart, added to the identifying tier right after the bearer middleware (see *The tenant on HTTP* in [http.md](http.md)) — turns the bound user into `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — in the task's `ServiceContext`, and every transaction begun under that call applies it: `set_config(name, value, true)` with bound parameters, so nothing is spliced into SQL, and transaction-local, so the value reverts at commit and rollback and a pooled connection carries nothing to its next borrower. With no user bound it sets nothing, and a policy then admits no rows — which is what an anonymous transaction on a tenant table deserves. There is no role setting: a policy isolates a tenant, and nothing else travels to the database this way.
 
 `NULLIF` is load-bearing: once a custom setting has been set on a connection, reading it after that transaction yields `''` rather than `NULL`, and `''::uuid` is an error rather than a non-match. A table nobody writes as a user — a grant made by a payment or an administrator — has `WITH CHECK (false)` for the tenant role. A join table is reachable through its parent: a child row's policy is `EXISTS (SELECT 1 FROM parents p WHERE p.id = parent_id AND p.user_id = …)`, and the subquery runs under the parent's own policy.
 
@@ -222,15 +249,15 @@ The composition root builds two databases and hands each to the use cases that b
 
 | Database | Role and policy | Tenant setting | Scope | Use cases |
 | --- | --- | --- | --- | --- |
-| Tenant-scoped | the service role, the tenant predicate | bound by `UserSettingsInterceptor` on the user service | `Postgres<Service>Scope` | public and user |
-| Unscoped | the internal role, `USING (true)` | none reaches it: the internal service has no bearer interceptor | `Postgres<Service>InternalScope` | admin, and internal ones another process calls |
+| Tenant-scoped | the service role, the tenant predicate | bound by `UserSettingsInterceptor` on the user service, or `UserSettingsMiddleware` on the identifying tier | `Postgres<Module>Scope` | public and user |
+| Unscoped | the internal role, `USING (true)` | none reaches it: the internal service has no bearer interceptor | `Postgres<Module>InternalScope` | admin, and internal ones another process calls |
 
 ```swift
 let database = PostgresDatabase<PostgresBillingScope>(client: serviceClient, logger: logger)
 let internalDatabase = PostgresDatabase<PostgresBillingInternalScope>(client: internalClient, logger: logger)
 ```
 
-The two databases are built the same way; what differs is the role each client connects as and which RPC services reach each. The unscoped database sees every row, so every query on it names the user it means in its own `WHERE` clause, and the use case logs every use of it for a named user. An administrator's call arrives with a user bound and a tenant setting applied, and the internal role's `USING (true)` policy ignores it. A use case whose scope protocol is adopted only by the internal scope cannot be built over the tenant-scoped database, and the reverse; that refusal is the compiler's, not a code review's. A service whose one table is the tenant itself — users, where a person's own row and an administrator's any row are one use case deciding — may build only the unscoped database and leave the service role unused; say so in the composition root.
+The two databases are built the same way; what differs is the role each client connects as and which RPC services or route tiers reach each. The unscoped database sees every row, so every query on it names the user it means in its own `WHERE` clause, and the use case logs every use of it for a named user. An administrator's call arrives with a user bound and a tenant setting applied, and the internal role's `USING (true)` policy ignores it. A use case whose scope protocol is adopted only by the internal scope cannot be built over the tenant-scoped database, and the reverse; that refusal is the compiler's, not a code review's. A service whose one table is the tenant itself — users, where a person's own row and an administrator's any row are one use case deciding — may build only the unscoped database and leave the service role unused; say so in the composition root.
 
 **A worker connects to its own service's database directly**, as the worker role, with the same `USING (true)` policy and its own secret, and builds the unscoped kind of database over `Postgres<Service>WorkerScope` in its own composition root (see *Worker composition* in the orchestrating-temporal-workflows skill). An Activity is inside the service's boundary and its input is durable workflow state rather than a caller's request, so nothing is gained by putting a network hop between it and the tables it owns. A worker never opens another service's database; it calls that service's internal RPC, which runs the use case over that service's unscoped database.
 

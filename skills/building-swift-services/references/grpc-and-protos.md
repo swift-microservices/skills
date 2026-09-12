@@ -1,5 +1,7 @@
 # Shared protobufs and gRPC boundaries
 
+The gRPC transport of a module or a service: the contract package, the contract's shape, the producer adapter in `<Module>GRPC` (`<Service>GRPC` when the module is a service), and the consumer adapter that lets one module or service call another. A gRPC-only monolith has one `<Module>GRPC` target per module and one `GRPCServer` in its executable registering every module's services, with the interceptors applied per proto service exactly as a service applies them; a module reached only by other modules in the same process has no gRPC target at all, because a local use-case call needs no contract.
+
 ## Contents
 
 - Canonical proto package
@@ -9,7 +11,7 @@
 
 ## Canonical proto package
 
-Store contracts in a separate `<project>-protos` SwiftPM repository at `https://github.com/<organization>/<project>-protos.git`. Give each service its own library target/product and nest proto paths by organization, service, and API version:
+Store contracts in a separate `<project>-protos` SwiftPM repository — for services, and for a monolith the moment it exposes gRPC to a client or splits a module out at `https://github.com/<organization>/<project>-protos.git`. Give each service its own library target/product and nest proto paths by organization, service, and API version:
 
 ```text
 <project>-protos/
@@ -87,7 +89,7 @@ Omit a service the contract has no callers for — a newsletter has a public and
 
 ## Producer adapter
 
-Implement the generated `SimpleServiceProtocol` in `<Service>GRPC`. Inject use-case protocol existentials, not databases or repositories:
+Implement the generated `SimpleServiceProtocol` in `<Module>GRPC`. Inject use-case protocol existentials, not databases or repositories:
 
 ```swift
 package struct ItemService: <Organization>_Catalog_V1_ItemService.SimpleServiceProtocol {
@@ -166,7 +168,7 @@ Do not mark a conversion extension `private` when another file in the GRPC targe
 
 ## Consumer adapter
 
-Keep the consumer's caller-facing use-case protocol, input, error, and local entity. Replace only the concrete implementation:
+A consumer declares the use-case protocol it needs in its own Core, and what is injected behind it is the shape's decision: in a monolith the composition root injects the producer module's use case itself, a local call; between services it injects this adapter, over a client. Keep the consumer's caller-facing use-case protocol, input, error, and local entity in either case, so moving from the first to the second replaces only the concrete implementation:
 
 ```swift
 package struct ListCatalogItemsUseCase: ListCatalogItemsUseCaseProtocol {

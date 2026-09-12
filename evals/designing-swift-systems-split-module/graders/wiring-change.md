@@ -1,0 +1,6 @@
+---
+type: llm
+---
+
+PASS if the answer names the concrete reason that earns the split (the compliance boundary and the separate release cadence), then describes it as: release Billing's contract in the shared proto package first, split by audience; give Billing its own package, database, executable, and role migrations while keeping its existing Core and Postgres targets; keep Catalog's CheckSubscriptionUseCaseProtocol unchanged and replace only the injected implementation, in acme-backend's composition root, with a gRPC client adapter conforming to that protocol over mTLS, with the caller's token forwarded on Billing's user-facing service and verified again by Billing itself with the issuer's public key; and states that moving Billing's rows out of the shared database and removing them from it is the user's decision.
+FAIL if the answer presents a multi-phase extraction runbook, ledger, or baseline-and-inventory program; if Catalog is changed to depend on protobuf or gRPC types directly instead of its use-case protocol; if Billing is to trust a user id Catalog asserts in metadata or a shared secret instead of verifying the token; if a distributed transaction or a cross-database query is proposed; or if rows are moved or dropped without an explicit decision.
