@@ -47,6 +47,8 @@ These are the packages the architecture is built on. The versions are a floor fr
 | `hummingbird-auth` | `2.2.0` | `HummingbirdAuth` for `AuthRequestContext` and `IsAuthenticatedMiddleware`; `HummingbirdBcrypt` only in a `<Module>Bcrypt` adapter target |
 | `swift-openapi-generator` | `1.13.0` | The `OpenAPIGenerator` plugin on every HTTP target that owns a document |
 | `swift-openapi-runtime` | `1.12.0` | `OpenAPIRuntime` beside the generated types |
+| `swift-openapi-hummingbird` | current | `OpenAPIHummingbird`, only with generated server stubs (the alternative in *http.md*); not linked by the types-only default |
+| `swift-openapi-vapor` | current | `OpenAPIVapor`, the same for a Vapor surface |
 | `vapor` | `4.122.0` | `Vapor`, only when the HTTP surface is on Vapor instead of Hummingbird; `VaporTesting` for its tests |
 | `swift-temporal-sdk` | `1.0.0` | `Temporal`, only with durable orchestration |
 | `jwt-kit` | `"5.3.0"..<"5.7.0"` | `JWTKit`: the executable, for the EdDSA key types; the pin's reason is in identity-and-access.md |
