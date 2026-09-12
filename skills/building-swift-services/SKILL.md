@@ -75,7 +75,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 
 ### Persistence
 
-19. A service owns its whole database; a monolith owns one database in which each module owns its tables. In both, unqualified table names, no module- or service-named schema, one create migration per table, and no query, join, or foreign key across a module boundary.
+19. A service owns its whole database; a monolith owns one database in which each module owns its tables. In both, unqualified table names, no module- or service-named schema, one create migration per table, and no query, join, or foreign key across a module boundary. Where that database lives is the deployment's choice, recorded once: an instance per service, one instance with a database and owner per service (default), or a schema per service; the ownership rule holds in all three, and shared tables are never one of them. Postgres is the default store; a module whose measured access pattern needs another store owns it the same way, through a Core port and a driver or adapter target, keeps one store as the truth for each entity, and never spans two stores with one transaction.
 20. The owning database generates every entity identifier; omit it from create commands and requests and return it after insertion. Never generate another module's identifier. Default: `UUID DEFAULT uuidv7()` on Postgres 18. Alternative: `gen_random_uuid()` on an older instance, at the cost of index locality.
 21. Name stored dates as nouns: `creation_date`, `update_date`, `expiration_date`, and `creationDate` in Swift. Use `Id`, not `ID`.
 22. Model a non-identifier secret as one Core value type that mints and digests; persist only the SHA-256 digest; reserve bcrypt for passwords.

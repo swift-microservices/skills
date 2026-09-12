@@ -53,7 +53,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 8. Draw dependency direction between modules and reject cycles. Break one by reconsidering ownership, extracting a third module, or replacing a synchronous edge with a fact the other side reacts to.
 9. Prefer fewer modules when boundaries are uncertain and fewer services always; two modules merge for free, two services cost a data migration.
 10. The owning database generates every entity identifier; default `UUID DEFAULT uuidv7()` (Postgres 18), alternative `gen_random_uuid()` on an older instance at the cost of index locality. A create contract omits it, a consumer stores the returned identifier only after success, and a pending process elsewhere uses its own local identifier.
-11. Never share a database between services, query another module's tables, join across modules or databases, or make a distributed transaction.
+11. Never share tables between modules or services, query another module's tables, join across modules or databases, or make a distributed transaction. Where each service's database lives is a deployment choice recorded once: an instance per service, a database on a shared instance (default), or a schema per service, in that order of isolation. Postgres is the default store; another store is a per-module choice from a measured access pattern, with one store as the truth for each entity.
 
 ### Communication
 

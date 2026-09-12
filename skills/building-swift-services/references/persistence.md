@@ -10,6 +10,8 @@ Keep every Postgres type in the module's `<Module>Postgres` target (`<Service>Po
 - Idempotent writes
 - State transitions and liveness-scoped uniqueness
 - Database ownership and migrations
+  - Where a service's data lives
+  - Polyglot persistence
 - One database, many modules
 - The roles
 - Row-level security
@@ -148,18 +150,40 @@ Rows in terminal states fall out of the index, so the value frees automatically 
 
 ## Database ownership and migrations
 
-### One instance or many
+### Where a service's data lives
 
-"Database per service" is an ownership rule, not a hardware rule: no shared tables, no cross-service joins, one service evolving each schema. It has two sound physical shapes, and the choice is per environment:
+"Database per service" is an ownership rule, not a hardware rule: a service creates, migrates, reads, and writes its own tables, and nothing else touches them. Where those tables physically live is a deployment choice, made once for an environment and recorded in the decision record, and it is one of the debated ones. The four shapes, from the most isolated down:
 
-- **One instance per service** — independent scaling, isolated blast radius, per-service versions and maintenance windows. The strict shape; what a managed-database-per-service production naturally gives.
-- **One shared instance, one database per service** — the standard small-to-mid-workload shape, and the right default for a single staging box: one well-tuned cluster instead of N sets of `shared_buffers`, autovacuum, and WAL writers. Postgres holds the boundary itself — there are no cross-database queries without an FDW — so a service physically cannot join into a sibling's data. One control completes it: connect rights are granted per role rather than left at Postgres's connect-to-anything default, so a leaked role password cannot even reach a sibling's database.
+| Shape | Isolation | What it costs | When |
+| --- | --- | --- | --- |
+| **An instance per service** | Complete: its own failure domain, version, maintenance window, backups, point-in-time recovery, and quotas | N clusters to tune, patch, back up, and pay for; per-instance connection limits | Independent scaling or availability targets, a compliance boundary, a team that runs its own database, a managed-database-per-service platform |
+| **One instance, a database per service, distinct owners and roles** (the worked default) | Logical: Postgres allows no cross-database query without an FDW, so a service cannot join into a sibling's data; each database has its own owner | One failure domain and one maintenance window for all; point-in-time recovery is cluster-wide, so restoring one service's data to a moment means a logical restore; role names are cluster-wide; a noisy neighbour shares buffers and I/O | A small or mid-size workload, a single staging box, a managed cluster that bills per instance |
+| **One database, a schema per service, grants per role** | Weak: a join across schemas is one `GRANT` away, and reviewers must hold the line | Cheapest to run; one owner for everything; foreign keys across schemas become possible and must be refused by review | A legacy consolidation, or a platform that provisions databases slowly; move up a row when the first cross-schema join is proposed |
+| **Shared tables** | None | Every service couples to every migration | Never; this is the rule the other three exist to keep |
 
-The environment contract makes the choice invisible to code: `POSTGRES_HOST/PORT/DB/USER/PASSWORD` describes *a database*, not an instance, so moving between shapes is an environment edit. On a shared instance the plain `POSTGRES_USER`/`POSTGRES_PASSWORD` pair is the cluster's administrator verbatim — the same "instance owner, verbatim" contract, now shared — and role names (`<service>_service`) are cluster-wide, which the naming convention already keeps unique.
+The environment contract makes the choice invisible to code: `POSTGRES_HOST/PORT/DB/USER/PASSWORD` describes *a database*, not an instance, so moving between the first two rows is an environment edit and a `pg_dump --no-owner | psql`. On a shared instance the administrator pair is the cluster's; role names (`<service>_service`) are cluster-wide, so two services on one instance cannot share a role name, and two environments on one instance need distinct prefixes. A service's database exists before the service first deploys: no service ever creates a database. On a per-service instance the image's own variables provision it; on a shared instance an administrator creates `<project>_<service>` once, as part of provisioning the application.
 
-Either way, **a service's database exists before the service first deploys** — no service ever creates a database. On a per-service instance the image's own variables provision it; on a shared instance an administrator creates `<project>_<service>` explicitly, once, as part of provisioning the application. From there the role model applies unchanged: the service connects to its own isolated database as the owner/administrator pair for migrations at boot, and as the roles its migrations create — `<service>_service` first — for serving and every other data path.
+Enterprise concerns that decide between the rows, in the order they usually bite:
+
+- **Recovery.** Backups are per database; point-in-time recovery is per instance. A service whose data must be restorable to a moment on its own gets its own instance, or accepts logical restores.
+- **Pooling.** A pooler in transaction mode (PgBouncer, a managed pooler) hands a connection to a different client per transaction. The tenant setting survives that because it is transaction-local, applied by `set_config(name, value, true)` inside `withTransaction`; a session-level setting would leak to the next borrower, which is one reason there is no `withConnection`.
+- **Replicas.** A read replica serves projections and reports, never a use case: `withTransaction` targets the primary, and a use case that read stale rows and then wrote would be deciding on the past.
+- **Connection budgets.** One `PostgresClient` per role per process, sized from the instance's `max_connections` divided across every process and role that connects; a shared instance divides a smaller number.
+- **Placement and compliance.** Data that must stay in a region or a tenant's own cluster gets its own instance; nothing in the code changes.
 
 Consolidating existing per-service instances into one cluster is a `pg_dump --no-owner | psql` per database — with one lesson that survives the details: the rights that live *outside* a single database's dump (database-level connect grants, default privileges) do not travel, so re-establish them for the roles the new cluster actually uses, and distrust a quiet boot — a lazily-pooled service hides a missing grant until its first query.
+
+### Polyglot persistence
+
+Postgres is the default store, and everything in this reference assumes it. A module whose access pattern is genuinely a different shape — a document whose fields vary per record, a key-value lookup at a rate one table cannot serve, full-text search, a time series, a graph — may own a different store, and that is a per-module choice made from a measured pattern, never per entity and never from taste. The ownership rule does not change: the module owns that store's data the way it would own tables, migrates or provisions it, and nothing else reads it.
+
+How it maps onto the grammar:
+
+- `Persistence`'s `Database<Scope>` knows nothing of Postgres; a transactional store gets its own driver package in the shape of swift-persistence-postgres (`swift-persistence-<store>`, a `<Store>Database<Scope>` that opens the store's unit of work and hands the scope repositories a handle), and the use cases are unchanged.
+- A store without transactions gets no `Database` at all: the use case declares a repository port in Core, the `<Module><Technology>` target adapts the SDK, and the use case's unit of work is one call. Say so in the use case: a multi-step write to such a store needs an idempotency key on every step.
+- **One store is the truth for an entity.** The second store, a search index or a document view, is a projection fed through the outbox (the designing skill's events reference) or a cache (*Caching* below), rebuildable from the owner, never written in the same code path as the primary write.
+- **Tenant isolation is per store.** Row-level security is Postgres's; a tenant-scoped store elsewhere isolates by a key prefix, a partition, or a per-tenant collection, chosen once and named in the store's adapter, and the use case's authorization guard is the same either way.
+- **No cross-store transaction.** A write that must reach two stores is a saga: the owner writes, publishes, and the consumer applies idempotently, with compensation where the second write can fail for good.
 
 A service owns the whole database. Use unqualified names such as `items`, not `<service>.items`, and do not create a service-named schema.
 
