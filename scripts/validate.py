@@ -16,7 +16,7 @@ RETIRED = [
     "ServerTokenAuthenticationInterceptor", "ServerPeerAuthenticationInterceptor",
     "ClientTokenPropagationInterceptor", "TokenAuthenticationMiddleware", "MockTokenVerifier",
     "PostgresPersistence", "GRPCAuthentication", "GRPCNIOTransportAuthentication", "HTTPAuthentication",
-    "UserAuthenticationContext", "PeerAuthenticationContext", "app.caller_role",
+    "UserAuthenticationContext", "PeerAuthenticationContext",
 ]
 LINK = re.compile(r"\]\(([^)#]+)(?:#[^)]*)?\)")
 failures = []

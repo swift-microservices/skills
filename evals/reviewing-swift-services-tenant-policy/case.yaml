@@ -1,5 +1,5 @@
 schema_version: "1.1"
-name: reviewing-swift-services-role-policy
+name: reviewing-swift-services-tenant-policy
 tags: [reviewing]
 context:
   scaffold_script: scaffold.sh

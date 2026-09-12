@@ -67,7 +67,7 @@ Review progress:
 **3. Persistence** — read `Sources/<Service>Postgres` and the migration list.
 - The first registered migration is `CreateServiceRole`; a tenant service registers `CreateInternalRole`, a service with a worker `CreateWorkerRole`; no role has `BYPASSRLS` (`grep -rn BYPASSRLS Sources`).
 - Every table's identifier is `UUID PRIMARY KEY DEFAULT uuidv7()`; dates are nouns (`creation_date`, not `created_at`; `creationDate`, not `createdAt`). Evidence: `grep -rn "_at\b\|At:" Sources`.
-- Every policy is the tenant predicate on `app.caller_user_id` and nothing else. Evidence: `grep -rn "CREATE POLICY" -A 3 Sources/<Service>Postgres/Migrations`. A predicate that reads any other `current_setting` (a role, a scope), that lists an administrator or a process role, or that the internal and worker roles do not get their own `TO "<role>" USING (true)` version of, is blocking.
+- Every table whose rows belong to users has a tenant-isolation policy on `app.caller_user_id`, in both `USING` and `WITH CHECK`, and the internal and worker roles get their own `TO "<role>" USING (true)` version. Evidence: `grep -rn "CREATE POLICY" -A 3 Sources/<Service>Postgres/Migrations`. A tenant table with no policy, a policy without `WITH CHECK`, or a predicate that admits rows beyond the caller's own, is blocking.
 - One scope type per database role, each conforming to `PostgresScope` and to the use-case scopes it admits. Evidence: `Sources/<Service>Postgres/Scopes`.
 - Statements are `PostgresPreparedStatement` values in `Statements/<Entity>`; repositories translate `PSQLError` and SQLSTATE into `XRepositoryError`, naming the constraint that exists. A `PSQLError` reaching Core is a finding.
 - A retryable create has a unique idempotency key enforced by the database with `ON CONFLICT`, and a state transition is guarded in `WHERE`. Evidence: the statement SQL.
@@ -81,7 +81,7 @@ Review progress:
 - UUIDs are lowercased on the wire. Generated messages appear only in this target and consumer adapters.
 
 **5. Identity and access** — read `Serve.swift` and the manifest.
-- Verification uses `JWTAuthenticator<UserIdentity>(publicKey:)`; only the authenticating service builds `JWTIssuer<UserIdentity>(privateKey:)`. A shared HMAC secret, a private key outside the authenticating service, or a key read from an environment variable rather than a path, is blocking.
+- Verification uses `JWTAuthenticator<UserIdentity>(publicKey:)`; only the authenticating service builds `JWTIssuer<UserIdentity>(privateKey:)`. A symmetric secret shared between processes, a private key outside the authenticating service, or a key read from an environment variable rather than a path, is blocking; a symmetric key inside a single-process monolith is not a finding.
 - `BearerAuthenticationInterceptor` is applied to the user service, then `UserSettingsInterceptor` on a tenant service, `CertificateAuthenticationInterceptor(authenticator: ServiceAuthenticator())` to the internal service, nothing to the public service, each with `.apply(_, to: .services([descriptor]))`. Evidence: `interceptorPipeline:`. An interceptor on the public service, a per-method exclusion list, or a settings interceptor before the bearer interceptor, is a finding.
 - Outgoing clients carry `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors alone; a client that speaks as the process carries no interceptor and no token.
 - No `@TaskLocal` carries a caller (`grep -rn "@TaskLocal" Sources`). The logging bootstrap passes `.user`, and `.service` where processes are admitted.

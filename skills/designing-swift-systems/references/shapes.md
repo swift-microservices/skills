@@ -61,7 +61,7 @@ A monolith owns one database, and each module owns its tables inside it: unquali
 
 Roles are per process, so the monolith has one set: `<project>_service`, created by `CreateServiceRole` as the first migration; `<project>_internal`, created by `CreateInternalRole`, when any module has tenant tables; `<project>_worker` with Temporal. Each module's Postgres target exposes its migrations as an ordered list; the composition root registers the role migrations first, then every module's list in module dependency order, and runs them at boot behind `serve --migrate-database`.
 
-Row-level security is the same in both shapes: tenant isolation and nothing more. Every policy on a table whose rows belong to users is `user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid`, no role appears in a policy, and the internal role has its own `USING (true)` policy. Scopes are per role per module (`PostgresCatalogScope`, `PostgresCatalogInternalScope`), so which scope adopts a use case's scope protocol decides which database the use case may run on.
+Row-level security is the same in both shapes, and its main concern is tenant isolation: the policy on a table whose rows belong to users is `user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid`, what the caller may do stays in the use case, and the internal role has its own `USING (true)` policy. Scopes are per role per module (`PostgresCatalogScope`, `PostgresCatalogInternalScope`), so which scope adopts a use case's scope protocol decides which database the use case may run on.
 
 ## The transport
 

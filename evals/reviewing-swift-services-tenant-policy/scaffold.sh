@@ -116,8 +116,7 @@ package struct CreateNotesRLSPolicy: DatabaseMigration {
         try await connection.query(
             """
             CREATE POLICY notes_tenant ON notes
-                USING (user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid OR current_setting('app.caller_role', true) IN ('admin', 'service'))
-                WITH CHECK (user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid OR current_setting('app.caller_role', true) IN ('admin', 'service'))
+                USING (user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid)
             """,
             logger: logger
         )

@@ -59,11 +59,11 @@ swift package unedit <project>-core
 
 Edit mode needs a resolvable graph to enter and to leave. When the consumer's manifest already names a tag that does not exist yet, resolution fails and `edit` refuses. Temporarily rewrite the `.package(url:from:)` line to `.package(path:)`, build, and restore it; `swift package unedit` fails the same way, so revert the constraint, unedit, `git checkout -- Package.resolved`, then re-apply the constraint. Moving a tag after consumers resolved it invalidates SwiftPM's fingerprint store on every machine that resolved the old one; the fix is deleting `~/.swiftpm/security/fingerprints/<package>-*.json`, and the lesson is to move tags only before anything depends on them.
 
-## One issuer, asymmetric keys
+## One issuer, and the key that fits the shape
 
-Sign with EdDSA (Ed25519). The service that authenticates users holds the private key and is the only service that can mint a token; every other service is configured with the public key, which verifies a token but cannot produce one.
+There is one issuer of user tokens. Across processes, sign with an asymmetric key, EdDSA (Ed25519): the service that authenticates users holds the private key and is the only process that can mint a token; every other process is configured with the public key, which verifies a token but cannot produce one. A symmetric key would make every verifier a potential issuer, which is the distinction a distributed system depends on. Key distribution, not a target boundary, is what keeps a single issuer: a process holding only the public key cannot build an issuer even when the issuer type is in scope.
 
-Never use a shared HMAC secret. A symmetric key makes every service that can verify a token also able to forge one, which erases the distinction the architecture depends on. Key distribution, not a target boundary, is what keeps a single issuer: a service holding only the public key cannot build an issuer even when the issuer type is in scope.
+A monolith mints and verifies in the same process, so nothing is gained by splitting the key: a symmetric key (HMAC) through the same `JWTKeyCollection` is fine there, and the swap to an asymmetric pair is a configuration change on the day a second process starts verifying.
 
 ## The user identity
 
@@ -95,7 +95,7 @@ public struct UserRole: RawRepresentable, Hashable, Codable, ExpressibleByString
 
 One type, no wire twin, no converting initializer. The subject is a `UUID` keyed to `sub`, so a token whose subject is not a user id fails to decode and never reaches a handler as an identity with no user in it; there is no other kind of token-bearing caller (see *Processes* below). The cost is that jwt-kit is linked wherever `UserIdentity` is, every Core included. That is accepted: the claims type is the identity, and nothing that signs or verifies comes with it.
 
-`UserRole` is an open string, not an enum. An authenticator that meets a role it has no name for decodes it and grants it nothing, rather than refusing the whole token — so adding a role breaks no consumer, only the checks meant to admit it. There is no `service` role: a process is not proved by a token.
+`UserRole` is an open string, not an enum. An authenticator that meets a role it has no name for decodes it and grants it nothing, rather than refusing the whole token — so adding a role breaks no consumer, only the checks meant to admit it. A process is proved by its certificate, not by a token.
 
 ## What belongs in the token
 

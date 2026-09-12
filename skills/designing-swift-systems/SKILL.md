@@ -70,7 +70,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 
 20. Terminate public TLS at the ingress or gateway; keep every internal gRPC connection mutually authenticated with the stack's CA; keep internal ports off the public ingress.
 21. Model process identity as a certificate (`ServiceIdentity`) and user identity as a token (`UserIdentity`). In a monolith, verify the token once at the transport. In microservices, verify it at the gateway and again at every service that receives it, with the issuer's public key; forward it unchanged with `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors alone; reach internal services by certificate; never trust an identity a caller asserts in metadata, and never mint a credential on a user's behalf.
-22. Authorize inside the owning use case. Keep secrets as mounted files configured by path; connect as least-privilege database roles, one set per process; confine user-owned rows with tenant-isolation policies on `app.caller_user_id` and nothing else in a policy, in both shapes.
+22. Authorize inside the owning use case. Keep secrets as mounted files configured by path; connect as least-privilege database roles, one set per process; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, in both shapes, and keep what a caller may do in the use case.
 23. Establish structured logs with a service label and correlation id shipped in-process to one aggregator, request and error rates and latency per operation, pool and migration health, and graceful shutdown in every process.
 
 ### Turning a module into a service

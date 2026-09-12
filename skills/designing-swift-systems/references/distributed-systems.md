@@ -122,7 +122,7 @@ Identify public, private, administrative, and data-sensitive boundaries. Keep in
 - Keep secrets as mounted files configured by path, never in source control or environment variables.
 - Mark secret configuration values with `isSecret: true`.
 - Avoid logging tokens, credentials, sensitive payloads, or raw database errors.
-- Connect as a least-privilege database role; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, and nothing else in a policy.
+- Connect as a least-privilege database role; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`; what a caller may do is the use case's decision.
 
 ## Identity across processes
 
