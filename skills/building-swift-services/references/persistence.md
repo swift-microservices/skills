@@ -250,6 +250,8 @@ Because the migration library refuses a reordered list, a service that adopts th
 
 ## Row-level security
 
+Row-level security is the default where more than one end user owns rows in one database, and it is not universal. A single-tenant application, an internal tool, a module whose tables are reference data or the application's own bookkeeping, or a deployment per customer (isolation by database, the strongest form) has no policies, one service role, one scope, and no settings interceptor or middleware; the decision record says so, and the rest of this section does not apply. Where the tenant is an organization rather than a user, everything below holds with the organization's id in the setting and the predicate, and the org layer's `PostgresSettings` helper carries that id instead.
+
 When a service's rows belong to users — a user's documents, a user's devices, a customer's purchases — confine callers in Postgres, not in the statements. Restating the rule as a scope bound into every query is the same predicate maintained twice, and the copy in the statements is the one that drifts. The rule exists once, as policies; the service tells the database who is calling.
 
 **Row-level security's main concern is tenant isolation.** The tenant is the user, so the policy on a tenant table is one predicate on one setting, in both `USING` and `WITH CHECK`, so a caller can neither read nor write another tenant's rows:
