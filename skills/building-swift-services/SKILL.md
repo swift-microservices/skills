@@ -47,7 +47,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 11. **Share the machinery by tag; duplicate the wiring.** The transaction boundary, the interceptors and middleware, the identities, and the test doubles come from the packages. Configuration, composition roots, transport-security factories, scopes, and mock repositories are eight lines a package owns.
 12. **Translate an error only where the translation adds information.** Let a cause propagate and classify it where the distinction is actionable.
 13. **Fail at startup, not at the first request.** Required configuration, key files, and certificates are checked before the process serves.
-14. **Concurrency is checked by the compiler, not by convention.** Every package builds in Swift 6 language mode with strict concurrency and no diagnostic silenced to get there. A server holds one process open for every caller at once, so a data race here is a production incident rather than a flicker, and the language is the only thing that can rule one out ahead of time.
+14. **Concurrency is structured, and checked by the compiler rather than by convention.** Every package builds in Swift 6 language mode with strict concurrency and no diagnostic silenced to get there. A server holds one process open for every caller at once, so a data race here is a production incident rather than a flicker, and the language is the only thing that can rule one out ahead of time. Structure is the same argument applied to lifetime: a task that lives inside a scope is one the compiler can see the end of, one cancellation reaches, and one that cannot outlive the request that started it. A detached task has none of those properties and needs a stated reason.
 
 ## Rules
 
