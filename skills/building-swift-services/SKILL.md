@@ -20,6 +20,7 @@ Read the reference that owns a topic before touching that topic. Each topic has 
 | --- | --- |
 | Every task | [architecture.md](references/architecture.md) — the two shapes, the module grammar, target graphs, movability, boundary and ownership rules |
 | Creating or editing Swift | [swift-style.md](references/swift-style.md) |
+| Anything touching tasks, actors, `Sendable`, isolation, or a data-race diagnostic | the `swift-concurrency` skill, [AvdLee/Swift-Concurrency-Agent-Skill](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill) — install it; this skill does not restate it |
 | Creating or reshaping a package, manifest, or dependency set | [service-package.md](references/service-package.md) — monolith, service, and gateway manifests |
 | Entities, commands, repositories, scopes, use cases, policies, logging, cross-module protocols | [core.md](references/core.md) |
 | Scopes, statements, transactions, identifiers, idempotency, migrations, the roles, row-level security, one database for many modules | [persistence.md](references/persistence.md) |
@@ -46,6 +47,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 11. **Share the machinery by tag; duplicate the wiring.** The transaction boundary, the interceptors and middleware, the identities, and the test doubles come from the packages. Configuration, composition roots, transport-security factories, scopes, and mock repositories are eight lines a package owns.
 12. **Translate an error only where the translation adds information.** Let a cause propagate and classify it where the distinction is actionable.
 13. **Fail at startup, not at the first request.** Required configuration, key files, and certificates are checked before the process serves.
+14. **Concurrency is checked by the compiler, not by convention.** Every package builds in Swift 6 language mode with strict concurrency and no diagnostic silenced to get there. A server holds one process open for every caller at once, so a data race here is a production incident rather than a flicker, and the language is the only thing that can rule one out ahead of time.
 
 ## Rules
 
@@ -65,6 +67,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 ### Core
 
 11. Model entities and commands as immutable `Sendable` structs. Start with primitive values; introduce a value object only for an established invariant or behavior.
+12. Follow the Swift Concurrency guidelines, which are the `swift-concurrency` skill's ([AvdLee/Swift-Concurrency-Agent-Skill](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill)); load it for any task that touches tasks, actors, isolation, `Sendable`, or a data-race diagnostic. It is not optional and this skill does not repeat it. What is settled here regardless: Swift 6 language mode in every package with strict concurrency on; an actor, or `Mutex`, for shared mutable state, never a semaphore or an ad-hoc lock in an async context; `@unchecked Sendable` only with a comment stating what guarantees the safety, never to quiet a diagnostic; structured concurrency and a task group over a detached task; one `ServiceGroup` owning every long-lived task; and cancellation honoured in anything long-running, which on a server means every worker loop and every stream.
 12. Apply a fixed invariant as a `guard` at the top of the use case, before any I/O, throwing the use case's own typed error. Keep a rule that carries product-set values as a plain `XPolicy` struct, never a protocol, never injected. Name a duration `expiration`.
 13. Keep every business decision in the use case. A `<Module><Technology>` adapter translates one Core call into one SDK call and back; it never decides whether something applies.
 14. Do not inject a concrete collaborator that has no protocol. A policy is not a collaborator: it is a value the composition root builds from configuration, with a `.standard` default for tests.
@@ -177,7 +180,7 @@ For a focused change, load only the references the change touches and preserve t
 
 Do not call work complete until every applicable gate passes.
 
-- Every package builds in Swift 6 language mode with `swift build`, and every `<Module>CoreTests` passes with `swift test` and no infrastructure.
+- Every package builds in Swift 6 language mode with `swift build` and no concurrency diagnostic silenced rather than resolved, and every `<Module>CoreTests` passes with `swift test` and no infrastructure.
 - No module imports another module's Core, Postgres, HTTP, or GRPC target; every cross-module dependency is a protocol in the consumer's Core, satisfied in the composition root.
 - Generated protobuf types appear only in GRPC targets and consumer adapters; generated OpenAPI types only in HTTP targets; Postgres types only in Postgres targets and the executable.
 - Every use case runs through `withTransaction`; no package declares a `Database`, `PostgresDatabase`, `PostgresScope`, `MockDatabase`, or `PostgresClient.withClient` of its own.

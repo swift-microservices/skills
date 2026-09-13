@@ -1,5 +1,13 @@
 # Swift and repository style
 
+## Contents
+
+- File form
+- Layout
+- Access and concurrency
+- APIs and errors
+- Formatting verification
+
 Match existing files before applying these defaults. Preserve user-authored formatting in unrelated code.
 
 ## File form
@@ -63,6 +71,12 @@ Do not use `T : Sendable` or move the constraint to a trailing `where` unless th
 - Make protocols and values crossing concurrency boundaries `Sendable`.
 - Use actors for mutable in-memory state such as an in-memory repository or a token session.
 - Mark database operation closures `@Sendable`.
+- Reach for `@unchecked Sendable` only with a comment saying what makes it safe. Silencing a diagnostic is not a reason, and on a server the race it hides is concurrent by default.
+- Use structured concurrency: a task group, and `ServiceGroup` for anything long-lived. A detached task that nothing owns outlives the request that made it and ignores cancellation.
+- Honour cancellation wherever work can run long, which on a server is every worker loop and every stream.
+- Never a semaphore or an ad-hoc lock inside an async context. An actor or `Mutex` states the ownership the lock only implies.
+
+The rest of Swift Concurrency is the `swift-concurrency` skill's subject ([AvdLee/Swift-Concurrency-Agent-Skill](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill)), and following it is required rather than advisory. Load it before changing anything isolation-shaped instead of guessing from the diagnostic.
 - Prefer immutable `let` properties.
 
 ## APIs and errors
