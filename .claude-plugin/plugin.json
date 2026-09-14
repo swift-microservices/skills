@@ -1,7 +1,7 @@
 {
   "name": "swift-microservices",
   "description": "Design, build, orchestrate, deliver, and review Swift systems on the swift-microservices packages: modular monoliths or microservices, over HTTP, gRPC, or both, with Postgres row-level security.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": {
     "name": "Zaid Rahhawi"
   },
