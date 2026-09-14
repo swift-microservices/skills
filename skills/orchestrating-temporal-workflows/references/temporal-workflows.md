@@ -6,6 +6,7 @@ Use this reference whenever a service adds or changes Temporal Workflows, Activi
 
 - Module boundaries
 - Workflow design
+- Payloads
 - Activity design and retries
 - Workflow clients
 - Transactions and durability
@@ -25,14 +26,14 @@ Add `<Service>Workflows` only when a capability requires durable waiting, retrie
 Keep these types in Core:
 
 - workflow-client protocols used by use cases;
-- workflow state and result values;
+- workflow state and result values, which are payloads and therefore `Codable`;
 - Activity service protocols and their typed errors;
-- domain inputs and outputs used by Activities.
+- the domain values those protocols take and return, which are not payloads.
 
 Keep these types in `<Service>Workflows`:
 
 - `@Workflow` definitions;
-- `@ActivityContainer` definitions;
+- `@ActivityContainer` definitions, with every Activity input and output nested under them;
 - `TemporalXWorkflowClient` adapters;
 - Temporal-specific options and error translation.
 
@@ -65,9 +66,105 @@ package struct ReservationWorkflow {
 }
 ```
 
-Keep Workflow input nested under the Workflow. Make all values crossing Temporal boundaries `Codable` and `Sendable`. Return an `XWorkflowResult`, not a bare UUID or other scalar. Keep workflow state `.inProgress` until an Activity establishes a definitive `.completed`, `.expired`, or feature-specific terminal outcome. Do not add states that do not affect behavior.
+Keep Workflow input nested under the Workflow. Return an `XWorkflowResult`, not a bare UUID or other scalar. Keep workflow state `.inProgress` until an Activity establishes a definitive `.completed`, `.expired`, or feature-specific terminal outcome. Do not add states that do not affect behavior.
 
 Set terminal workflow state only after the corresponding Activity succeeds. Let cancellation and Activity failures propagate instead of reporting a terminal outcome prematurely.
+
+## Payloads
+
+A payload is any value Temporal carries: Workflow input and result, Activity input and output, signal, query, and update input and output. Temporal converts each one to JSON, writes it into the Workflow's history, and decodes it again every time the Workflow replays. That makes a payload a stored contract, not an in-memory argument.
+
+### Every payload is Codable
+
+Make every payload, and every type it holds, `Codable` and `Sendable`. The compiler does not enforce the first half. The SDK's definitions constrain `Input` and `Output` to `Sendable` alone, and `JSONPayloadConverter` checks for `Encodable` and `Decodable` with a runtime cast. A payload type without `Codable` builds, ships, and then fails the first Workflow that converts it:
+
+```text
+value of type 'Reservation' does not conform to 'Encodable'
+```
+
+An Activity that returns such a type fails on every attempt, and depending on its retry policy the Workflow either fails or waits at that step indefinitely. Never remove `Codable` from a type because the build still passes; find out first whether it crosses Temporal.
+
+### Where a payload lives
+
+| Payload | Declared | Why |
+| --- | --- | --- |
+| Workflow `Input`, and signal, query, and update inputs | Nested under the `@Workflow` | Only the Workflow and its client adapter construct them |
+| Activity inputs and outputs | Nested under the `@ActivityContainer` | Only the Workflow and the Activity read them |
+| `XWorkflowState`, `XWorkflowResult`, and the types they hold | Core | The Core `XWorkflowClient` port returns them to use cases |
+| A scalar such as `UUID`, `String`, `Bool`, or an optional of one | Nowhere | It is already `Codable` |
+
+Nesting is the default. A payload moves to Core only when a Core port hands it to a use case, and Core declares it `Codable` without importing Temporal.
+
+### Never a domain model
+
+An Activity service port takes and returns Core types, because the use cases behind it do. The Activity does not pass those types through. It maps the port's return value into a nested output that holds only the fields the Workflow reads:
+
+```swift
+@ActivityContainer
+package struct ReservationActivities {
+    private let service: any ReservationActivityServiceProtocol
+
+    package struct ConfirmInput: Codable, Sendable {
+        package let reservationId: UUID
+    }
+
+    package struct Confirmation: Codable, Sendable {
+        package let orderId: UUID
+
+        package init(orderId: UUID) {
+            self.orderId = orderId
+        }
+    }
+
+    @Activity
+    package func confirm(input: ConfirmInput) async throws -> Confirmation {
+        let order = try await service.confirm(reservationId: input.reservationId)
+        return Confirmation(orderId: order.id)
+    }
+}
+```
+
+Returning `Order` itself would cost three things:
+
+- **Replay breaks when the model changes.** A required field added to `Order` for an unrelated use case no longer decodes from histories that are still running.
+- **History keeps data nobody reads.** Names, email addresses, and roles persist in Temporal for its retention period when the Workflow needed an id.
+- **`Codable` spreads across Core.** Every entity an Activity touches has to keep a conformance nothing in Core uses, which invites the removal described above.
+
+### Changing a payload
+
+A running Workflow replays its recorded payloads into the type the new worker was built with. `JSONDecoder` ignores keys it does not know and rejects a missing non-optional key or an unknown enum case. So:
+
+- add a field as an optional, or give it a default in a custom `init(from:)`;
+- removing a field is safe, and renaming one is a removal plus a required addition, which is not;
+- never remove or rename an enum case, or change its associated values, while a history may still hold it;
+- a change that cannot follow these rules waits until every Workflow started under the old shape has closed, or ships behind `context.patch(_:)` so replayed histories keep the old path.
+
+The default converter encodes a `Date` as ISO-8601 at whole-second precision. A date that crossed Temporal is not equal to the one that went in, so never compare the two for equality or use a round-tripped date as a key.
+
+### Proving it
+
+Round-trip a representative value of every payload through `DataConverter.default` in `<Service>WorkflowsTests`. It is the only check that fails before a Workflow does:
+
+```swift
+import CatalogWorkflows
+import Temporal
+import Testing
+
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
+
+struct PayloadTests {
+    @Test func confirmationRoundTrips() async throws {
+        let value = ReservationActivities.Confirmation(orderId: UUID())
+        let payload = try await DataConverter.default.convertValue(value)
+        let decoded = try await DataConverter.default.convertPayload(payload, as: ReservationActivities.Confirmation.self)
+        #expect(decoded.orderId == value.orderId)
+    }
+}
+```
 
 ## Activity design and retries
 
@@ -90,14 +187,19 @@ package struct ReservationActivities {
         package let reservationId: UUID
     }
 
+    package struct Reserved: Codable, Sendable {
+        package let expirationDate: Date
+    }
+
     @Activity
-    package func reserve(input: ReserveInput) async throws -> Reservation {
-        try await service.reserve(reservationId: input.reservationId)
+    package func reserve(input: ReserveInput) async throws -> Reserved {
+        let reservation = try await service.reserve(reservationId: input.reservationId)
+        return Reserved(expirationDate: reservation.expirationDate)
     }
 }
 ```
 
-Nest Activity input values under the container. Use `Id`, not `ID`, and noun-based date names, as everywhere else.
+Nest Activity input and output values under the container, as *Payloads* describes. Use `Id`, not `ID`, and noun-based date names, as everywhere else.
 
 Assume every Activity can be retried after its side effect succeeds but before Temporal receives the result. Make each write retry-safe at the system that owns the side effect: unique constraints for creates, compare-and-swap updates for transitions, provider idempotency keys for email, payments, or messaging. Do not rely on Workflow fields, Activity memory, or Temporal history as the downstream idempotency mechanism.
 
@@ -255,4 +357,4 @@ Sources/<Service>Workflows/<Feature>/
   Temporal<Feature>WorkflowClient.swift
 ```
 
-Use `package` access across targets, `private` mutable Workflow fields, nested `Input` values, and nested Activity input values. Preserve the conditional Foundation imports and import ordering. Name identifiers `xId`, Workflow types `XWorkflow`, Activity containers `XActivities`, Core ports `XWorkflowClient`, and Temporal implementations `TemporalXWorkflowClient`.
+Use `package` access across targets, `private` mutable Workflow fields, nested `Input` values, and nested Activity input and output values. Preserve the conditional Foundation imports and import ordering. Name identifiers `xId`, Workflow types `XWorkflow`, Activity containers `XActivities`, Core ports `XWorkflowClient`, and Temporal implementations `TemporalXWorkflowClient`.
