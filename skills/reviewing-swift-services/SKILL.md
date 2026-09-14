@@ -59,6 +59,7 @@ Review progress:
 
 **2. Core** — read `Sources/<Service>Core`.
 - Entities and commands are immutable `Sendable` structs; a create command carries no identifier and no persistence-stamped date. Evidence: `grep -rn "let id" Sources/<Service>Core/**/Commands`.
+- A Core type is `Codable` only when something encodes it, usually the workflow state and result a workflow-client port returns. Evidence: `grep -rn "Codable\|Encodable\|Decodable" Sources/<Service>Core`; a conformance with no encoder, decoder, or Temporal port behind it is a finding.
 - Each use case is generic over `DatabaseType` with `DatabaseType.Scope: XUseCaseScope`, exposes an `XUseCaseProtocol`, and uses typed throws. Evidence: the use case's declaration line.
 - The identity is in the signature: `input:` alone, `subject: UserIdentity, input:`, or `service: ServiceIdentity, input:`. A use case that reads `ServiceContext` is a finding; so is a parameter named for a retired payload type.
 - Authorization is a `guard` at the top of the body throwing the use case's own `.forbidden`; fixed invariants are guards before any I/O. A validator type with an error-mapping initializer, or an injected concrete collaborator with no protocol, is a finding.
@@ -79,7 +80,7 @@ Review progress:
 **4. Contracts and transport** — read `Sources/<Service>GRPC` and the proto dependency.
 - Canonical protos have one home: `<project>-protos` by tag in microservices, with no `.proto` in a service; `Sources/<Module>GRPC/Protos/` with the generator plugin in a gRPC monolith. A `.proto` duplicated in a second package is a finding.
 - The contract is split by audience: `<Entity>PublicService`, `<Entity>Service`, `<Entity>InternalService`, one conformance each at the feature root, holding only that audience's use cases.
-- Conversions live in the feature's `Protobuf/` directory as `X+Protobuf.swift`; transport validation (UUID parsing, enum recognition) happens in the conversion initializer; `.unspecified` and `.UNRECOGNIZED` are refused, not defaulted.
+- Conversions live in the feature's `Protobuf/` directory as `X+Protobuf.swift`, as initializers on the destination type or inline construction in the one method that needs it; transport validation (UUID parsing, enum recognition) happens in the conversion initializer; `.unspecified` and `.UNRECOGNIZED` are refused, not defaulted. A conversion written as a computed property or a `toX()` method is a finding. Evidence: `grep -rn "var proto\|var message\|var response\|func to[A-Z]" Sources`.
 - Each handler on the user or internal service first requires its identity from `ServiceContext` with a private guard answering `.unauthenticated`, then maps use-case failures to stable codes: `.forbidden` to `permissionDenied`, not found to `notFound`, `.unknown` to `internalError`. A handler that decides authorization itself is blocking.
 - UUIDs are lowercased on the wire. Generated messages appear only in this target and consumer adapters.
 

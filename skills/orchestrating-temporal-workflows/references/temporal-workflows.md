@@ -124,6 +124,28 @@ package struct ReservationActivities {
 }
 ```
 
+The same holds for a value inside a payload. An input that records a status does not hold Core's status enum: it nests its own, with the cases the Workflow records and the raw values the Core type encodes, and the Activity maps it with an initializer:
+
+```swift
+package struct RecordInput: Codable, Sendable {
+    package let status: Status
+
+    package enum Status: String, Codable, Sendable {
+        case active
+        case billingRetry = "billing_retry"
+    }
+}
+
+extension OrderStatus {
+    fileprivate init(_ status: ReservationActivities.RecordInput.Status) {
+        switch status {
+        case .active: self = .active
+        case .billingRetry: self = .billingRetry
+        }
+    }
+}
+```
+
 Returning `Order` itself would cost three things:
 
 - **Replay breaks when the model changes.** A required field added to `Order` for an unrelated use case no longer decodes from histories that are still running.

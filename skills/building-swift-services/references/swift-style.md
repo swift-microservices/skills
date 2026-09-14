@@ -6,6 +6,7 @@
 - Layout
 - Access and concurrency
 - APIs and errors
+- Conformances and conversions
 - Formatting verification
 
 Match existing files before applying these defaults. Preserve user-authored formatting in unrelated code.
@@ -87,6 +88,33 @@ The rest of Swift Concurrency is the `swift-concurrency` skill's subject ([AvdLe
 - End with a deliberate catch-all mapping when the public typed error includes `.unknown`, and log the cause there with `String(reflecting:)`.
 - Never declare a constant and assign it inside a following block — `let x: X` then `do { x = try … }`. Produce the value where it is declared: `guard let x = try? …` when every failure maps to one typed error, a private helper owning the do/catch when different failures map to different errors, or the value returned from the transaction closure.
 - Log through the `swift-log` facade only: domain events in use cases (see [core.md](core.md)), request and infrastructure events at transport and composition boundaries. Never construct a log handler outside the composition root.
+
+## Conformances and conversions
+
+`Codable` is a conformance a type earns by being encoded, not a default. Give it to a type only when something converts that type to or from a serialized form:
+
+- a Temporal payload, and every type it holds;
+- a JSON body the process writes or reads, such as a problem document or a provider's webhook;
+- a token's claims;
+- a value written to a cache.
+
+An entity, command, value object, or enum in Core has none of those by default. Protobuf conversions build messages field by field, and Postgres rows go through `PostgresEncodable` and `PostgresDecodable`, so neither needs `Codable`. Each synthesised conformance is an `encode(to:)` and an `init(from:)` the compiler generates and type-checks on every build, for every type that declares it. A conformance nothing uses also invites passing the type somewhere it becomes a stored contract, which is how a domain model ends up in a workflow's history. Use `Encodable` alone for a value that is only written.
+
+Removing a conformance needs one check the compiler cannot make: whether the type crosses Temporal, whose converter checks `Codable` at runtime. The orchestrating-temporal-workflows skill's payload tests are that check.
+
+Convert between types with an initializer on the destination type, in an extension beside the adapter that uses it:
+
+```swift
+extension <Organization>_Catalog_V1_Item {
+    init(item: Item) {
+        self.init()
+        self.id = item.id.uuidString.lowercased()
+        self.name = item.name
+    }
+}
+```
+
+Construct the value inline instead when one method builds it once and nothing else ever will. Never convert with a computed property on the source, `var proto: <Organization>_Catalog_V1_Item`, or a `toProto()` method: the destination then has conversions scattered across every type that can become it, a throwing conversion hides behind property syntax, and the source learns every representation it is turned into. A configuration that picks a role or reads a secret on demand is not a conversion, and stays a property.
 
 ## Formatting verification
 
