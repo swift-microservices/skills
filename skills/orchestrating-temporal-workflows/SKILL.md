@@ -16,7 +16,7 @@ Rules in this skill are conventions the packages and the shared code shape depen
 
 | Task | Read |
 | --- | --- |
-| Every task | [temporal-workflows.md](references/temporal-workflows.md) — read in full: module boundaries, Workflow and Activity design, clients, transactions, signals and queries, timers, worker composition, naming |
+| Every task | [temporal-workflows.md](references/temporal-workflows.md) — read in full: module boundaries, Workflow and Activity design, payloads, clients, transactions, signals and queries, timers, worker composition, testing, naming |
 
 The service package, its roles, and its composition root are the building-swift-services skill's; identity and the certificate a worker presents are described there too. Load that skill beside this one when the change touches Core, Postgres, or `serve`.
 
@@ -50,33 +50,39 @@ The service package, its roles, and its composition root are the building-swift-
 9. A payload lives in Core only when a Core port returns it to a use case: `XWorkflowState`, which the client's query returns, `XWorkflowResult`, and the types they hold. Core declares them `Codable` without importing Temporal, and no other Core type is `Codable` on Temporal's account.
 10. Never pass a Core entity or domain model as an Activity input or output. The Activity maps what the service port returns into its nested output and keeps only the fields the Workflow reads. A Core enum a payload needs is mirrored as a nested enum with the same raw values and mapped by an initializer, never borrowed. History then holds no data the Workflow never uses, and a change to the model cannot break the replay of a running Workflow.
 11. Change a payload the way a wire format changes: add a field as an optional, never rename or remove a non-optional one, and never remove an enum case that a running history may hold. Running Workflows replay their recorded payloads into the new type.
-12. Prove each payload converts: a `<Service>WorkflowsTests` test round-trips a representative value through `DataConverter.default`.
 
 ### Activities
 
-13. Put every external side effect in an Activity, one side effect each. Minting a secret and delivering it are two Activities; deleting it is a third.
-14. Derive a stable, namespaced idempotency key from immutable Workflow input or a caller-owned pending-record id, such as `<service>-<process>-<recordId>`, and reuse it on every attempt. Never mint a UUID in Workflow code or per retry, and never preallocate another service's entity identifier: pass the caller-owned id, receive the owner's generated id from the Activity, persist it retry-safely.
-15. Configure explicit timeouts and retries. Leave dependency outages retryable; translate invalid state, conflicting canonical input, and permanent consistency failures to non-retryable `ApplicationError` at the Activity boundary. Do not inspect `ApplicationError.type` strings in Workflow code.
-16. Give an Activity a distinct registration name with `@Activity(name:)` whenever two containers on one worker would otherwise share a method name; watch the worker log for `Duplicate activity registration`.
-17. Group a feature's Activities in one `@ActivityContainer` that takes one narrow Core service protocol.
+12. Put every external side effect in an Activity, one side effect each. Minting a secret and delivering it are two Activities; deleting it is a third.
+13. Derive a stable, namespaced idempotency key from immutable Workflow input or a caller-owned pending-record id, such as `<service>-<process>-<recordId>`, and reuse it on every attempt. Never mint a UUID in Workflow code or per retry, and never preallocate another service's entity identifier: pass the caller-owned id, receive the owner's generated id from the Activity, persist it retry-safely.
+14. Configure explicit timeouts and retries. Leave dependency outages retryable; translate invalid state, conflicting canonical input, and permanent consistency failures to non-retryable `ApplicationError` at the Activity boundary. Do not inspect `ApplicationError.type` strings in Workflow code.
+15. Give an Activity a distinct registration name with `@Activity(name:)` whenever two containers on one worker would otherwise share a method name; watch the worker log for `Duplicate activity registration`.
+16. Group a feature's Activities in one `@ActivityContainer` that takes one narrow Core service protocol.
 
 ### Clients, transactions, signals, queries, timers
 
-18. Define the client protocol in Core and implement it as `TemporalXWorkflowClient` in Workflows, holding only the long-lived `TemporalClient` and the task queue.
-19. Derive the workflow ID from the immutable domain identifier, `<service>-<feature>-<id>`, and start with `idReusePolicy: .rejectDuplicate` and `idConflictPolicy: .useExisting`. Do not catch `WorkflowAlreadyStartedError` on top of them.
-20. Commit local database work first, then start or signal. Never call Temporal inside `withTransaction`. Keep start and signal distinct; no signal-with-start, no resume-from-database, no periodic reconciler unless the user explicitly requires it.
-21. A signal is a command that returns once Temporal accepted it; it never waits for completion and never returns an identifier a later Activity has not created. A query observes and has no side effect. Keep `XWorkflowState` separate from persisted business state.
-22. For an expiring condition, race `context.condition` against `context.timeout` and catch Temporal's `CanceledError`, not Swift's `CancellationError`. On the timed-out branch run the expiration Activity before assigning `.expired`, so a cancelled parent is observed before a terminal state is written.
-23. Let SDK errors propagate from the adapter and classify them where the distinction is actionable; never funnel every Temporal failure into one `.unavailable` case.
+17. Define the client protocol in Core and implement it as `TemporalXWorkflowClient` in Workflows, holding only the long-lived `TemporalClient` and the task queue.
+18. Derive the workflow ID from the immutable domain identifier, `<service>-<feature>-<id>`, and start with `idReusePolicy: .rejectDuplicate` and `idConflictPolicy: .useExisting`. Do not catch `WorkflowAlreadyStartedError` on top of them.
+19. Commit local database work first, then start or signal. Never call Temporal inside `withTransaction`. Keep start and signal distinct; no signal-with-start, no resume-from-database, no periodic reconciler unless the user explicitly requires it.
+20. A signal is a command that returns once Temporal accepted it; it never waits for completion and never returns an identifier a later Activity has not created. A query observes and has no side effect. Keep `XWorkflowState` separate from persisted business state.
+21. For an expiring condition, race `context.condition` against `context.timeout` and catch Temporal's `CanceledError`, not Swift's `CancellationError`. On the timed-out branch run the expiration Activity before assigning `.expired`, so a cancelled parent is observed before a terminal state is written.
+22. Let SDK errors propagate from the adapter and classify them where the distinction is actionable; never funnel every Temporal failure into one `.unavailable` case.
+
+### Tests
+
+23. Give every `<Service>Workflows` target a `<Service>WorkflowsTests` target on swift-testing and the SDK's `TemporalTestKit`, beside `<Service>CoreTests`, with one `XWorkflowTests` suite per Workflow. Each test runs the real Workflow and the real Activity containers on the time-skipping test server, registered exactly as `worker run` registers them, over mock Activity-service protocols. That run is the payload check: a value Temporal cannot convert fails its Activity on every attempt, so no hand-kept list of payload round trips is needed.
+24. Cover every branch of every Workflow: each outcome a signal, a query, or a timer decides, each case of a switched Activity output, and one non-retryable failure asserting the Activity ran once. Where a worker registers more than one container, one test asserts every registered Activity name is unique, because a collision hangs the end-to-end tests instead of failing them. Mark each suite `.serialized` and give it a time limit: time skipping belongs to the whole server, so a test waiting on one result advances time for every workflow on it.
+25. Record each end-to-end run's history as a fixture and replay every fixture with `WorkflowReplayer` in an `XWorkflowReplayTests` suite. Re-record only for a change that is meant to break running Workflows; otherwise a failing replay is that change breaking them.
+26. Run the Workflow tests locally before pushing, and in CI where it runs; the first run downloads the test server, so it needs the network once.
 
 ### The worker
 
-24. The worker is `worker run` on the service executable: `Worker` a command group in `<Service>/Worker/`, `Run` its composition root in the same section order as `serve`. It opens no server, reads no verifying key, and is deployed from the service's image with `worker run` as its command, at the same tag.
-25. It connects to its own service's database directly, as `<service>_worker` with its own secret and a `USING (true)` policy, over `PostgresDatabase<Postgres<Service>WorkerScope>(client:logger:)` that only its composition root builds. The use cases it runs take `input:` alone, and the worker scope is the only scope conforming to their scope protocols, so `serve` cannot build them.
-26. It reaches every other service through that service's `<Entity>InternalService`, as itself, proved by its certificate: no token, no interceptor on its clients. The receiving service binds it with `CertificateAuthenticationInterceptor(authenticator: ServiceAuthenticator())` and hands its use case a `service: ServiceIdentity`.
-27. The user a workflow acts for is a `UUID` in the workflow input, passed as data, never a `subject:` and never a token.
-28. Configure the client and worker with the SDK's own readers, `TemporalClient.Configuration(configReader:)` and `TemporalWorker.Configuration(configReader:)` over the `temporal` scope, with the namespace named for the environment and `TEMPORAL_WORKER_HEARTBEATINTERVALMS` set. Use the stack's mTLS client factory for an in-stack server; TLS with the system trust roots and the provider's API key for a managed engine.
-29. Own the worker, its Postgres client, and every long-lived client its Activities use in one `ServiceGroup` with graceful shutdown.
+27. The worker is `worker run` on the service executable: `Worker` a command group in `<Service>/Worker/`, `Run` its composition root in the same section order as `serve`. It opens no server, reads no verifying key, and is deployed from the service's image with `worker run` as its command, at the same tag.
+28. It connects to its own service's database directly, as `<service>_worker` with its own secret and a `USING (true)` policy, over `PostgresDatabase<Postgres<Service>WorkerScope>(client:logger:)` that only its composition root builds. The use cases it runs take `input:` alone, and the worker scope is the only scope conforming to their scope protocols, so `serve` cannot build them.
+29. It reaches every other service through that service's `<Entity>InternalService`, as itself, proved by its certificate: no token, no interceptor on its clients. The receiving service binds it with `CertificateAuthenticationInterceptor(authenticator: ServiceAuthenticator())` and hands its use case a `service: ServiceIdentity`.
+30. The user a workflow acts for is a `UUID` in the workflow input, passed as data, never a `subject:` and never a token.
+31. Configure the client and worker with the SDK's own readers, `TemporalClient.Configuration(configReader:)` and `TemporalWorker.Configuration(configReader:)` over the `temporal` scope, with the namespace named for the environment and `TEMPORAL_WORKER_HEARTBEATINTERVALMS` set. Use the stack's mTLS client factory for an in-stack server; TLS with the system trust roots and the provider's API key for a managed engine.
+32. Own the worker, its Postgres client, and every long-lived client its Activities use in one `ServiceGroup` with graceful shutdown.
 
 ## Workflow
 
@@ -90,7 +96,7 @@ Add a workflow:
 - [ ] 4. serve: one long-lived TemporalClient in ServiceGroup, the workflow-client adapter injected into the use cases, every start or signal after the transaction commits
 - [ ] 5. worker run: Worker group and Run composition root; worker-role PostgresClient and database; interceptor-free internal-service clients; TemporalWorker with explicit workflows and containers; one ServiceGroup
 - [ ] 6. Environment: the SDK's required worker keys, the worker application running the service image with `worker run`
-- [ ] 7. swift build, swift test including a round trip of every payload, then run a workflow end to end: start, signal, query, expiry, and an Activity retried after its side effect
+- [ ] 7. <Service>WorkflowsTests: an XWorkflowTests suite per Workflow covering every branch on the time-skipping test server, recorded histories, an XWorkflowReplayTests suite; swift build and swift test, then run a workflow end to end: start, signal, query, expiry, and an Activity retried after its side effect
 ```
 
 ## Completion gates
@@ -98,7 +104,7 @@ Add a workflow:
 Do not call work complete until every applicable gate passes.
 
 - `<Service>Core` imports no Temporal; `<Service>Workflows` imports no Postgres, protobuf, or configuration.
-- Every value crossing Temporal is `Codable`; Activity inputs and outputs are nested under their container, only the state and result payloads live in Core, no Core entity is an Activity payload, and every payload round-trips through `DataConverter.default` in a test.
+- Every value crossing Temporal is `Codable`; Activity inputs and outputs are nested under their container, only the state and result payloads live in Core, no Core entity is an Activity payload, and every Workflow runs end to end in `<Service>WorkflowsTests`, branch by branch, with its recorded histories replaying cleanly.
 - Every Workflow is free of side effects and nondeterminism; every side effect is one Activity with an idempotency key derived from immutable input, and no Activity name collides on the worker.
 - Every start or signal happens after the local transaction committed; no transaction spans a Temporal call.
 - Workflow IDs are deterministic with `.rejectDuplicate` and `.useExisting`; signals return without waiting; queries have no side effects.

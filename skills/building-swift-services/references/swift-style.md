@@ -100,7 +100,7 @@ The rest of Swift Concurrency is the `swift-concurrency` skill's subject ([AvdLe
 
 An entity, command, value object, or enum in Core has none of those by default. Protobuf conversions build messages field by field, and Postgres rows go through `PostgresEncodable` and `PostgresDecodable`, so neither needs `Codable`. Each synthesised conformance is an `encode(to:)` and an `init(from:)` the compiler generates and type-checks on every build, for every type that declares it. A conformance nothing uses also invites passing the type somewhere it becomes a stored contract, which is how a domain model ends up in a workflow's history. Use `Encodable` alone for a value that is only written.
 
-Removing a conformance needs one check the compiler cannot make: whether the type crosses Temporal, whose converter checks `Codable` at runtime. The orchestrating-temporal-workflows skill's payload tests are that check.
+Removing a conformance needs one check the compiler cannot make: whether the type crosses Temporal, whose converter checks `Codable` at runtime. The orchestrating-temporal-workflows skill's Workflow tests are that check: they run every payload through the real converter.
 
 Convert between types with an initializer on the destination type, in an extension beside the adapter that uses it:
 

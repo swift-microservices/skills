@@ -13,7 +13,7 @@ How a module's behavior is verified: the test target, the mocks, and the line be
 
 ## The test target
 
-Every module carries one test target, `<Module>CoreTests` (`<Service>CoreTests` when the module is a service; a monolith has one per module), registered in the manifest with the Core target, the `swift-log` facade, the principal types, and the shared test doubles as its dependencies:
+Every module carries a test target, `<Module>CoreTests` (`<Service>CoreTests` when the module is a service; a monolith has one per module), registered in the manifest with the Core target, the `swift-log` facade, the principal types, and the shared test doubles as its dependencies:
 
 ```swift
 .testTarget(
@@ -32,6 +32,8 @@ Every module carries one test target, `<Module>CoreTests` (`<Service>CoreTests` 
 Tests are swift-testing — `@Suite`, `@Test`, `#expect`, `#require` — never XCTest. Because targets of one package use `package` access (see *Package, targets, and naming* in SKILL.md), the test target imports Core plainly, and in a monolith a module's tests import that module's Core alone — a test that needs two modules' Core targets is a sign the modules are not separate; `@testable` is never needed, and needing it is a sign a symbol has the wrong access level.
 
 Suites are named for the feature (`@Suite("Subscriber use cases")`), test functions for the behavior, and the display string states the expectation as a sentence: `@Test("duplicate repository errors become create use-case errors")`.
+
+A module with Temporal adds `<Module>WorkflowsTests`, which runs its Workflows end to end on the SDK's test server; the orchestrating-temporal-workflows skill describes it. Use-case tests stay here, over mocks, because a Workflow test mocks the Activity service and never reaches a use case.
 
 ## Mocks
 

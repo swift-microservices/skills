@@ -13,6 +13,7 @@ Use this reference whenever a service adds or changes Temporal Workflows, Activi
 - Signals, queries, and state
 - Timers and cancellation
 - Worker composition
+- Testing workflows
 - Naming and file style
 
 ## Module boundaries
@@ -165,28 +166,7 @@ The default converter encodes a `Date` as ISO-8601 at whole-second precision. A 
 
 ### Proving it
 
-Round-trip a representative value of every payload through `DataConverter.default` in `<Service>WorkflowsTests`. It is the only check that fails before a Workflow does:
-
-```swift
-import CatalogWorkflows
-import Temporal
-import Testing
-
-#if canImport(FoundationEssentials)
-import FoundationEssentials
-#else
-import Foundation
-#endif
-
-struct PayloadTests {
-    @Test func confirmationRoundTrips() async throws {
-        let value = ReservationActivities.Confirmation(orderId: UUID())
-        let payload = try await DataConverter.default.convertValue(value)
-        let decoded = try await DataConverter.default.convertPayload(payload, as: ReservationActivities.Confirmation.self)
-        #expect(decoded.orderId == value.orderId)
-    }
-}
-```
+Nothing proves a payload converts except converting it, and a hand-kept list of round trips misses the payload nobody added to it. Run the Workflows instead, as *Testing workflows* describes: every value a Workflow passes goes through the real converter on the way, and one that cannot convert fails its Activity on every attempt.
 
 ## Activity design and retries
 
@@ -369,6 +349,114 @@ The worker composition root owns:
 - one `ServiceGroup` containing the worker, the Postgres client, and every other long-lived dependency.
 
 Configure the client and the worker from the SDK's own configuration readers — `TemporalClient.Configuration(configReader:)` and `TemporalWorker.Configuration(configReader:)` over the `temporal` scope (see *Temporal worker composition root* in the building-swift-services skill's composition reference) — with the namespace named after the deployment environment, and the same transport security in both: the stack's mTLS client factory when the Temporal server runs in the stack, TLS with the system trust roots and an API key when it is a managed engine (see *Transport security factories* in the same reference). The worker *requires* `TEMPORAL_WORKER_NAMESPACE`, `_TASKQUEUE`, `_BUILDID`, `_CLIENT_IDENTITY`, and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`, and should set `_HEARTBEATINTERVALMS` — the SDK's default disables liveness heartbeats. Manage the client and worker with graceful shutdown signals. Do not run a cancellation-aware reconciliation service beside the worker.
+
+## Testing workflows
+
+A Workflow is tested by running it. `<Service>WorkflowsTests` sits beside `<Service>CoreTests` and depends on the Workflows target, Core, `swift-log`, and the SDK's `Temporal` and `TemporalTestKit` products:
+
+```swift
+.testTarget(
+    name: "CatalogWorkflowsTests",
+    dependencies: [
+        "CatalogCore",
+        "CatalogWorkflows",
+        .product(name: "Logging", package: "swift-log"),
+        .product(name: "Temporal", package: "swift-temporal-sdk"),
+        .product(name: "TemporalTestKit", package: "swift-temporal-sdk"),
+    ]
+),
+```
+
+```text
+Tests/<Service>WorkflowsTests/
+  <Feature>WorkflowTests.swift
+  <Feature>WorkflowReplayTests.swift
+  Mocks/
+  Support/WorkflowHistories.swift
+  Histories/<feature>-<outcome>.json
+```
+
+Each suite runs on the time-skipping test server, which its trait starts once and shares across the suite. A test builds the Activity containers over mock Activity-service protocols, registers them and the Workflows the way `worker run` does, starts the Workflow on a fresh task queue, and asserts the result, the query, and the side effects in the order the mocks recorded them:
+
+```swift
+@Suite("Reservation workflow", .temporalTimeSkippingTestServer, .serialized, .timeLimit(.minutes(1)))
+struct ReservationWorkflowTests {
+    @Test("an unconfirmed reservation is released when it expires")
+    func unconfirmedReservationExpires() async throws {
+        let service = MockReservationActivityService()
+        let testServer = try #require(TemporalTestServer.timeSkippingTestServer)
+
+        try await testServer.withWorkerAndClient(
+            activities: ReservationActivities(service: service).allActivities,
+            workflows: [ReservationWorkflow.self]
+        ) { taskQueue, client in
+            let handle = try await client.startWorkflow(
+                type: ReservationWorkflow.self,
+                options: WorkflowOptions(id: "catalog-reservation-\(UUID())", taskQueue: taskQueue),
+                input: ReservationWorkflow.Input(reservationId: UUID())
+            )
+            let result = try await handle.result()
+            #expect(result.state == .expired)
+            try await WorkflowHistories.record(handle, as: "reservation-expired")
+        }
+
+        let calls = await service.calls
+        #expect(calls == [.reserve, .release])
+    }
+}
+```
+
+`handle.result()` lets the server skip time while it waits, so a day-long timer fires in milliseconds. That is also why the suite is `.serialized`: time skipping is the server's, not the test's, and a test waiting on its result would advance time under another test's Workflow before that test sends its signal. Send a signal before awaiting the result; nothing advances time until something waits. Read an actor mock's calls into a local before `#expect`, so a failure prints them.
+
+Cover every branch: each outcome a signal, a query, or a timer decides, each case of an Activity output the Workflow switches on, a child Workflow started from its parent, and one failure an Activity marks non-retryable, asserting the Activity ran once. An Activity that keeps failing, a payload that cannot convert or an error mapped as retryable, never produces a result: the test fails with `Unexpected empty workflow history` when `result()` gives up its 20-second long poll, or on the suite's time limit. Read that message as "an Activity never completed" and look at the worker's log for the failure it retried. Register every container the worker registers in every test, through one helper that builds the list `worker run` builds. Then check that list before anything runs: a registration name two containers share silently runs one container's Activity for the other's Workflow, and on the test server that is a Workflow that never finishes and a suite that hangs past its time limit, not a failure that names the Activity.
+
+```swift
+@Test("every activity the worker registers has a name of its own")
+func activityNamesAreUnique() {
+    let names = makeCatalogActivities(service: MockReservationActivityService()).map { type(of: $0).name }
+    let duplicates = Dictionary(grouping: names, by: { $0 }).filter { $0.value.count > 1 }.keys.sorted()
+    #expect(duplicates.isEmpty, "Registered more than once: \(duplicates)")
+}
+```
+
+### Replaying recorded histories
+
+A Workflow still running when a release deploys replays its recorded history against the new code. Record those histories from the end-to-end tests, and replay them:
+
+```swift
+enum WorkflowHistories {
+    private static let directory = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("Histories")
+
+    static func record<Workflow: WorkflowDefinition>(_ handle: WorkflowHandle<Workflow>, as name: String) async throws {
+        guard ProcessInfo.processInfo.environment["RECORD_WORKFLOW_HISTORIES"] != nil else {
+            return
+        }
+        try await handle.fetchHistory().toJSON().write(to: directory.appendingPathComponent("\(name).json"))
+    }
+
+    static func load(_ name: String) throws -> WorkflowHistory {
+        let data = try Data(contentsOf: directory.appendingPathComponent("\(name).json"))
+        return try WorkflowHistory.fromJSON(workflowID: name, jsonData: data)
+    }
+}
+
+@Suite("Reservation workflow replay")
+struct ReservationWorkflowReplayTests {
+    @Test("a recorded history replays deterministically", arguments: ["reservation-confirmed", "reservation-expired"])
+    func recordedHistoryReplays(name: String) async throws {
+        let replayer = WorkflowReplayer(configuration: .init(workflows: [ReservationWorkflow.self]))
+        let result = try await replayer.replayWorkflow(history: try WorkflowHistories.load(name), throwOnReplayFailure: false)
+        #expect(result.replayFailure == nil)
+    }
+}
+```
+
+Record with `RECORD_WORKFLOW_HISTORIES=1 swift test --filter <Service>WorkflowsTests.<Feature>WorkflowTests` and commit the fixtures. Mock data only: a fixture holds every payload, so it never holds a real name, address, or token. Re-record when a change is meant to be incompatible with running Workflows, and ship that change the way *Changing a payload* describes; any other failing replay is the change breaking them.
+
+The first run downloads the test server, so a machine or a CI runner needs the network once. Where CI cannot run, run `swift test` locally before every push.
 
 ## Naming and file style
 

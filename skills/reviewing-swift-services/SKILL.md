@@ -99,11 +99,13 @@ Review progress:
 - One `PostgresClient` per role; one `PostgresDatabase` per database built with `PostgresDatabase(client:logger:)`; a comment says which database each use case runs on.
 - Logging is bootstrapped inline with the service name as label and the identity metadata providers, shipping structured logs to one aggregator: stdout plus in-process shipping by default, or stdout alone where the platform collects it; every long-lived client, server, and worker is in one `ServiceGroup` with graceful shutdown.
 
-**7. Tests** — read `Tests/<Service>CoreTests`.
+**7. Tests** — read `Tests/<Service>CoreTests`, and `Tests/<Service>WorkflowsTests` where the service has Workflows.
 - The target depends on Core, `Logging`, `<Project>Authentication`, and `<Project>Testing`; it is swift-testing, with no `@testable` and no XCTest.
 - Mocks are actors in `Mocks/`, the database is built through a scoped `withDatabase` helper over `MockDatabase`, subjects come from `makeSubject(role:)`, dates are fixed.
 - Every use case has the success path of each overload, every guard including the authorization guard asserting the repository was never reached, and one test per case of its error enum. List each use case with a missing row of that matrix.
-- No test binds a `ServiceContext` or drives an interceptor. Then run `swift test`; a failure is blocking, quote it.
+- No test binds a `ServiceContext` or drives an interceptor.
+- With a `<Service>Workflows` target, `<Service>WorkflowsTests` runs every Workflow on the time-skipping test server in `.serialized` suites, covers each branch and one non-retryable failure, and replays recorded histories. A Workflow with no end-to-end test, a branch no test reaches, or a suite that round-trips payloads by hand instead is a finding. Evidence: `grep -rn "temporalTimeSkippingTestServer\|WorkflowReplayer" Tests`.
+- Then run `swift test`; a failure is blocking, quote it.
 
 **8. Delivery** — read `.github/workflows`, the Containerfile, and `Package.resolved`.
 - The executable commits `Package.resolved`; CI resolves from it. The image is built for the deployment architecture with the static Linux SDK.
