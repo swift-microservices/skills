@@ -1,6 +1,6 @@
 # swift-microservices skills
 
-Agent skills for building Swift systems the [swift-microservices](https://github.com/swift-microservices) way — a modular monolith or microservices, over HTTP, gRPC, or both — packaged as one Claude Code plugin. Each skill covers one activity, carries its own references, and is tested with evals.
+Agent skills for building Swift systems the [swift-microservices](https://github.com/swift-microservices) way — a modular monolith or microservices, over HTTP, gRPC, or both — packaged for Claude Code and Codex. Each skill covers one activity, carries its own references, and is tested with evals.
 
 | Skill | Use it when |
 | --- | --- |
@@ -10,7 +10,7 @@ Agent skills for building Swift systems the [swift-microservices](https://github
 | `delivering-swift-services` | images, Compose, secrets, certificates, CI, per-commit publishing, migrations in the pipeline |
 | `reviewing-swift-services` | auditing an existing service against the rules, read-only, on request |
 
-## Install
+## Install in Claude Code
 
 Claude Code, from the marketplace in this repository:
 
@@ -21,18 +21,29 @@ Claude Code, from the marketplace in this repository:
 
 Skills are then `/swift-microservices:building-swift-services` and so on, and Claude invokes them on its own when a task matches their descriptions.
 
-Codex, one skill at a time:
+## Install in Codex
+
+Add this repository as a local plugin source:
 
 ```bash
-git clone https://github.com/swift-microservices/skills.git ~/.swift-microservices-skills
-ln -s ~/.swift-microservices-skills/skills/building-swift-services ~/.codex/skills/building-swift-services
+codex plugin marketplace add https://github.com/swift-microservices/skills
+codex plugin add swift-microservices@swift-microservices
 ```
+
+The plugin is also available for local development directly from a checkout:
+
+```bash
+codex --plugin-dir /path/to/skills
+```
+
+Start a new Codex thread after installing or updating the plugin so it can load the skills.
 
 ## Layout
 
 ```
-.claude-plugin/plugin.json        the plugin
-.claude-plugin/marketplace.json   the marketplace that serves it
+.claude-plugin/plugin.json        Claude Code plugin manifest
+.claude-plugin/marketplace.json   Claude Code marketplace manifest
+.codex-plugin/plugin.json         Codex plugin manifest
 skills/<skill>/SKILL.md           instructions, under 500 lines, loaded when the skill triggers
 skills/<skill>/references/*.md    detail, one level deep, loaded as needed
 evals/<skill>-<case>/             claude plugin eval cases: a prompt and its graders
