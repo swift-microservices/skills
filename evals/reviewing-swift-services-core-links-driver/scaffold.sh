@@ -6,17 +6,25 @@ cat > Package.swift <<'PKG'
 // swift-tools-version: 6.3
 import PackageDescription
 
+let swiftSettings: [SwiftSetting] = [
+    .enableUpcomingFeature("ExistentialAny"),
+    .enableUpcomingFeature("MemberImportVisibility"),
+    .enableUpcomingFeature("InternalImportsByDefault"),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+]
+
 let package = Package(
     name: "acme-notes",
     platforms: [.macOS(.v15)],
     products: [.executable(name: "notes", targets: ["Notes"])],
     dependencies: [
-        .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.1.0"),
-        .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.1.0"),
+        .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
+        .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
         .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.1.0"),
         .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.1.0"),
         .package(url: "https://github.com/acme/acme-core.git", from: "0.1.0"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.0"),
+        .package(url: "https://github.com/hummingbird-project/postgres-migrations.git", from: "1.2.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
     ],
     targets: [
@@ -25,13 +33,14 @@ let package = Package(
             .product(name: "AcmeAuthentication", package: "acme-core"),
             .product(name: "PostgresNIO", package: "postgres-nio"),
             .product(name: "Logging", package: "swift-log"),
-        ]),
+        ], swiftSettings: swiftSettings),
         .target(name: "NotesPostgres", dependencies: [
             "NotesCore",
             .product(name: "PersistencePostgres", package: "swift-persistence-postgres"),
             .product(name: "PostgresNIO", package: "postgres-nio"),
+            .product(name: "PostgresMigrations", package: "postgres-migrations"),
             .product(name: "Logging", package: "swift-log"),
-        ]),
+        ], swiftSettings: swiftSettings),
         .executableTarget(name: "Notes", dependencies: [
             "NotesCore", "NotesPostgres",
             .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),
@@ -40,19 +49,19 @@ let package = Package(
             .product(name: "AcmePersistence", package: "acme-core"),
             .product(name: "PersistencePostgres", package: "swift-persistence-postgres"),
             .product(name: "Logging", package: "swift-log"),
-        ]),
+        ], swiftSettings: swiftSettings),
         .testTarget(name: "NotesCoreTests", dependencies: [
             "NotesCore",
             .product(name: "AcmeAuthentication", package: "acme-core"),
             .product(name: "AcmeTesting", package: "acme-core"),
             .product(name: "Logging", package: "swift-log"),
-        ]),
+        ], swiftSettings: swiftSettings),
     ],
     swiftLanguageModes: [.v6]
 )
 PKG
 cat > Sources/NotesCore/Notes/Note.swift <<'SWIFT'
-import Foundation
+package import FoundationEssentials
 
 package struct Note: Equatable, Sendable {
     package let id: UUID
@@ -62,6 +71,8 @@ package struct Note: Equatable, Sendable {
 }
 SWIFT
 cat > Sources/NotesCore/Notes/NoteRepository.swift <<'SWIFT'
+package import FoundationEssentials
+
 package struct CreateNoteCommand: Sendable {
     package let userId: UUID
     package let body: String
@@ -76,9 +87,9 @@ package protocol CreateNoteUseCaseScope: Sendable {
 }
 SWIFT
 cat > Sources/NotesCore/Notes/UseCases/CreateNote/CreateNoteUseCase.swift <<'SWIFT'
-import AcmeAuthentication
-import Logging
-import Persistence
+package import AcmeAuthentication
+package import Logging
+package import Persistence
 package struct CreateNoteUseCase<DatabaseType>: CreateNoteUseCaseProtocol where DatabaseType: Database, DatabaseType.Scope: CreateNoteUseCaseScope {
     private let database: DatabaseType
     private let logger: Logger
@@ -105,9 +116,9 @@ package struct CreateNoteUseCase<DatabaseType>: CreateNoteUseCaseProtocol where 
 }
 SWIFT
 cat > Sources/NotesPostgres/Migrations/Note/CreateNotesRLSPolicy.swift <<'SWIFT'
-import Logging
-import PostgresMigrations
-import PostgresNIO
+package import Logging
+package import PostgresMigrations
+package import PostgresNIO
 
 package struct CreateNotesRLSPolicy: DatabaseMigration {
     package init() {}
@@ -135,10 +146,10 @@ package struct CreateNotesRLSPolicy: DatabaseMigration {
 }
 SWIFT
 cat > Sources/NotesPostgres/Scopes/PostgresNotesScope.swift <<'SWIFT'
-import Logging
-import NotesCore
-import PersistencePostgres
-import PostgresNIO
+package import Logging
+package import NotesCore
+package import PersistencePostgres
+package import PostgresNIO
 
 package struct PostgresNotesScope: PostgresScope, CreateNoteUseCaseScope {
     package let noteRepository: any NoteRepository

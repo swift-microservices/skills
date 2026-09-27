@@ -352,6 +352,8 @@ Configure the client and the worker from the SDK's own configuration readers —
 
 ## Testing workflows
 
+Use the same shared [Swift settings](https://github.com/swift-microservices/skills/blob/main/skills/building-swift-services/references/service-package.md#swift-settings-for-packages-and-applications) on Workflows and WorkflowsTests as on the application's other Swift targets.
+
 A Workflow is tested by running it. `<Service>WorkflowsTests` sits beside `<Service>CoreTests` and depends on the Workflows target, Core, `swift-log`, and the SDK's `Temporal` and `TemporalTestKit` products:
 
 ```swift
@@ -363,7 +365,8 @@ A Workflow is tested by running it. `<Service>WorkflowsTests` sits beside `<Serv
         .product(name: "Logging", package: "swift-log"),
         .product(name: "Temporal", package: "swift-temporal-sdk"),
         .product(name: "TemporalTestKit", package: "swift-temporal-sdk"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 ```
 

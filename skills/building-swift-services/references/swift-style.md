@@ -87,7 +87,7 @@ Use generic constraints in this form:
 
 ```swift
 func withTransaction<T: Sendable>(
-    _ operation: @Sendable (Scope) async throws -> T
+    _ operation: (Scope) async throws -> T
 ) async throws -> T
 ```
 
@@ -98,9 +98,10 @@ Do not use `T : Sendable` or move the constraint to a trailing `where` unless th
 - `package` for declarations shared across targets in one package.
 - `private` for stored dependencies and implementation details.
 - `public` only for packages consumed externally or an existing consumer's established API.
+- Apply the shared [Swift settings](service-package.md#swift-settings-for-packages-and-applications) to library, executable, and test targets. Plain imports are internal: promote to `package import` or `public import` only when imported types appear in that API. Import member-providing modules in each file that uses them.
 - Make protocols and values crossing concurrency boundaries `Sendable`.
 - Use actors for mutable in-memory state such as an in-memory repository or a token session.
-- Mark database operation closures `@Sendable`.
+- Persistence 0.2.0 transaction callbacks are plain, nonescaping `(Scope) async throws -> T` with `T: Sendable`; preserve caller isolation in protocol requirements, implementations, and test doubles. Do not add `@Sendable` or `@concurrent` to restore an older contract. See [persistence.md](persistence.md).
 - Reach for `@unchecked Sendable` only with a comment saying what makes it safe. Silencing a diagnostic is not a reason, and on a server the race it hides is concurrent by default.
 - Use structured concurrency: a task group, and `ServiceGroup` for anything long-lived. A detached task that nothing owns outlives the request that made it and ignores cancellation.
 - Honour cancellation wherever work can run long, which on a server is every worker loop and every stream.

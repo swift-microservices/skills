@@ -3,6 +3,7 @@
 ## Contents
 
 - Package initialization
+- Swift settings for packages and applications
 - Dependency baseline
 - Foundation dependencies and traits
 - Source tree of a module
@@ -24,6 +25,53 @@ swift package init --type executable
 ```
 
 Then reshape the generated package. A monolith is initialized once and gains a module by adding that module's targets to the existing manifest; a service is one package per module; a gateway is its own package. Keep the Swift tools version, Swift language mode 6, the platform floor, and dependency versions aligned across the organization's repositories unless the user asks to upgrade.
+
+## Swift settings for packages and applications
+
+Use Swift tools 6.3 and `swiftLanguageModes: [.v6]`. Tools version selects manifest APIs and the minimum toolchain; language mode selects language semantics and enables Swift 6 strict concurrency checking. An upcoming feature opts a target into an implemented future language behavior; it is not an experimental feature and is not implied merely by tools version 6.3 or language mode 6.
+
+Define one stored `let` immediately after `import PackageDescription`, then pass `swiftSettings: swiftSettings` to every owned Swift `.target`, `.executableTarget`, and `.testTarget`. This includes application composition roots, workers, gateways, shared libraries, and targets compiling generated Swift. Settings do not propagate from a library to its consumers, between targets, or into dependency packages. Keep C, binary, and plugin targets out of this list.
+
+```swift
+// swift-tools-version: 6.3
+import PackageDescription
+
+let swiftSettings: [SwiftSetting] = [
+    // SE-0335: spell protocol existential types with `any`.
+    .enableUpcomingFeature("ExistentialAny"),
+    // SE-0444: member lookup respects the imports visible in this file.
+    .enableUpcomingFeature("MemberImportVisibility"),
+    // SE-0409: an unqualified import has internal access.
+    .enableUpcomingFeature("InternalImportsByDefault"),
+    // SE-0461: nonisolated async functions inherit the caller's actor.
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+]
+
+let package = Package(
+    name: "Example",
+    products: [
+        .library(name: "ExampleCore", targets: ["ExampleCore"]),
+        .executable(name: "example", targets: ["Example"]),
+    ],
+    targets: [
+        .target(name: "ExampleCore", swiftSettings: swiftSettings),
+        .executableTarget(name: "Example", dependencies: ["ExampleCore"], swiftSettings: swiftSettings),
+        .testTarget(name: "ExampleCoreTests", dependencies: ["ExampleCore"], swiftSettings: swiftSettings),
+    ],
+    swiftLanguageModes: [.v6]
+)
+```
+
+| Setting | Meaning and adoption work |
+| --- | --- |
+| [`ExistentialAny` (SE-0335)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md) | Use `any Repository` for an existential value. Generic constraints and conformances stay `T: Repository` and `struct Store: Repository`; do not replace generics with existentials mechanically. |
+| [`MemberImportVisibility` (SE-0444)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0444-member-import-visibility.md) | Members, including extensions, must come from a module visible in the current file. Import the module that supplies a member and declare its direct target dependency; another file's ordinary import is insufficient. |
+| [`InternalImportsByDefault` (SE-0409)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md) | Plain `import` is internal. Use `package import` when imported types appear in package API, and `public import` when they appear in public API; keep implementation-only imports internal. `public import` does not re-export the module's names. Check conformances and inlinable code too. |
+| [`NonisolatedNonsendingByDefault` (SE-0461)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md) | Nonisolated async functions and non-`@Sendable` async function types use caller isolation by default. This avoids an implicit actor hop; it neither makes shared state safe nor prevents reentrancy at `await`. Use `@concurrent` only when an async function intentionally leaves the caller's actor, with safe values crossing that boundary. |
+
+Default actor isolation is a separate decision: server packages and server applications retain nonisolated default isolation; do not add `.defaultIsolation(MainActor.self)` as part of this migration. A UI application's MainActor default may be appropriate, but does not apply to a server. For an Xcode-managed application, inspect its actual language, upcoming-feature, and default-isolation build settings; editing a dependency's `Package.swift` cannot configure the application target. This server skill does not prescribe a UI architecture or an Approachable Concurrency bundle.
+
+Before changing existing targets, inspect their settings and dependency signatures. Do not add flags already mandatory in a newer selected language mode. Update source imports, existential spellings, generated-code configuration, and callback contracts together, then compile every affected target. Do not silence errors with unsafe flags, `@preconcurrency`, or `@unchecked Sendable`. Check exported API changes with a buildable baseline; migration-only allowlists must describe the exact intentional change and be removed when the migrated code becomes the base.
 
 ## Dependency baseline
 
@@ -54,8 +102,8 @@ These are the packages the architecture is built on. The versions are a floor fr
 | `swift-temporal-sdk` | `1.0.0` | `Temporal`, only with durable orchestration |
 | `jwt-kit` | `"5.3.0"..<"5.7.0"` | `JWTKit`: the executable, for the EdDSA key types; the pin's reason is in identity-and-access.md |
 | `swift-service-context` | `1.3.0` | `ServiceContextModule`, wherever `ServiceContext.current` is read: the transport targets and the executable |
-| `swift-persistence` | `0.1.0` | `Persistence`: `Database<Scope>`, linked by every Core |
-| `swift-persistence-postgres` | `0.1.0` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
+| `swift-persistence` | `0.2.0` | `Persistence`: `Database<Scope>`, linked by every Core |
+| `swift-persistence-postgres` | `0.2.0` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
 | `swift-authentication` | `0.1.0` | `Authentication`: the `Authenticator` protocol an HTTP target names to take any verifier |
 | `swift-authentication-jwt` | `0.1.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module |
 | `swift-authentication-grpc` | `0.1.0` | `AuthenticationGRPC` for the bearer interceptors; `AuthenticationGRPCNIOTransport` for the certificate interceptor, only a package with an internal service |
@@ -88,8 +136,8 @@ dependencies: [
     .package(url: "https://github.com/apple/swift-temporal-sdk.git", from: "1.0.0"),          // only with Temporal
     .package(url: "https://github.com/vapor/jwt-kit.git", "5.3.0"..<"5.7.0"),
     .package(url: "https://github.com/apple/swift-service-context.git", from: "1.3.0"),
-    .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.1.0"),
-    .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.1.0"),
+    .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
+    .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
     .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.1.0"),          // with HTTP
     .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.1.0"),
     .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.1.0"),     // with gRPC
@@ -349,7 +397,8 @@ The same block in every shape; the executable that links them differs.
         .product(name: "Persistence", package: "swift-persistence"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "Logging", package: "swift-log"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 .target(
     name: "<Module>Postgres",
@@ -359,7 +408,8 @@ The same block in every shape; the executable that links them differs.
         .product(name: "PostgresMigrations", package: "postgres-migrations"),
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "PersistencePostgres", package: "swift-persistence-postgres"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 .target(
     name: "<Module>HTTP",                                   // with HTTP
@@ -372,6 +422,7 @@ The same block in every shape; the executable that links them differs.
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "Logging", package: "swift-log"),
     ],
+    swiftSettings: swiftSettings,
     plugins: [
         .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator")
     ]
@@ -386,21 +437,24 @@ The same block in every shape; the executable that links them differs.
         .product(name: "ServiceContextModule", package: "swift-service-context"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Module>Protos", package: "<project>-protos"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 .target(
     name: "<Module>Workflows",                              // only with Temporal
     dependencies: [
         "<Module>Core",
         .product(name: "Temporal", package: "swift-temporal-sdk"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 .target(
     name: "<Module>Bcrypt",                                 // one adapter target per provider SDK
     dependencies: [
         "<Module>Core",
         .product(name: "HummingbirdBcrypt", package: "hummingbird-auth"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 .testTarget(
     name: "<Module>CoreTests",
@@ -409,7 +463,8 @@ The same block in every shape; the executable that links them differs.
         .product(name: "Logging", package: "swift-log"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Project>Testing", package: "<project>-core"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 ```
 
@@ -429,6 +484,7 @@ A gRPC monolith that keeps its contracts in the package (the default is `<projec
         .product(name: "ServiceContextModule", package: "swift-service-context"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
     ],
+    swiftSettings: swiftSettings,
     plugins: [.plugin(name: "GRPCProtobufGenerator", package: "grpc-swift-protobuf")]
 ),
 ```
@@ -446,7 +502,8 @@ The module blocks above, once per module, plus the shared HTTP target and one ex
         .product(name: "Hummingbird", package: "hummingbird"),
         .product(name: "HummingbirdAuth", package: "hummingbird-auth"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 .executableTarget(
     name: "<Project>",
@@ -476,7 +533,8 @@ The module blocks above, once per module, plus the shared HTTP target and one ex
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
         .product(name: "Temporal", package: "swift-temporal-sdk"),                   // only with Temporal
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 ```
 
@@ -517,7 +575,8 @@ The module blocks above, once, plus one executable:
         .product(name: "PostgresNIO", package: "postgres-nio"),
         .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
         .product(name: "Temporal", package: "swift-temporal-sdk"),                   // only with Temporal
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 ```
 
@@ -540,6 +599,7 @@ Include a direct product dependency in every target that imports its module. The
         .product(name: "<Upstream>Protos", package: "<project>-protos"),             // one per upstream
         .product(name: "Logging", package: "swift-log"),
     ],
+    swiftSettings: swiftSettings,
     plugins: [
         .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator")
     ]
@@ -563,7 +623,8 @@ Include a direct product dependency in every target that imports its module. The
         .product(name: "Logging", package: "swift-log"),
         .product(name: "LoggingLoki", package: "swift-log-loki"),
         .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 .testTarget(
     name: "APITests",
@@ -574,7 +635,8 @@ Include a direct product dependency in every target that imports its module. The
         .product(name: "JWTKit", package: "jwt-kit"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Upstream>Protos", package: "<project>-protos"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 ```
 

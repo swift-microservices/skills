@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: building-swift-services-swift-settings
+tags: [building, swift-settings, concurrency]
+context:
+  scaffold_script: scaffold.sh
