@@ -467,4 +467,4 @@ Sources/<Service>Workflows/<Feature>/
   Temporal<Feature>WorkflowClient.swift
 ```
 
-Use `package` access across targets, `private` mutable Workflow fields, nested `Input` values, and nested Activity input and output values. Preserve the conditional Foundation imports and import ordering. Name identifiers `xId`, Workflow types `XWorkflow`, Activity containers `XActivities`, Core ports `XWorkflowClient`, and Temporal implementations `TemporalXWorkflowClient`.
+Use `package` access across targets, `private` mutable Workflow fields, nested `Input` values, and nested Activity input and output values. Use FoundationEssentials where needed and preserve import ordering and any SDK compatibility fallback, following the building skill's [modern API policy](https://github.com/swift-microservices/skills/blob/main/skills/building-swift-services/references/swift-style.md#foundation-and-modern-apis); never introduce legacy formatter-based date decoding. Name identifiers `xId`, Workflow types `XWorkflow`, Activity containers `XActivities`, Core ports `XWorkflowClient`, and Temporal implementations `TemporalXWorkflowClient`.
