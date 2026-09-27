@@ -1,7 +1,7 @@
 {
   "name": "swift-microservices",
   "description": "Design, build, orchestrate, deliver, and review Swift systems the swift-microservices way.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": {
     "name": "Zaid Rahhawi"
   },
