@@ -3,21 +3,12 @@
 
 Fails on: a missing or oversized frontmatter field, a SKILL.md body over 500 lines, a reference
 link that does not resolve or that nests deeper than one level below SKILL.md, a reference over
-100 lines with no `## Contents` section, a retired package or type name, or a Windows-style path.
+100 lines with no `## Contents` section, mismatched plugin versions, or a Windows-style path.
 """
-import re, sys, pathlib
+import json, re, sys, pathlib
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "skills"
-RETIRED = [
-    "swift-service-kit", "emberfilm-service-kit", "<project>-service-kit", "emberfilm-identity",
-    "UserPayload", "ServicePrincipal", "UserSession", "SessionVariable", "SessionBuilder",
-    "JWTUserTokenSigner", "JWTUserTokenVerifier", "TokenSigner", "TokenVerifier", "PeerIdentifier",
-    "ServerTokenAuthenticationInterceptor", "ServerPeerAuthenticationInterceptor",
-    "ClientTokenPropagationInterceptor", "TokenAuthenticationMiddleware", "MockTokenVerifier",
-    "PostgresPersistence", "GRPCAuthentication", "GRPCNIOTransportAuthentication", "HTTPAuthentication",
-    "UserAuthenticationContext", "PeerAuthenticationContext",
-]
 LINK = re.compile(r"\]\(([^)#]+)(?:#[^)]*)?\)")
 failures = []
 
@@ -78,9 +69,6 @@ for skill_dir in sorted(p for p in SKILLS.iterdir() if p.is_dir()):
             fail(skill, f"link {target!r} nests deeper than one level")
     for doc in sorted(skill_dir.rglob("*.md")):
         content = doc.read_text()
-        for word in RETIRED:
-            if word in content:
-                fail(doc, f"retired name {word!r}")
         if doc != skill and content.count("\n") > 100 and "## Contents" not in content:
             fail(doc, "over 100 lines with no `## Contents` section")
         for match in LINK.finditer(content):
@@ -91,6 +79,19 @@ for skill_dir in sorted(p for p in SKILLS.iterdir() if p.is_dir()):
                 fail(doc, f"link to missing file {target!r}")
             if doc != skill and "/" in target and not target.startswith("../"):
                 fail(doc, f"reference {target!r} links another level down; link from SKILL.md instead")
+
+versions = []
+for manifest_path in (ROOT / ".claude-plugin/plugin.json", ROOT / ".codex-plugin/plugin.json"):
+    try:
+        manifest = json.loads(manifest_path.read_text())
+        version = manifest.get("version", "")
+        if not isinstance(version, str) or not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
+            fail(manifest_path, "version must be a stable semantic version")
+        versions.append(version)
+    except (OSError, ValueError) as error:
+        fail(manifest_path, f"cannot read plugin manifest: {error}")
+if len(versions) == 2 and versions[0] != versions[1]:
+    fail(ROOT / ".codex-plugin/plugin.json", "version must match the Claude plugin manifest")
 
 if failures:
     print("\n".join(failures))

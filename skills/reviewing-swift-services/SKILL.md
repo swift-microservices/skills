@@ -63,7 +63,7 @@ Review progress:
 - Entities and commands are immutable `Sendable` structs; a create command carries no identifier and no persistence-stamped date. Evidence: `grep -rn "let id" Sources/<Service>Core/**/Commands`.
 - A Core type is `Codable` only when something encodes it, usually the workflow state and result a workflow-client port returns. Evidence: `grep -rn "Codable\|Encodable\|Decodable" Sources/<Service>Core`; a conformance with no encoder, decoder, or Temporal port behind it is a finding.
 - Each use case is generic over `DatabaseType` with `DatabaseType.Scope: XUseCaseScope`, exposes an `XUseCaseProtocol`, and uses typed throws. Evidence: the use case's declaration line.
-- The identity is in the signature: `input:` alone, `subject: UserIdentity, input:`, or `service: ServiceIdentity, input:`. A use case that reads `ServiceContext` is a finding; so is a parameter named for a retired payload type.
+- The identity is in the signature: `input:` alone, `subject: UserIdentity, input:`, or `service: ServiceIdentity, input:`. A use case that reads `ServiceContext` is a finding.
 - Authorization is a `guard` at the top of the body throwing the use case's own `.forbidden`; fixed invariants are guards before any I/O. A validator type with an error-mapping initializer, or an injected concrete collaborator with no protocol, is a finding.
 - Every unit of work is `database.withTransaction`; no remote call inside it. Evidence: grep for client calls inside a `withTransaction` closure.
 - Every use case takes a `Logger` as its last initializer parameter and logs the domain event; the catch-all that maps to `.unknown` logs `String(reflecting: error)`. Evidence: the `catch {` block.

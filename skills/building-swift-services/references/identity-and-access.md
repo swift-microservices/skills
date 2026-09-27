@@ -47,7 +47,7 @@ An `Authenticator` answers one of three ways, and every transport honours them t
 
 The dependency graph is the design. A `<Module>Core` or `<Service>Core` target links `<Project>Authentication` to name the user a use case decides on and the process that calls it, and gets the claims type, swift-service-context, and jwt-kit behind them — never a driver, never gRPC, never a server framework. The certificate library comes with jwt-kit either way. A key, a signer, a verifier, an interceptor: those reach only the executable, which builds them, and the authenticating service's token issuer.
 
-Where does a type go? If it would make sense in a company that is not this one, in a swift-microservices package. If it names `UserIdentity`, `UserRole`, `ServiceIdentity`, the `emberfilm`-style trust domain, or `app.caller_user_id`, in `<project>-core`. Neither ships wrappers over the other's interceptors or middleware: a service builds the packages' types itself.
+Where does a type go? If it would make sense in a company that is not this one, in a swift-microservices package. If it names `UserIdentity`, `UserRole`, `ServiceIdentity`, an application-specific trust domain, or `app.caller_user_id`, in `<project>-core`. Neither ships wrappers over the other's interceptors or middleware: a service builds the packages' types itself.
 
 Because every package is consumed by tag, a source edit is invisible to every service until it is tagged and each consumer's `Package.resolved` is updated. Verify a cross-repository change before tagging by pointing a consumer at the working copy:
 
