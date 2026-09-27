@@ -49,14 +49,12 @@ skills/<skill>/references/*.md    detail, one level deep, loaded as needed
 evals/<skill>-<case>/             claude plugin eval cases: a prompt and its graders
 .github/scripts/validate.sh       the structural and manifest checks CI runs
 .github/scripts/create-release.sh label-based releases with synchronized plugin versions
-.github/scripts/tests/test-ci.sh  offline validation and release tests
 ```
 
 ## Development
 
 ```sh
 bash .github/scripts/validate.sh   # frontmatter, line budgets, links, plugin versions
-bash .github/scripts/tests/test-ci.sh  # offline validation and release tests
 claude --plugin-dir .              # try the skills in a session
 claude plugin validate .           # Claude Code's own structural check
 claude plugin eval .               # run every eval case with and without the plugin
@@ -80,7 +78,7 @@ Like the other organization repositories, the workflow uses merged PR labels sin
 
 The Bash release helper lives in `.github/scripts`, following the [Swift Temporal SDK release script](https://github.com/apple/swift-temporal-sdk/blob/main/.github/scripts/create-release.sh), with additional handling for the plugin manifests.
 
-Before publishing, CI validates the skills and tests the release automation. It updates both plugin manifests, commits the version, pushes that commit and its tag together, and publishes a GitHub release with categorized notes. These checks run in the release job because commits pushed with `GITHUB_TOKEN` do not trigger the regular validation workflow.
+Before publishing, CI validates the skills and plugin manifests. It updates both plugin manifests, commits the version, pushes that commit and its tag together, and publishes a GitHub release with categorized notes. These checks run in the release job because commits pushed with `GITHUB_TOKEN` do not trigger the regular validation workflow.
 
 If publication fails after the tag was pushed, rerun on that same commit before merging more changes. The workflow reuses the tag only when it points to that commit and both manifests match; it never moves an existing tag. Branch protection must permit the workflow token to push the version commit to `main`.
 

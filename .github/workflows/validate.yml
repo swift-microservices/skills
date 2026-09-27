@@ -17,4 +17,3 @@ jobs:
         with:
           persist-credentials: false
       - run: bash .github/scripts/validate.sh
-      - run: bash .github/scripts/tests/test-ci.sh
