@@ -30,7 +30,11 @@ codex plugin marketplace add https://github.com/swift-microservices/skills
 codex plugin add swift-microservices@swift-microservices
 ```
 
-For local evaluation, use the skills from this checkout in an isolated Codex workspace; see the evaluation guidance below.
+The plugin is also available for local development directly from a checkout:
+
+```bash
+codex --plugin-dir /path/to/skills
+```
 
 Start a new Codex thread after installing or updating the plugin so it can load the skills.
 
@@ -42,8 +46,7 @@ Start a new Codex thread after installing or updating the plugin so it can load 
 .codex-plugin/plugin.json         Codex plugin manifest
 skills/<skill>/SKILL.md           instructions, under 500 lines, loaded when the skill triggers
 skills/<skill>/references/*.md    detail, one level deep, loaded as needed
-evals/<skill>-<case>/             shared eval prompts, fixtures, and behavioral rubrics
-evals/results/                   ignored local eval transcripts, artifacts, and reports
+evals/<skill>-<case>/             claude plugin eval cases: a prompt and its graders
 .github/scripts/validate.sh       the structural and manifest checks CI runs
 .github/scripts/create-release.sh label-based releases with synchronized plugin versions
 ```
@@ -57,18 +60,7 @@ claude plugin validate .           # Claude Code's own structural check
 claude plugin eval .               # run every eval case with and without the plugin
 ```
 
-### Evals with Codex
-
-Run a case's `prompt.md` in an isolated Codex workspace with the current skills and its `scaffold.sh` fixture, when present. Load required supporting skills such as `swift-concurrency`. Review the response, tool transcript, and generated artifacts against `graders/*.md`; a successful session is not a behavioral pass. Verify that read-only reviews leave fixture files unchanged. Keep transcripts, artifacts, and reports under the ignored `evals/results/` directory.
-
-For the Swift settings build case, run the independent checks with a compatible Swift 6.3+ toolchain:
-
-```sh
-python3 evals/building-swift-services-swift-settings/checks/verify.py \
-  evals/results/<run>/workspace
-```
-
-Claude-specific `tool_used`/`Skill` graders do not apply to Codex; inspect its skill-file reads instead. Explicit-skill runs do not establish automatic skill selection or with/without-plugin ablation. Claude's eval runner remains optional; no Claude subscription is needed for Codex evaluation.
+Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`.
 
 ## Contributing
 

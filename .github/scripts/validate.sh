@@ -95,7 +95,7 @@ if [[ ${#versions[@]} == 2 && ${versions[0]} != "${versions[1]}" ]]; then
   fail .codex-plugin/plugin.json 'version must match the Claude plugin manifest'
 fi
 
-# These checks are offline; live Codex/Claude evals remain an explicit local run.
+# These checks are offline; live Claude evals remain an explicit local run.
 for scaffold in evals/*/scaffold.sh; do
   [[ -f $scaffold ]] || continue
   bash -n "$scaffold" || fail "$scaffold" 'invalid Bash syntax'
