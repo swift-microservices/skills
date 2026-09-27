@@ -9,6 +9,7 @@ This file is the worked default: GitHub Actions, a container registry, a Dokploy
 - Branches are environments
 - The workflow files
 - The tests job
+- Foundation linking
 - The release image
 - Publishing per commit
 - The registry
@@ -60,16 +61,37 @@ jobs:
       enable_windows_checks: false             # defaults to true; refuse the surprise
 ```
 
-`--disable-automatic-resolution` makes the committed `Package.resolved` the build: CI fails when the manifest and the pin drift instead of silently resolving something newer. The macOS/iOS jobs run on runners only the swiftlang organization has — leave them off. One accepted trade comes with the reuse: no dependency caching (every run resolves and compiles cold; the price of not maintaining the workflow). Keep a static Linux SDK build beside it whenever the local image path is musl, because the static SDK is where a full-Foundation import or a missing `NIOFoundationCompat` link surfaces, and nothing else in the pipeline sees it; vendored C++ in the protobuf toolchain has broken musl builds outright, which is exactly why the check runs on every change rather than being discovered at the first local build.
+`--disable-automatic-resolution` makes the committed `Package.resolved` the build: CI fails when the manifest and the pin drift instead of silently resolving something newer. The macOS/iOS jobs run on runners only the swiftlang organization has — leave them off. One accepted trade comes with the reuse: no dependency caching (every run resolves and compiles cold; the price of not maintaining the workflow). Keep a static Linux SDK build beside it whenever the local image path is musl to catch SDK and dependency compatibility failures; vendored C++ in the protobuf toolchain has broken musl builds outright, which is why the check runs on every change. This is separate from checking whether the resolved graph links full Foundation.
 
 Private repositories have no free allotment for arm runners: a job on `ubuntu-24.04-arm` is refused before it starts when the account's billing lapses, and every run on the deployment branches fails the same way while nothing in the code changed. Either fund the account, host an arm runner of your own, or accept that publishing happens through the local path — build the image with the package's container plugin on an arm machine, push it with a write token, and trigger the platform's deploy by hand — until CI is back. A green pipeline is the normal path, not the only one.
+
+## Foundation linking
+
+Prefer FoundationEssentials when Foundation types are needed and use modern APIs even when an upstream dependency requires full Foundation. Before changing dependencies, verify the latest compatible releases and their trait defaults. The building skill owns the [API policy](https://github.com/swift-microservices/skills/blob/main/skills/building-swift-services/references/swift-style.md#foundation-and-modern-apis) and [dependency/trait guidance](https://github.com/swift-microservices/skills/blob/main/skills/building-swift-services/references/service-package.md#foundation-dependencies-and-traits).
+
+For a library whose resolved products can avoid full Foundation, run Vapor's [Foundation linking workflow](https://github.com/vapor/ci/blob/main/.github/workflows/check-foundation-linking.yml) on pull requests and main (and any deployment branch consuming the library):
+
+```yaml
+jobs:
+  foundation-linking:
+    name: Foundation linking
+    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@main
+    with:
+      swift_image: swift:6.3-noble
+```
+
+This workflow builds a release consumer of the package's library products and inspects its Linux shared-library dependencies. It rejects `libFoundation.so`, `libFoundationInternationalization.so`, and `lib_FoundationICU.so`; `libFoundationEssentials.so` is allowed. Check the current workflow implementation and use the supported toolchain when adopting it. Reproduce the same release-consumer build and library inspection locally before claiming that a dependency or trait change passes.
+
+For a service executable, inspect the actual Linux release binary and its transitive shared-library dependencies (for example with `ldd` in the build image). The library-consumer workflow does not substitute for checking an application's executable, and a static binary has no dynamic library list to inspect. A successful static SDK build proves compatibility, not the absence of statically linked Foundation code.
+
+Applications using prominent server libraries such as Vapor 4 or PostgresNIO may still require full Foundation; verify their current state rather than assuming every application can remove it. Record the responsible upstream package, resolved version, and any intentional internationalization use. Do not add a gate that is guaranteed to fail for that documented graph, claim it is Essentials-only, or silently disable a previously passing check to hide a regression. Keep the gate on libraries that can satisfy it and recheck the application when upstream releases change. Ship every required runtime library when using a dynamic release binary.
 
 ## The release image
 
 Published images build from a `Containerfile`, two stages, glibc:
 
 - **Build stage** on the Swift toolchain image: `COPY ./Package.*` and `swift package resolve` as their own layer so dependency resolution caches while manifests are unchanged, then `swift build --configuration release --static-swift-stdlib --product <service>`, then stage the binary, `swift-backtrace-static`, and every `*.resources` bundle.
-- **Runtime stage** on the matching minimal OS image: `ca-certificates` and `tzdata` only, an unprivileged system user with `/app` as home, the staged files copied in with that owner, `SWIFT_BACKTRACE` configured, `ENTRYPOINT ["./<service>"]`.
+- **Runtime stage** on the matching minimal OS image: `ca-certificates` and `tzdata`, any additional shared libraries required by the inspected release binary, an unprivileged system user with `/app` as home, the staged files copied in with that owner, `SWIFT_BACKTRACE` configured, `ENTRYPOINT ["./<service>"]`.
 
 A `.dockerignore` beside it excludes version control, `.github`, build state, secrets patterns, and everything not needed to compile the package.
 

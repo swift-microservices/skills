@@ -4,6 +4,7 @@
 
 - Package initialization
 - Dependency baseline
+- Foundation dependencies and traits
 - Source tree of a module
 - Source tree of a monolith
 - Source tree of a service
@@ -26,7 +27,7 @@ Then reshape the generated package. A monolith is initialized once and gains a m
 
 ## Dependency baseline
 
-These are the packages the architecture is built on. The versions are a floor from when this skill was last revised, not an instruction to downgrade a repository that already uses compatible newer releases; align with the organization's other packages first, then with the newest compatible release.
+These are the packages the architecture is built on. The versions are a floor from when this skill was last revised, not an instruction to downgrade a repository that already uses compatible newer releases. Before creating or changing a dependency set, check upstream releases, the tagged manifests, and current API availability; use the newest compatible releases that support FoundationEssentials and the modern APIs the package needs. Coordinate version floors across the organization without retaining obsolete Foundation workarounds. Verify toolchain, platform, and API compatibility before raising a floor; a breaking upgrade needs an explicit migration.
 
 | Package | Baseline | Products/purpose |
 | --- | --- | --- |
@@ -34,8 +35,8 @@ These are the packages the architecture is built on. The versions are a floor fr
 | `swift-configuration` | `1.2.0` | `Configuration` and `EnvironmentVariablesProvider` |
 | `swift-service-lifecycle` | `2.11.0` | `ServiceLifecycle` and `ServiceGroup` |
 | `swift-log` | `1.15.0` | `Logging` facade (also linked by every Core so use cases log domain events) |
-| `swift-log-loki` | `2.0.0` | `LoggingLoki`: the default in-process log shipper; any `LogHandler` the deployment prefers may take its place |
-| `swift-nio` | `2.65.0` | `NIOFoundationCompat`, declared on an executable that links `LoggingLoki` but not PostgresNIO (a gateway); swift-log-loki 2.0.0 omits it |
+| `swift-log-loki` | `2.0.1` | `LoggingLoki`: the default in-process log shipper; declares its own `NIOFoundationEssentialsCompat` dependency |
+| `swift-nio` | `2.103.0` | `NIOCore` when directly imported; `NIOFoundationEssentialsCompat` for Foundation value/ByteBuffer helpers when used by our target (available since 2.99.0) |
 | `postgres-migrations` | `1.2.0` | `PostgresMigrations` |
 | `postgres-nio` | `1.33.1` | `PostgresNIO`, `PostgresClient`, prepared statements, transactions |
 | `grpc-swift-2` | `2.4.0` | `GRPCCore`, `GRPCClient`, `GRPCServer`: with gRPC |
@@ -43,10 +44,10 @@ These are the packages the architecture is built on. The versions are a floor fr
 | `grpc-swift-extras` | `2.2.0` | `GRPCServiceLifecycle` adapters: with gRPC |
 | `grpc-swift-protobuf` | `2.4.0` | `GRPCProtobuf` and `GRPCProtobufGenerator`: with gRPC |
 | `swift-protobuf` | `1.32.0` | `SwiftProtobuf` messages and well-known types: with gRPC |
-| `hummingbird` | `2.26.0` | `Hummingbird` for the HTTP targets and the executable; `HummingbirdTesting` for HTTP tests |
-| `hummingbird-auth` | `2.2.0` | `HummingbirdAuth` for `AuthRequestContext` and `IsAuthenticatedMiddleware`; `HummingbirdBcrypt` only in a `<Module>Bcrypt` adapter target |
+| `hummingbird` | `2.27.0` | `Hummingbird` for the HTTP targets and the executable; `HummingbirdTesting` for HTTP tests; disable `FullFoundation` |
+| `hummingbird-auth` | `2.5.0` | `HummingbirdAuth` for `AuthRequestContext` and `IsAuthenticatedMiddleware`; `HummingbirdBcrypt` only in a `<Module>Bcrypt` adapter target |
 | `swift-openapi-generator` | `1.13.0` | The `OpenAPIGenerator` plugin on every HTTP target that owns a document |
-| `swift-openapi-runtime` | `1.12.0` | `OpenAPIRuntime` beside the generated types |
+| `swift-openapi-runtime` | `1.12.1` | `OpenAPIRuntime` beside the generated types; disable `FullFoundation` |
 | `swift-openapi-hummingbird` | current | `OpenAPIHummingbird`, only with generated server stubs (the alternative in *http.md*); not linked by the types-only default |
 | `swift-openapi-vapor` | current | `OpenAPIVapor`, the same for a Vapor surface |
 | `vapor` | `4.122.0` | `Vapor`, only when the HTTP surface is on Vapor instead of Hummingbird; `VaporTesting` for its tests |
@@ -58,7 +59,7 @@ These are the packages the architecture is built on. The versions are a floor fr
 | `swift-authentication` | `0.1.0` | `Authentication`: the `Authenticator` protocol an HTTP target names to take any verifier |
 | `swift-authentication-jwt` | `0.1.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module |
 | `swift-authentication-grpc` | `0.1.0` | `AuthenticationGRPC` for the bearer interceptors; `AuthenticationGRPCNIOTransport` for the certificate interceptor, only a package with an internal service |
-| `swift-authentication-hummingbird` | `0.1.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
+| `swift-authentication-hummingbird` | `0.1.1` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
 | `swift-authentication-vapor` | `0.1.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
 | `<project>-core` | first compatible tag | `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` |
 | `<project>-protos` | first compatible tag | `<Module>Protos`, one product per module with a gRPC contract |
@@ -72,7 +73,7 @@ dependencies: [
     .package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0"),
     .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.11.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
-    .package(url: "https://github.com/lovetodream/swift-log-loki.git", from: "2.0.0"),
+    .package(url: "https://github.com/lovetodream/swift-log-loki.git", from: "2.0.1"),
     .package(url: "https://github.com/hummingbird-project/postgres-migrations.git", from: "1.2.0"),
     .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.1"),
     .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),                 // with gRPC
@@ -80,10 +81,10 @@ dependencies: [
     .package(url: "https://github.com/grpc/grpc-swift-extras.git", from: "2.2.0"),            // with gRPC
     .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),          // with gRPC
     .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.32.0"),             // with gRPC
-    .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.26.0"),  // with HTTP
-    .package(url: "https://github.com/hummingbird-project/hummingbird-auth.git", from: "2.2.0"), // with HTTP, or a Bcrypt adapter
+    .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: ["ConfigurationSupport"]), // with HTTP
+    .package(url: "https://github.com/hummingbird-project/hummingbird-auth.git", from: "2.5.0"), // with HTTP, or a Bcrypt adapter
     .package(url: "https://github.com/apple/swift-openapi-generator.git", from: "1.13.0"),    // with HTTP
-    .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.0"),      // with HTTP
+    .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []), // with HTTP
     .package(url: "https://github.com/apple/swift-temporal-sdk.git", from: "1.0.0"),          // only with Temporal
     .package(url: "https://github.com/vapor/jwt-kit.git", "5.3.0"..<"5.7.0"),
     .package(url: "https://github.com/apple/swift-service-context.git", from: "1.3.0"),
@@ -92,7 +93,7 @@ dependencies: [
     .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.1.0"),          // with HTTP
     .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.1.0"),
     .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.1.0"),     // with gRPC
-    .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.1.0"), // with HTTP
+    .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.1.1"), // with HTTP
     .package(url: "https://github.com/<organization>/<project>-core.git", from: "0.1.0"),
     .package(url: "https://github.com/<organization>/<project>-protos.git", from: "0.1.0"),   // with gRPC
     .package(url: "https://github.com/apple/swift-container-plugin.git", from: "1.3.0"),
@@ -104,6 +105,25 @@ Do not add every product to every target. Declare only the direct products impor
 Depend on organization packages by tagged URL, never by `.package(path:)`. A path dependency builds only where the sibling repository happens to be checked out, so CI and container builds fail on a package that resolves locally, and a package can silently build against uncommitted contract changes. Publish and tag first, then pin `from:` the release containing what the package imports. Contract additions are additive: tag them as a minor release so consumers on the same major range pick them up without a manifest edit. How to verify a cross-repository change before tagging is in [identity-and-access.md](identity-and-access.md) under *The packages*. A library package never commits `Package.resolved`; an executable package does, and re-resolves it when a dependency's tag moves.
 
 After renaming a target, delete `.build` in that package and every consumer, or the stale `.swiftmodule` keeps the old module name and the compiler insists a module both exists and does not.
+
+## Foundation dependencies and traits
+
+Use FoundationEssentials when Foundation types are needed and the standard library is insufficient. New and changed code must use modern APIs as described in [swift-style.md](swift-style.md), even if the application already links full Foundation through an upstream library.
+
+Some libraries retain a `FullFoundation` trait to preserve legacy API compatibility for existing users. It may be enabled by default: [Hummingbird 2.27.0](https://github.com/hummingbird-project/hummingbird/blob/2.27.0/Package.swift) and [swift-openapi-runtime 1.12.1](https://github.com/apple/swift-openapi-runtime/blob/1.12.1/Package.swift) are examples. Inspect the manifest of the version being resolved; neither the trait's presence, its name, nor its default is universal. For these versions, disable default traits with `traits: []` when no optional feature is needed:
+
+```swift
+.package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: []),
+.package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []),
+```
+
+When other traits are required, list only those traits explicitly. The package-level example above uses Hummingbird's `traits: ["ConfigurationSupport"]` because the composition examples use its configuration integration; this also leaves `FullFoundation` disabled. Never enable the full default set just to recover one feature. [SwiftPM combines traits across the resolved graph](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/addingdependencies/): another dependency can enable `FullFoundation` again. Inspect transitive manifests and `swift package show-dependencies`, then verify the result with a Linux linking check; a direct `traits: []` declaration alone is not proof.
+
+Use SwiftNIO's `NIOFoundationEssentialsCompat` product and import for ByteBuffer/Data and Codable helpers rather than `NIOFoundationCompat`. It was introduced in [SwiftNIO 2.99.0](https://github.com/apple/swift-nio/releases/tag/2.99.0); raising the NIO version alone does not switch a dependency's declared product. [LoggingLoki 2.0.1](https://github.com/lovetodream/swift-log-loki/blob/v2.0.1/Package.swift) declares this compatibility module itself, so remove the old gateway workaround that added `NIOFoundationCompat` to the executable. Add an explicit NIO dependency and product only when our target imports it directly.
+
+Full Foundation may remain unavoidable for an application using well-known Swift server libraries. At the 2026-09-27 audit, [Vapor 4.122.2](https://github.com/vapor/vapor/blob/4.122.2/Package.swift) and [PostgresNIO 1.33.1](https://github.com/vapor/postgres-nio/blob/1.33.1/Package.swift) still pull in full Foundation and its internationalization/ICU libraries. Their consumers, including our Vapor and Postgres adapters, inherit that requirement. Recheck their latest releases and current source before repeating this conclusion; do not assume there is a disabling trait or replace a required library solely to satisfy a linking claim. Record the upstream package and resolved version, keep our own code on modern Essentials APIs, and migrate when a compatible upstream release permits it.
+
+The delivery skill's [Foundation linking guidance](https://github.com/swift-microservices/skills/blob/main/skills/delivering-swift-services/references/delivery.md#foundation-linking) describes the separate verification gate. Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation.
 
 ## Source tree of a module
 
@@ -542,7 +562,6 @@ Include a direct product dependency in every target that imports its module. The
         .product(name: "ServiceContextModule", package: "swift-service-context"),
         .product(name: "Logging", package: "swift-log"),
         .product(name: "LoggingLoki", package: "swift-log-loki"),
-        .product(name: "NIOFoundationCompat", package: "swift-nio"),                 // swift-log-loki 2.0.0 omits it and nothing else here links it
         .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
     ]
 ),
