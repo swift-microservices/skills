@@ -47,13 +47,14 @@ Start a new Codex thread after installing or updating the plugin so it can load 
 skills/<skill>/SKILL.md           instructions, under 500 lines, loaded when the skill triggers
 skills/<skill>/references/*.md    detail, one level deep, loaded as needed
 evals/<skill>-<case>/             claude plugin eval cases: a prompt and its graders
-scripts/validate.py               the structural checks CI runs
+.github/scripts/validate.sh       the structural and manifest checks CI runs
+.github/scripts/create-release.sh label-based releases with synchronized plugin versions
 ```
 
 ## Development
 
 ```sh
-python3 scripts/validate.py        # frontmatter, line budgets, links, retired names
+bash .github/scripts/validate.sh   # frontmatter, line budgets, links, plugin versions
 claude --plugin-dir .              # try the skills in a session
 claude plugin validate .           # Claude Code's own structural check
 claude plugin eval .               # run every eval case with and without the plugin
@@ -64,5 +65,27 @@ Evals call the model on your account. Run one case while iterating: `claude plug
 ## Contributing
 
 Keep a change to one skill. Update its evals with it. Label the pull request with its semantic version impact.
+
+## Releases
+
+Run **Auto Release** from GitHub Actions on `main`, or use:
+
+```sh
+gh workflow run auto-release.yml --ref main
+```
+
+Like the other organization repositories, the workflow uses merged PR labels since the latest release: `🆕 semver/minor` takes precedence over `🔨 semver/patch`; `semver/none` does not trigger a release. PRs must carry a SemVer label. A `⚠️ semver/major` change requires a manual release.
+
+The Bash release helper lives in `.github/scripts`, following the [Swift Temporal SDK release script](https://github.com/apple/swift-temporal-sdk/blob/main/.github/scripts/create-release.sh), with additional handling for the plugin manifests.
+
+Before publishing, CI validates the skills and plugin manifests. It updates both plugin manifests, commits the version, pushes that commit and its tag together, and publishes a GitHub release with categorized notes. These checks run in the release job because commits pushed with `GITHUB_TOKEN` do not trigger the regular validation workflow.
+
+If publication fails after the tag was pushed, rerun on that same commit before merging more changes. The workflow reuses the tag only when it points to that commit and both manifests match; it never moves an existing tag. Branch protection must permit the workflow token to push the version commit to `main`.
+
+To preview the next version from a clean, up-to-date `main` checkout with tags fetched and `gh` authenticated:
+
+```sh
+GITHUB_REPOSITORY=swift-microservices/skills GITHUB_REF=refs/heads/main bash .github/scripts/create-release.sh --dry-run
+```
 
 MIT.
