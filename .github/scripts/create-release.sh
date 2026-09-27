@@ -1,6 +1,6 @@
 #!/bin/bash
 # Label-based releases, following apple/swift-temporal-sdk's create-release.sh.
-# Requires authenticated gh, jq, Git, Python 3, GITHUB_REPOSITORY and GITHUB_REF.
+# Requires authenticated gh, jq, Git, GITHUB_REPOSITORY and GITHUB_REF.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -119,7 +119,7 @@ if [[ -z $remote_tag ]]; then
     jq --arg version "$new_version" '.version = $version' "$manifest" > "$temp_dir/manifest.json"
     cat "$temp_dir/manifest.json" > "$manifest"
   done
-  python3 .github/scripts/validate.py
+  bash .github/scripts/validate.sh
   git add -- "${manifests[@]}"
   if ! git diff --cached --quiet; then
     git_bot commit -m "Version $new_version"

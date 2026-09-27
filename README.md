@@ -47,15 +47,16 @@ Start a new Codex thread after installing or updating the plugin so it can load 
 skills/<skill>/SKILL.md           instructions, under 500 lines, loaded when the skill triggers
 skills/<skill>/references/*.md    detail, one level deep, loaded as needed
 evals/<skill>-<case>/             claude plugin eval cases: a prompt and its graders
-.github/scripts/validate.py       the structural and manifest checks CI runs
+.github/scripts/validate.sh       the structural and manifest checks CI runs
 .github/scripts/create-release.sh label-based releases with synchronized plugin versions
+.github/scripts/tests/test-ci.sh  offline validation and release tests
 ```
 
 ## Development
 
 ```sh
-python3 .github/scripts/validate.py  # frontmatter, line budgets, links, plugin versions
-python3 -B -m unittest discover -s .github/scripts/tests -v  # release automation tests
+bash .github/scripts/validate.sh   # frontmatter, line budgets, links, plugin versions
+bash .github/scripts/tests/test-ci.sh  # offline validation and release tests
 claude --plugin-dir .              # try the skills in a session
 claude plugin validate .           # Claude Code's own structural check
 claude plugin eval .               # run every eval case with and without the plugin
