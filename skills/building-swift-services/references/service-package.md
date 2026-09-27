@@ -80,7 +80,7 @@ These are the packages the architecture is built on. The versions are a floor fr
 | Package | Baseline | Products/purpose |
 | --- | --- | --- |
 | `swift-argument-parser` | `1.8.2` | `ArgumentParser` for the command tree |
-| `swift-configuration` | `1.2.0` | `Configuration` and `EnvironmentVariablesProvider` |
+| `swift-configuration` | `1.2.0` | `Configuration` and `EnvironmentVariablesProvider`; opt out of default traits with `traits: []` |
 | `swift-service-lifecycle` | `2.11.0` | `ServiceLifecycle` and `ServiceGroup` |
 | `swift-log` | `1.15.0` | `Logging` facade (also linked by every Core so use cases log domain events) |
 | `swift-log-loki` | `2.0.1` | `LoggingLoki`: the default in-process log shipper; declares its own `NIOFoundationEssentialsCompat` dependency |
@@ -118,7 +118,7 @@ Declare them at package level:
 ```swift
 dependencies: [
     .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.8.2"),
-    .package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0"),
+    .package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0", traits: []),
     .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.11.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
     .package(url: "https://github.com/lovetodream/swift-log-loki.git", from: "2.0.1"),
@@ -164,6 +164,8 @@ Some libraries retain a `FullFoundation` trait to preserve legacy API compatibil
 .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: []),
 .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []),
 ```
+
+Always opt out of default traits when declaring `apple/swift-configuration`: use `.package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0", traits: [])` for the environment-based configuration used here. Its [1.2.0 manifest](https://github.com/apple/swift-configuration/blob/1.2.0/Package.swift) enables `JSON` by default; the [JSON provider](https://github.com/apple/swift-configuration/blob/1.2.0/Sources/Configuration/Providers/Files/JSONSnapshot.swift) uses `JSONSerialization` and imports full Foundation. The trait is named `JSON`, not `FullFoundation`. Environment-variable configuration does not need it, and decoding an HTTP JSON body is unrelated to parsing JSON configuration files. If a configuration provider genuinely requires an optional trait, select only that trait explicitly and document its linking cost; do not silently drop required provider functionality or restore all defaults. Inspect transitive edges too: another dependency can re-enable `JSON`, so this direct opt-out alone does not prove that the final binary avoids full Foundation.
 
 When other traits are required, list only those traits explicitly. The package-level example above uses Hummingbird's `traits: ["ConfigurationSupport"]` because the composition examples use its configuration integration; this also leaves `FullFoundation` disabled. Never enable the full default set just to recover one feature. [SwiftPM combines traits across the resolved graph](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/addingdependencies/): another dependency can enable `FullFoundation` again. Inspect transitive manifests and `swift package show-dependencies`, then verify the result with a Linux linking check; a direct `traits: []` declaration alone is not proof.
 

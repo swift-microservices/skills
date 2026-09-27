@@ -19,6 +19,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [.executable(name: "events", targets: ["Events"])],
     dependencies: [
+        .package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.26.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird-auth.git", from: "2.2.0"),
         .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.0"),
@@ -34,7 +35,10 @@ let package = Package(
             .product(name: "NIOCore", package: "swift-nio"),
             .product(name: "NIOFoundationCompat", package: "swift-nio"),
         ], swiftSettings: swiftSettings),
-        .executableTarget(name: "Events", dependencies: ["EventsHTTP"], swiftSettings: swiftSettings),
+        .executableTarget(name: "Events", dependencies: [
+            "EventsHTTP",
+            .product(name: "Configuration", package: "swift-configuration"),
+        ], swiftSettings: swiftSettings),
         .testTarget(name: "EventsHTTPTests", dependencies: [
             "EventsHTTP",
             .product(name: "NIOCore", package: "swift-nio"),
@@ -80,6 +84,9 @@ cat > Sources/EventsCore/EventsCore.swift <<'SWIFT'
 // Domain use cases are outside this fixture's requested change.
 SWIFT
 cat > Sources/Events/main.swift <<'SWIFT'
+import Configuration
 import EventsHTTP
+
+let config = ConfigReader(provider: EnvironmentVariablesProvider())
 // The running application is outside this fixture's requested change.
 SWIFT
