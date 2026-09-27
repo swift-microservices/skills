@@ -23,7 +23,8 @@ Every module carries a test target, `<Module>CoreTests` (`<Service>CoreTests` wh
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Project>Testing", package: "<project>-core"),
         .product(name: "Logging", package: "swift-log"),
-    ]
+    ],
+    swiftSettings: swiftSettings
 ),
 ```
 

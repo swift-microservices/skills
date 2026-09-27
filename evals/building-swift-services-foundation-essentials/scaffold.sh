@@ -7,6 +7,13 @@ cat > Package.swift <<'SWIFT'
 // swift-tools-version: 6.3
 import PackageDescription
 
+let swiftSettings: [SwiftSetting] = [
+    .enableUpcomingFeature("ExistentialAny"),
+    .enableUpcomingFeature("MemberImportVisibility"),
+    .enableUpcomingFeature("InternalImportsByDefault"),
+    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+]
+
 let package = Package(
     name: "acme-events",
     platforms: [.macOS(.v15)],
@@ -18,7 +25,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.98.0"),
     ],
     targets: [
-        .target(name: "EventsCore"),
+        .target(name: "EventsCore", swiftSettings: swiftSettings),
         .target(name: "EventsHTTP", dependencies: [
             "EventsCore",
             .product(name: "Hummingbird", package: "hummingbird"),
@@ -26,19 +33,19 @@ let package = Package(
             .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
             .product(name: "NIOCore", package: "swift-nio"),
             .product(name: "NIOFoundationCompat", package: "swift-nio"),
-        ]),
-        .executableTarget(name: "Events", dependencies: ["EventsHTTP"]),
+        ], swiftSettings: swiftSettings),
+        .executableTarget(name: "Events", dependencies: ["EventsHTTP"], swiftSettings: swiftSettings),
         .testTarget(name: "EventsHTTPTests", dependencies: [
             "EventsHTTP",
             .product(name: "NIOCore", package: "swift-nio"),
-        ]),
+        ], swiftSettings: swiftSettings),
     ],
     swiftLanguageModes: [.v6]
 )
 SWIFT
 cat > Sources/EventsHTTP/EventJSONCodec.swift <<'SWIFT'
-import Foundation
-import NIOCore
+package import Foundation
+package import NIOCore
 import NIOFoundationCompat
 
 package struct EventPayload: Codable, Sendable {

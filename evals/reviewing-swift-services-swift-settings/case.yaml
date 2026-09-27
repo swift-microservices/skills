@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: reviewing-swift-services-swift-settings
+tags: [reviewing, swift-settings, concurrency]
+context:
+  scaffold_script: scaffold.sh
