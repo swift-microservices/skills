@@ -11,7 +11,7 @@ Core is the same target in every shape. A module's Core knows nothing about whet
 
 ## Database boundary
 
-Core links `Persistence` from swift-persistence 0.2.0 for the transaction boundary, and declares its use cases against it. With the shared `NonisolatedNonsendingByDefault` setting, the package protocol is:
+Core links `Persistence` from swift-persistence for the transaction boundary, and declares its use cases against it:
 
 ```swift
 public protocol Database<Scope>: Sendable {

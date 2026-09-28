@@ -195,7 +195,7 @@ In a monolith the admin context is not the authorization: the use case still che
 
 ## Router tiers
 
-Register routes in three tiers, and let the tier — not a path prefix or a path exception — decide what runs:
+Register routes in three tiers, and let the tier decide what runs:
 
 ```swift
 let router = Router(context: BasicRequestContext.self)
@@ -219,7 +219,7 @@ let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
 
 `BearerAuthenticationMiddleware` comes from swift-authentication-hummingbird's `AuthenticationHummingbird`; it takes any `Authenticator<String, UserIdentity>`, sets the context's `identity`, and binds the `Principal<UserIdentity, String>` in `ServiceContext` that the tenant middleware and the propagating interceptor read. The `<Module>HTTP` or `API` target links `Authentication` to name the authenticator protocol and `<Project>Authentication` for `UserIdentity`; the key, and `AuthenticationJWT`, reach only the executable.
 
-Tier 1 exists for the same reason the session-issuing RPCs live on a public service with no interceptor: it is that rule, one transport over. Token refresh sends the refresh token in the `Authorization` header, and a refresh token is a database row rather than a signed one. An authenticating middleware applied to it verifies that value as a claim payload, fails, and returns `401` before the handler is reached — so the route cannot succeed at any point, for any client. Grouping by tier prevents that structurally. A path exception inside the middleware does not: it restates the rule in a second place that drifts.
+Tier 1 exists for the same reason the session-issuing RPCs live on a public service with no interceptor: it is that rule, one transport over. Token refresh sends the refresh token in the `Authorization` header, and a refresh token is a database row rather than a signed one. An authenticating middleware applied to it verifies that value as a claim payload, fails, and returns `401` before the handler is reached — so the route cannot succeed at any point, for any client. Registering it in the tier with no authenticating middleware makes that structural.
 
 Tier 2 is where a route that reads differently for a known caller belongs — a catalogue that is public but richer once logged in. Do not collapse tiers 2 and 3; identifying and requiring are separate decisions here exactly as they are on gRPC.
 
@@ -231,15 +231,13 @@ A gateway has no database and no tenant middleware: the setting is applied where
 
 ## Route design
 
-Authorization is a property of the method-and-resource pair, not of a path prefix. A parallel `/admin/...` tree makes `/admin/users` and `/users` two resources when they are one resource with two audiences, and it splits the document into two shapes for the same thing.
-
-Flatten it, and let three mechanisms carry the distinction:
+Authorization is a property of the method-and-resource pair. A resource with two audiences is one resource at one path, with one shape in the document, and three mechanisms carry the distinction:
 
 - **Method.** Reads open, writes admin: `GET /items` alongside `POST /items`.
 - **Collection versus item.** `GET /users` is inherently an administrative capability where `GET /profile` is not.
 - **Sub-resources.** `/users/{id}/orders` for an administrator, a caller-scoped route for everyone else.
 
-Express the administrative half as a context group at the same path, never a path group:
+Express the administrative half as a context group at the same path:
 
 ```swift
 package func addAuthenticatedRoutes(to group: RouterGroup<IdentityRequestContext>) {
@@ -366,7 +364,7 @@ app.get("orders") { req in
 
 In a module's surface, a controller is a `RouteCollection` holding the module's use-case protocols, with one `boot(routes:)` that registers into the groups the composition root hands it, and the `ServiceContext.withValue` wrapper sits in the handler, once, around the use-case call. Conversions stay in `Schemas/Requests/` and `Schemas/Responses/` as `X+Schema.swift`, and problem details come from a custom `ErrorMiddleware` registered first on the application, mapping the use case's typed errors and `Abort` to `application/problem+json` exactly as the Hummingbird `ErrorMiddleware` does. A gateway's controller is the same collection over generated client protocols with `X+RPC.swift` conversions.
 
-Tiers are route groups: session-issuing routes on the bare application, an identifying group with the bearer middleware and the settings middleware, and a guarded group with `UserIdentity.guardMiddleware()` on top; the admin group adds a middleware that requires `.admin` from `req.auth` and answers `403`. The same structural rule holds — no path exception inside a middleware.
+Tiers are route groups: session-issuing routes on the bare application, an identifying group with the bearer middleware and the settings middleware, and a guarded group with `UserIdentity.guardMiddleware()` on top; the admin group adds a middleware that requires `.admin` from `req.auth` and answers `403`. As on Hummingbird, the group a route is registered in decides what runs.
 
 ## Tests
 
