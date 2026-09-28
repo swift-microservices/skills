@@ -42,17 +42,17 @@ Each service repository carries four small workflows and a dependabot configurat
 | `cleanup-images.yml` | weekly cron | prunes the registry to a recent window |
 | `dependabot.yml` | weekly | Swift and Actions bumps as PRs against develop |
 
-Third-party actions are pinned to commit SHAs with a version comment; dependabot keeps the pins moving. The organization's own actions, where any exist, are pinned by SemVer tag (see *Deploying to the platform*).
+Third-party actions and reusable workflows are pinned to commit SHAs with the release tag as a comment (`@<commit-sha>  # <tag>`, two spaces before `#` as yamllint's `--strict` comments rule requires); dependabot keeps the pins moving. The same rule holds in library repositories. The organization's own actions, where any exist, are pinned by SemVer tag (see *Deploying to the platform*).
 
 ## The tests job
 
-CI reuses `swiftlang/github-workflows`' `swift_package_test.yml`, pinned to a release tag, collapsed from its default sweep to the one cell that matches production:
+CI reuses `swiftlang/github-workflows`' `swift_package_test.yml`, pinned to a release tag's commit SHA, collapsed from its default sweep to the one cell that matches production:
 
 ```yaml
 jobs:
   tests:
     name: Tests
-    uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@<tag>
+    uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@<commit-sha>  # <tag>
     with:
       linux_swift_versions: '["<toolchain>"]'
       linux_os_versions: '["<os>"]'
@@ -67,7 +67,7 @@ Private repositories have no free allotment for arm runners: a job on `ubuntu-24
 
 ## Foundation linking
 
-Prefer FoundationEssentials when Foundation types are needed and use modern APIs even when an upstream dependency requires full Foundation. Before changing dependencies, verify the latest compatible releases and their trait defaults. The building skill owns the [API policy](https://github.com/swift-microservices/skills/blob/main/skills/building-swift-services/references/swift-style.md#foundation-and-modern-apis) and [dependency/trait guidance](https://github.com/swift-microservices/skills/blob/main/skills/building-swift-services/references/service-package.md#foundation-dependencies-and-traits).
+Prefer FoundationEssentials when Foundation types are needed and use modern APIs even when an upstream dependency requires full Foundation. Before changing dependencies, verify the latest compatible releases and their trait defaults. The building skill owns the [API policy](../../building-swift-services/references/swift-style.md#foundation-and-modern-apis) and [dependency/trait guidance](../../building-swift-services/references/service-package.md#foundation-dependencies-and-traits).
 
 For a library whose resolved products can avoid full Foundation, run Vapor's [Foundation linking workflow](https://github.com/vapor/ci/blob/main/.github/workflows/check-foundation-linking.yml) on pull requests and main (and any deployment branch consuming the library):
 
@@ -75,12 +75,12 @@ For a library whose resolved products can avoid full Foundation, run Vapor's [Fo
 jobs:
   foundation-linking:
     name: Foundation linking
-    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@main
+    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@<commit-sha>  # main as of <date>
     with:
       swift_image: swift:6.3-noble
 ```
 
-This workflow builds a release consumer of the package's library products and inspects its Linux shared-library dependencies. It rejects `libFoundation.so`, `libFoundationInternationalization.so`, and `lib_FoundationICU.so`; `libFoundationEssentials.so` is allowed. Check the current workflow implementation and use the supported toolchain when adopting it. Reproduce the same release-consumer build and library inspection locally before claiming that a dependency or trait change passes.
+vapor/ci publishes no release tags, so pin the reusable workflow to a reviewed `main` commit like any other third-party action and move the SHA deliberately. This workflow builds a release consumer of the package's library products and inspects its Linux shared-library dependencies. It rejects `libFoundation.so`, `libFoundationInternationalization.so`, and `lib_FoundationICU.so`; `libFoundationEssentials.so` is allowed. Check the current workflow implementation and use the supported toolchain when adopting it. Reproduce the same release-consumer build and library inspection locally before claiming that a dependency or trait change passes.
 
 For a service executable, inspect the actual Linux release binary and its transitive shared-library dependencies (for example with `ldd` in the build image). The library-consumer workflow does not substitute for checking an application's executable, and a static binary has no dynamic library list to inspect. A successful static SDK build proves compatibility, not the absence of statically linked Foundation code.
 
@@ -118,7 +118,7 @@ The default platform is Dokploy. Each service is one platform application, Docke
 
 ```yaml
       - name: Deploy to staging Dokploy
-        uses: benbristow/dokploy-deploy-action@<commit-sha> # <version>
+        uses: benbristow/dokploy-deploy-action@<commit-sha>  # <version>
         with:
           dokploy_url: ${{ secrets.DOKPLOY_URL }}
           api_token: ${{ secrets.API_TOKEN }}

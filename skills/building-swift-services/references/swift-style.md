@@ -37,7 +37,7 @@ import Foundation
 #endif
 ```
 
-Order imports alphabetically by module name after any conditional Foundation block. Put one blank line between a conditional import block and other imports. Do not retain unused imports.
+Order plain imports alphabetically by module name at the top of the file, then any conditional Foundation block, separated by one blank line; swift-format's `OrderedImports` rule rejects plain imports that follow an `#if` block. Do not retain unused imports.
 
 ## Foundation and modern APIs
 

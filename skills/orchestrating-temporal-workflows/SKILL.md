@@ -20,7 +20,7 @@ Rules in this skill are conventions the packages and the shared code shape depen
 
 The service package, its roles, and its composition root are the building-swift-services skill's; identity and the certificate a worker presents are described there too. Load that skill beside this one when the change touches Core, Postgres, or `serve`.
 
-Every Swift change also follows the building skill's [Foundation and modern API policy](https://github.com/swift-microservices/skills/blob/main/skills/building-swift-services/references/swift-style.md#foundation-and-modern-apis): FoundationEssentials where needed, no newly introduced legacy APIs. When changing dependencies, check the latest compatible releases and their traits using its [dependency guidance](https://github.com/swift-microservices/skills/blob/main/skills/building-swift-services/references/service-package.md#foundation-dependencies-and-traits). Modern Foundation API usage does not relax Workflow determinism or payload compatibility.
+Every Swift change also follows the building skill's [Foundation and modern API policy](../building-swift-services/references/swift-style.md#foundation-and-modern-apis): FoundationEssentials where needed, no newly introduced legacy APIs. When changing dependencies, check the latest compatible releases and their traits using its [dependency guidance](../building-swift-services/references/service-package.md#foundation-dependencies-and-traits). Modern Foundation API usage does not relax Workflow determinism or payload compatibility.
 
 ## Principles
 
