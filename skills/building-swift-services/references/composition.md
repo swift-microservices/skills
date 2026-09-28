@@ -264,7 +264,8 @@ let server = GRPCServer(
             host: serverConfig.string(forKey: "host", default: "0.0.0.0"),
             port: serverConfig.int(forKey: "port", default: 50051)
         ),
-        transportSecurity: try .mTLS(config: tlsConfig)
+        transportSecurity: try security.serverTransportSecurity(),
+        config: SPIFFETransportSecurity.serverConfiguration
     ),
     services: [itemPublicService, itemService, itemInternalService, userPublicService, userService],
     interceptorPipeline: [
@@ -283,14 +284,14 @@ let server = GRPCServer(
             ])
         ),
         .apply(
-            CertificateAuthenticationInterceptor(authenticator: ServiceAuthenticator()),
+            SPIFFEAuthenticationInterceptor(security: security, identity: ServiceIdentity.init(spiffeID:)),
             to: .services([<Organization>_Catalog_V1_ItemInternalService.descriptor])
         ),
     ]
 )
 ```
 
-The public services get nothing. `BearerAuthenticationInterceptor` is in `AuthenticationGRPC`; `UserSettingsInterceptor` in `<Project>Persistence`, after the bearer interceptor because it reads what that one bound; `CertificateAuthenticationInterceptor` is in `AuthenticationGRPCNIOTransport`, which a package links only when it has an internal service to protect, because only the NIO Posix transport exposes the peer certificate. A gRPC monolith exposed to clients directly still terminates TLS at the ingress and still keeps its internal services for its own workers and for the module that one day ships alone; mTLS between modules does not exist because there is no connection between them.
+The public services get nothing. `BearerAuthenticationInterceptor` is in `AuthenticationGRPC`; `UserSettingsInterceptor` in `<Project>Persistence`, after the bearer interceptor because it reads what that one bound; `SPIFFEAuthenticationInterceptor` is in `AuthenticationSPIFFEGRPC`, which the executable links for incoming or outgoing SPIFFE mTLS, including a gateway that only calls upstream services. Peer binding uses the NIO Posix transport’s validated certificate chain. A gRPC monolith exposed to clients directly still terminates TLS at the ingress and still keeps its internal services for its own workers and for the module that one day ships alone; mTLS between modules does not exist because there is no connection between them.
 
 ## Lifecycle
 
@@ -325,7 +326,7 @@ let usersClient = GRPCClient(
             host: try usersConfig.requiredString(forKey: "host"),
             port: try usersConfig.requiredInt(forKey: "port")
         ),
-        transportSecurity: try .mTLS(config: tlsConfig),
+        transportSecurity: try security.clientTransportSecurity(expectedServer: usersSPIFFEID),
         serviceConfig: .defaults
     ),
     interceptorPipeline: [
@@ -350,42 +351,16 @@ The gateway publishes no host port and needs no migration job; give it a health 
 
 ## Transport security factories
 
-Every internal gRPC connection is mutually authenticated, in both directions, with the one leaf certificate the process was issued (see *Transport security* in the delivering-swift-services skill). The factories live in the executable's `Configuration` folder as `TransportSecurity+ConfigReader.swift`, one per direction, on grpc-swift's own types, so a call site reads exactly like the library's `.plaintext` did, and there is no struct to carry two values and no mode to switch:
+For SPIFFE, follow [spiffe.md](spiffe.md). Construct one `SPIFFETransportSecurity` from the
+provider's validated material, use its server/client TLS factories and exact expected upstream
+IDs, and give the same instance to the SPIFFE interceptor. Pass
+`SPIFFETransportSecurity.serverConfiguration` to bound connection age and grace. The external
+provider task owns renewal; atomic updates go through `security.update`.
 
-```swift
-extension HTTP2ServerTransport.Posix.TransportSecurity {
-    /// A server cannot know a client's hostname, so it checks only that the client's certificate
-    /// chains to the CA: grpc's default for mTLS.
-    static func mTLS(config: ConfigReader) throws -> Self {
-        let certificateChain: [TLSConfig.CertificateSource] = [
-            .file(path: try config.requiredString(forKey: "certificatePath"), format: .pem)
-        ]
-        let privateKey: TLSConfig.PrivateKeySource = .file(
-            path: try config.requiredString(forKey: "privateKeyPath"),
-            format: .pem
-        )
-        let trustRoots: TLSConfig.TrustRootsSource = .certificates([
-            .file(path: try config.requiredString(forKey: "trustRootsPath"), format: .pem)
-        ])
-        return .mTLS(certificateChain: certificateChain, privateKey: privateKey) { tls in
-            tls.trustRoots = trustRoots
-        }
-    }
-}
-
-extension HTTP2ClientTransport.Posix.TransportSecurity {
-    /// A client knows exactly whom it dialled, so it checks the name as well as the chain.
-    static func mTLS(config: ConfigReader) throws -> Self {
-        // the same three sources
-        return .mTLS(certificateChain: certificateChain, privateKey: privateKey) { tls in
-            tls.trustRoots = trustRoots
-            tls.serverCertificateVerification = .fullVerification
-        }
-    }
-}
-```
-
-The reader is scoped to `tls`, so the operator sets `TLS_CERTIFICATE_PATH`, `TLS_PRIVATE_KEY_PATH`, and `TLS_TRUST_ROOTS_PATH`. A missing one fails at startup naming the key. Every `GRPCClient`, and the `TemporalClient` and `TemporalWorker` when the Temporal server runs inside the stack, take the client factory; the `GRPCServer` takes the server one. An HTTP-only monolith has no factories: it terminates nothing itself, and TLS toward the public is the ingress's. Do not share the file through a package: the shape is eight lines a package owns, and configuration is where packages differ.
+Construct `security` once under Infrastructure using the provider's certificate chain, private
+key, and configured trust bundle. Parse `usersSPIFFEID` and `temporalSPIFFEID` from the exact
+expected upstream identities in configuration; managed external endpoints keep provider TLS.
+Use the adapter for full-chain verification and TLS key-possession checks.
 
 **Every client waits for the connection, bounded by a deadline.** A gRPC call made while its channel is not ready fails fast by default, the error a caller hits on the first request after an idle period, a peer restart, or a rolling deploy. Enable *wait-for-ready* once as a client-wide default rather than per call: a `ServiceConfig` with one `MethodConfig` whose name is the empty-service global bucket (`MethodConfig.Name(service: "")`, the fallback the transport returns for any method with no more specific entry) applies to every method, with `waitForReady: true` and a `timeout` so a genuinely-down upstream still fails instead of hanging the caller forever.
 
@@ -455,7 +430,7 @@ struct Run: AsyncParsableCommand {
 
 There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. The one thing `worker run` must not do is open a server or read the verifying key; that is a fact of the command, kept by review, where it was once a fact of the manifest. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
 
-The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. Then create one `TemporalWorker`:
+The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. When the self-hosted Temporal frontend presents the configured X.509-SVID, create one `TemporalWorker` as below. Other frontends use their provider’s hostname-verified TLS and authentication requirements:
 
 ```swift
 let temporalWorker = try TemporalWorker(
@@ -464,7 +439,7 @@ let temporalWorker = try TemporalWorker(
         host: temporalHost,
         port: temporalConfig.int(forKey: "port", default: 7233)
     ),
-    transportSecurity: try .mTLS(config: tlsConfig),
+    transportSecurity: try security.clientTransportSecurity(expectedServer: temporalSPIFFEID),
     activityContainers: ReservationActivities(service: activityService),
     workflows: [ReservationWorkflow.self],
     logger: logger

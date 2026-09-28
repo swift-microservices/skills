@@ -136,13 +136,25 @@ services:
 
 Only the authenticating service mounts the private key. Every service that verifies tokens merges `*jwt-verification` and mounts `jwt-public`; a worker mounts neither. Compose refuses to start a service whose secret's source file is missing, so a stack without keys fails at `up` rather than at the first request — the same guarantee a `${VAR:?message}` guard gives a variable. `docker compose config` validates a file whose secret source is missing; only `up` refuses.
 
-The signing pair is the only secret file. A process's credential is its certificate, issued by the stack's own CA into the certificate volume on the first `up` (below), so there is nothing to mint against a migrated database and the first start is not staged: generate the pair, fill `.env`, `docker compose up -d`.
+JWT signing keys and workload private keys are secret material. Production workload credentials come from the identity provider described below; local development can bootstrap them in an isolated certificate volume.
 
-Rotation is one rule for both kinds of key material: new pair plus restart for the signing key; reissue the leaves and restart for a process's identity (the building-swift-services skill's identity-and-access reference has the reasoning).
+JWT signing-key rotation follows the issuer rollout. Production SPIFFE renewal atomically updates the running adapter and bounds established-connection lifetimes; the local development certificate recipe uses reissue and restart.
 
 ## Transport security: the certificate volume
 
-Every gRPC connection in the stack is mutually authenticated — service to service, and every client of the Temporal frontend. The certificates are the one piece of key material that is not a host file: a one-shot service issues them into a named volume on the first `up`, so a platform that runs the Compose file as-is gets them with no host-side step, and losing the volume costs one regeneration and a restart, because nothing outside the stack trusts the CA.
+**Production SPIFFE deployments:** use an identity provider that attests workloads and renews
+short-lived SVIDs automatically. Supply complete certificate/key/bundle updates to
+`SPIFFETransportSecurity.update`; see the building skill's [SPIFFE reference](../../building-swift-services/references/spiffe.md).
+Monitor renewal and expiry, overlap roots during rotation, isolate environment trust, and bound
+connection age and drain grace. A provider outage may retain only still-valid material; never
+extend expiry locally. The adapter does not implement issuer communication.
+
+**Local development:** the one-shot CA recipe below is convenient
+for local Compose bootstrap. Its year-long certificates and manual restarts are not the
+production SPIFFE lifecycle. Do not propagate this recipe into a new enterprise deployment.
+
+
+In this local development recipe, every gRPC connection is mutually authenticated — service to service, and every client of the Temporal frontend. The certificates are the one piece of key material that is not a host file: a one-shot service issues them into a named volume on the first `up`, so a platform that runs the Compose file as-is gets them with no host-side step, and losing the volume costs one regeneration and a restart, because nothing outside the stack trusts the CA.
 
 ```yaml
 configs:
@@ -179,7 +191,7 @@ services:
         condition: service_completed_successfully
 ```
 
-The script is `step` and nothing else: one CA (`--profile root-ca`, EC P-256, ten years), then one leaf per process in a fixed list — every service, every worker (a process of its own, whatever image it runs), the gateway, the Temporal server, its UI and its CLI — with `--san spiffe://<project>/<process> --san <process> --san localhost --san 127.0.0.1`, `--not-after 8760h`, and step's default leaf usage, which is both server and client authentication because a process presents the same certificate in both directions. The DNS SAN is the Compose service name because that is what every client dials and verifies; the URI SAN is the process's identity, what a receiving service reads to name it through `ServiceAuthenticator` — the certificate is the process's only credential; there is no service token and no `service` role (see *Processes* in the building-swift-services skill's identity-and-access reference). A leaf issued before the URI was added identifies as nothing — `TLS_ROTATE=leaves` reissues them. Each leaf directory also gets a copy of the CA certificate, so a process mounts one directory. The script skips whatever exists, so every later `up` is a no-op; `TLS_ROTATE=leaves` or `=all` reissues, followed by `docker compose up -d --force-recreate` — the same restart-to-rotate rule as the signing key. Files are `0644` and `ca/ca.key` is `0600`: isolation is by mount, not by mode, because the Temporal images run as their own users. `subpath` needs Docker Engine 26 / Compose 2.24 or later.
+The script is `step` and nothing else: one CA (`--profile root-ca`, EC P-256, ten years), then one leaf per process in a fixed list — every service, every worker (a process of its own, whatever image it runs), the gateway, the Temporal server, its UI and its CLI — with `--san spiffe://<project>/<process> --san <process> --san localhost --san 127.0.0.1`, `--not-after 8760h`, and step's default leaf usage, which is both server and client authentication because a process presents the same certificate in both directions. DNS SANs support hostname-verifying clients. SPIFFE clients verify the configured URI identity independently of the dial address; `SPIFFEAuthenticationInterceptor` binds the fully verified peer as `ServiceIdentity` — the certificate is the process's only credential; there is no service token and no `service` role (see *Processes* in the building-swift-services skill's identity-and-access reference). Each leaf directory also gets a copy of the CA certificate, so a process mounts one directory. The script skips whatever exists, so every later `up` is a no-op; `TLS_ROTATE=leaves` or `=all` reissues, followed by `docker compose up -d --force-recreate` — the same restart-to-rotate rule as the signing key. Files are `0644` and `ca/ca.key` is `0600`: isolation is by mount, not by mode, because the Temporal images run as their own users. `subpath` needs Docker Engine 26 / Compose 2.24 or later.
 
 The Temporal server reads the same volume through its own variables — `TEMPORAL_TLS_SERVER_CERT/KEY`, `TEMPORAL_TLS_SERVER_CA_CERT`, `TEMPORAL_TLS_FRONTEND_CERT/KEY`, `TEMPORAL_TLS_CLIENT1_CA_CERT`, `TEMPORAL_TLS_REQUIRE_CLIENT_AUTH: "true"`, and `TEMPORAL_TLS_INTERNODE_SERVER_NAME` / `TEMPORAL_TLS_FRONTEND_SERVER_NAME` set to its service name — the UI through `TEMPORAL_TLS_CA/CERT/KEY`, `TEMPORAL_TLS_SERVER_NAME` and `TEMPORAL_TLS_ENABLE_HOST_VERIFICATION`, and the namespace-creation CLI through `--tls-cert-path`, `--tls-key-path`, `--tls-ca-path` and `--tls-server-name` flags. The Swift `TemporalClient` and `TemporalWorker` take the same client factory as every `GRPCClient`.
 

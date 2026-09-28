@@ -64,6 +64,30 @@ Evals call the model on your account. Run one case while iterating: `claude plug
 
 `claude plugin eval` has no script grader. After a `building-swift-services-swift-settings` run, check its kept workspace with `python3 evals/building-swift-services-swift-settings/checks/verify.py <workspace>`: it asserts every target's settings, compiles independent actor and MainActor contract tests against the migrated API, and runs the executable.
 
+### SPIFFE eval coverage
+
+The Claude eval cases exercise independent trust decisions, not just API-name selection:
+
+| Case | Evidence required |
+| --- | --- |
+| `building-swift-services-internal-rpc` | Required peer binding, exact upstream ID, full-domain operation permission, denial before effects |
+| `building-swift-services-gateway-front-services` | Exact users/catalog peers, direct SPIFFE products, TLS key versus JWT signing-key separation |
+| `orchestrating-temporal-workflows-worker-identity` | Worker identity, use-case authorization, user ID as durable business data |
+| `building-swift-services-spiffe-lifecycle` | Coherent ordered updates, invalid renewal, expiry, root removal, active-stream revocation |
+| `delivering-swift-services-mtls` | Isolated local development certificate bootstrap |
+| `delivering-swift-services-spiffe-production` | Provider ownership, domain isolation, outage behavior, operational acceptance checks |
+| `reviewing-swift-services-spiffe-security` | Concrete peer-selection, permission, readiness, and shutdown defects with source evidence |
+| `reviewing-swift-services-spiffe-clean` | Accept correct supplied behavior without inventing defects or claiming runtime proof |
+
+The two review cases use `--scaffold` and read-only excerpts; they must not be built as complete
+applications. When Claude eval execution is available:
+
+```sh
+claude plugin eval . --case reviewing-swift-services-spiffe-security --scaffold --runs 1 --ablation none
+```
+ Structural validation and scaffold smoke checks are offline checks;
+they do not establish model quality or a behavioral pass rate.
+
 ## Contributing
 
 Keep a change to one skill. Update its evals with it. Label the pull request with its semantic version impact.

@@ -2,5 +2,6 @@
 type: llm
 ---
 
-PASS if the answer says the worker calls BillingInternalService, that billing identifies the worker by the mTLS client certificate it already presents on the connection (its SPIFFE URI name, bound by a certificate interceptor as a ServiceIdentity) with no token, no API key, and no shared secret, that the worker's gRPC client carries no interceptor, and that the user is carried as a user id field in the request and workflow input rather than as a forwarded token or a subject.
-FAIL if the answer mints or forwards a token for the worker, introduces a service role or credential exchange, calls BillingService with a bearer token, or has the worker impersonate the user.
+PASS only if the Activity calls BillingInternalService as the production entitlements-worker using SPIFFE mTLS, and its client matches the exact configured billing ID through `clientTransportSecurity(expectedServer:)`. Billing binds a full-domain `ServiceIdentity` through `SPIFFEAuthenticationInterceptor` and permits fulfillment only for the exact allowed worker in the use case, denying the authenticated audit worker. The user ID is business data in durable input and the RPC request, not a credential. An equivalent helper around the published API is acceptable.
+
+FAIL if the worker mints/forwards a bearer token, uses a service role/API key/credential exchange, impersonates the user, compares identity by path alone, or permits all authenticated workloads. Do not mistake a worker's separate database role or a managed Temporal endpoint's own credential requirements for a service-authentication token.
