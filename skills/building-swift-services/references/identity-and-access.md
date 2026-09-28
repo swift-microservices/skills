@@ -93,11 +93,11 @@ public struct UserRole: RawRepresentable, Hashable, Codable, ExpressibleByString
 }
 ```
 
-One type, no wire twin, no converting initializer. The subject is a `UUID` keyed to `sub`, so a token whose subject is not a user id fails to decode and never reaches a handler as an identity with no user in it; there is no other kind of token-bearing caller (see *Processes* below). The cost is that jwt-kit is linked wherever `UserIdentity` is, every Core included. That is accepted: the claims type is the identity, and nothing that signs or verifies comes with it.
+One type is both the decoded token and the identity handlers receive. The subject is a `UUID` keyed to `sub`, so a token whose subject is not a user id fails to decode and never reaches a handler as an identity with no user in it; there is no other kind of token-bearing caller (see *Processes* below). The cost is that jwt-kit is linked wherever `UserIdentity` is, every Core included. That is accepted: the claims type is the identity, and nothing that signs or verifies comes with it.
 
 `UserRole` is an open string, not an enum. An authenticator that meets a role it has no name for decodes it and grants it nothing, rather than refusing the whole token — so adding a role breaks no consumer, only the checks meant to admit it. A process is proved by its certificate, not by a token.
 
-The rule is the shape: one `JWTPayload` type that is the identity, `sub` carrying the user id as a `UUID`, expiry verified in `verify(using:)`, no wire twin, no converting initializer. The claim set above is the default, and `.user` and `.admin` are the default named roles; a project names the roles its use cases check. A claim the project's use cases read — a tenant or organization id, a plan — is a stored property on the same type with the same `CodingKeys` treatment, and nothing else changes: the issuer sets it where it sets `role`, and a use case reads it off `subject:`. What must not be added is anything *What belongs in the token* below rules out.
+The rule is the shape: one `JWTPayload` type that is the identity, `sub` carrying the user id as a `UUID`, expiry verified in `verify(using:)`. The claim set above is the default, and `.user` and `.admin` are the default named roles; a project names the roles its use cases check. A claim the project's use cases read — a tenant or organization id, a plan — is a stored property on the same type with the same `CodingKeys` treatment, and nothing else changes: the issuer sets it where it sets `role`, and a use case reads it off `subject:`. What must not be added is anything *What belongs in the token* below rules out.
 
 ## What belongs in the token
 
@@ -332,8 +332,6 @@ A path is what the surrounding libraries already take. `TLSConfig.CertificateSou
 It matters most for a private key. An environment variable is readable from `/proc/<pid>/environ`, reported by the container runtime's inspect command, and inherited by every child process; a mounted file is none of those. It also keeps the material from becoming a configuration value at all, which is what an access reporter would otherwise be free to log.
 
 Fail loudly when the file is unreadable, naming both the key and the path. An absent mount, a wrong path, and the wrong file mode are different deployment mistakes with different fixes, and a failure that names neither leaves the operator to guess.
-
-If you inherit a system that carries the encoded document in the variable instead, the decoding order is load-bearing: test the input for a `-----BEGIN` header *before* attempting base64, never the decoded output. Base64 decoding tolerates every character a PEM is made of, so decoding a raw PEM produces plausible-looking rubbish rather than failing, and whether it survives depends on the document's length modulo four. Prefer migrating it to a path.
 
 Do not bundle a key as a SwiftPM resource: it is not a leak for a public key, but it bakes the value into the image and makes rotation a rebuild.
 

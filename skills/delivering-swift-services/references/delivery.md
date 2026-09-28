@@ -144,7 +144,7 @@ The operational rule: references resolve at deploy, not live — changing a shar
 Dokploy specifics, each learned the expensive way:
 
 - **`command` replaces the image's entrypoint**, it does not append to it: write `./<service> serve --migrate-database`, never `serve --migrate-database`.
-- **A one-shot application needs restart policy `none`**, or the platform's scheduler restarts it forever (relevant to any future job-shaped application; migrations no longer are one).
+- **A one-shot application needs restart policy `none`**, or the platform's scheduler restarts it forever (any job-shaped application; migrations run at boot, not as a job).
 - **Application names are immutable and get a random suffix at creation.** The suffixed name is the internal DNS name — so every mTLS leaf needs the suffixed name as a SAN beside the plain service name (see *Transport security: the certificate volume* in [environment.md](environment.md)), issued against the same CA.
 - **Do not link an application to a registry entry**: on this platform that designates a *cluster* registry and re-uploads every image to it on deploy — which a read-only pull token cannot do. Registry credentials entered once in the platform UI land in the host's Docker login and cover pulls for every application.
 - **A crash-looping service can pin a stale spec**: after fixing configuration, stop the application entirely, then deploy, rather than deploying over the loop.

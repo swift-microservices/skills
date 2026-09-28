@@ -42,7 +42,7 @@ A module with Temporal adds `<Module>WorkflowsTests`, which runs its Workflows e
 Mocks live in a `Mocks/` directory inside the test target, one file per concern, and mirror the shapes Core declares:
 
 - **A mock repository is an actor** holding an array of entities and an optional injected failure, conforming to the Core repository protocol. Reads return the array; writes append a deterministic entity or throw the injected repository error. State lives behind the actor so concurrent tests cannot race it.
-- **`MockDatabase` comes from `<Project>Testing`.** It is a `Database` with no transaction and a fixed scope: `withTransaction` hands every unit of work the same scope, so the test sees exactly what the use case did and asserts against the repositories it built the scope from. Do not write one per service.
+- **`MockDatabase` comes from `<Project>Testing`.** It is a `Database` with no transaction and a fixed scope: `withTransaction` hands every unit of work the same scope, so the test sees exactly what the use case did and asserts against the repositories it built the scope from.
 - **A mock scope** is a struct conforming to every per-use-case scope protocol the suite exercises, holding the mock repositories:
 
 ```swift

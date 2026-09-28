@@ -1,9 +1,12 @@
 ---
-max_turns: 25
+max_turns: 30
+timeout_seconds: 900
 allowed_tools: [Read, Glob, Grep, Write, Edit, Skill]
 tags: [building, foundation]
 ---
 
-Update this Swift 6.3 Hummingbird service's JSON event decoder. The API accepts ISO 8601 timestamps with whole or fractional seconds, including UTC and numeric offsets. Invalid timestamps must produce a DecodingError with the field's coding path. The existing Hummingbird configuration integration must keep working, and the ByteBuffer JSON helper is still needed.
+This Swift 6.3 Hummingbird service needs its dependencies and a JSON event decoder. In Package.swift, declare Hummingbird with its swift-configuration integration, hummingbird-auth, swift-configuration (configuration comes only from environment variables), swift-openapi-runtime, and SwiftNIO for the ByteBuffer JSON helpers, using the releases in upstream-state.md, and add their products to the targets that need them: EventsHTTP uses Hummingbird, HummingbirdAuth, OpenAPIRuntime, NIOCore, and the JSON helpers; Events uses Configuration.
 
-Bring the relevant dependencies up to the newest compatible releases described in upstream-state.md and add tests for the wire contract in Tests/EventsHTTPTests/EventJSONCodecTests.swift. The supplied upstream state is the verified release snapshot for this evaluation; networking and dependency resolution are unavailable, so use that evidence and do not build or resolve packages. Modify the existing files rather than replacing the framework or removing the feature. Summarize the dependency and API choices and what still needs runtime verification.
+Then write EventJSONCodec in Sources/EventsHTTP/EventJSONCodec.swift with `package static func decode(_ buffer: ByteBuffer) throws -> EventPayload`. The API sends ISO 8601 timestamps with whole or fractional seconds, in UTC or with numeric offsets; an invalid timestamp must produce a DecodingError with the field's coding path. Add tests for that wire contract in Tests/EventsHTTPTests/EventJSONCodecTests.swift.
+
+upstream-state.md is the verified release snapshot for this evaluation; networking and dependency resolution are unavailable, so don't build or resolve packages. Summarize your dependency and API choices and what still needs runtime verification.

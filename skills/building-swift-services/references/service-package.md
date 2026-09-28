@@ -62,20 +62,18 @@ let package = Package(
 )
 ```
 
-| Setting | Meaning and adoption work |
+| Setting | Meaning |
 | --- | --- |
-| [`ExistentialAny` (SE-0335)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md) | Use `any Repository` for an existential value. Generic constraints and conformances stay `T: Repository` and `struct Store: Repository`; do not replace generics with existentials mechanically. |
+| [`ExistentialAny` (SE-0335)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md) | Use `any Repository` for an existential value. Generic constraints and conformances stay `T: Repository` and `struct Store: Repository`. |
 | [`MemberImportVisibility` (SE-0444)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0444-member-import-visibility.md) | Members, including extensions, must come from a module visible in the current file. Import the module that supplies a member and declare its direct target dependency; another file's ordinary import is insufficient. |
 | [`InternalImportsByDefault` (SE-0409)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md) | Plain `import` is internal. Use `package import` when imported types appear in package API, and `public import` when they appear in public API; keep implementation-only imports internal. `public import` does not re-export the module's names. Check conformances and inlinable code too. |
 | [`NonisolatedNonsendingByDefault` (SE-0461)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md) | Nonisolated async functions and async function types without explicit isolation, `@Sendable` or not, use caller isolation by default (`nonisolated(nonsending)`). This avoids an implicit actor hop; it neither makes shared state safe nor prevents reentrancy at `await`. Use `@concurrent` only when an async function intentionally leaves the caller's actor, with safe values crossing that boundary, or to match a requirement of a dependency built without this feature (for example GRPCCore interceptors, Hummingbird `RouterMiddleware`, OpenAPI `ClientMiddleware`). |
 
-Default actor isolation is a separate decision: server packages and server applications retain nonisolated default isolation; do not add `.defaultIsolation(MainActor.self)` as part of this migration. A UI application's MainActor default may be appropriate, but does not apply to a server. For an Xcode-managed application, inspect its actual language, upcoming-feature, and default-isolation build settings; editing a dependency's `Package.swift` cannot configure the application target.
-
-Before changing existing targets, inspect their settings and dependency signatures. Do not add flags already mandatory in a newer selected language mode. Update source imports, existential spellings, generated-code configuration, and callback contracts together, then compile every affected target. Do not silence errors with unsafe flags, `@preconcurrency`, or `@unchecked Sendable`.
+Default actor isolation is a separate setting: server packages and applications keep nonisolated default isolation and set no `.defaultIsolation(MainActor.self)`. Diagnostics are resolved, never silenced with unsafe flags, `@preconcurrency`, or `@unchecked Sendable`.
 
 ## Dependency baseline
 
-These are the packages the architecture is built on. The versions are a floor from when this skill was last revised, not an instruction to downgrade a repository that already uses compatible newer releases. Before creating or changing a dependency set, check upstream releases, the tagged manifests, and current API availability; use the newest compatible releases that support FoundationEssentials and the modern APIs the package needs. Coordinate version floors across the organization without retaining obsolete Foundation workarounds. Verify toolchain, platform, and API compatibility before raising a floor; a breaking upgrade needs an explicit migration.
+These are the packages the architecture is built on, with their version floors. Use the newest compatible releases that support FoundationEssentials and the modern APIs the package needs: check upstream releases, tagged manifests, and toolchain and platform compatibility, and keep floors aligned across the organization.
 
 | Package | Baseline | Products/purpose |
 | --- | --- | --- |
@@ -157,9 +155,9 @@ After renaming a target, delete `.build` in that package and every consumer, or 
 
 ## Foundation dependencies and traits
 
-Use FoundationEssentials when Foundation types are needed and the standard library is insufficient. New and changed code must use modern APIs as described in [swift-style.md](swift-style.md), even if the application already links full Foundation through an upstream library.
+Use FoundationEssentials when Foundation types are needed and the standard library is insufficient. Our code uses the modern APIs in [swift-style.md](swift-style.md), even where an upstream library links full Foundation.
 
-Some libraries retain a `FullFoundation` trait to preserve legacy API compatibility for existing users. It may be enabled by default: [Hummingbird 2.27.0](https://github.com/hummingbird-project/hummingbird/blob/2.27.0/Package.swift) and [swift-openapi-runtime 1.12.1](https://github.com/apple/swift-openapi-runtime/blob/1.12.1/Package.swift) are examples. Inspect the manifest of the version being resolved; neither the trait's presence, its name, nor its default is universal. For these versions, disable default traits with `traits: []` when no optional feature is needed:
+Some libraries have a `FullFoundation` trait, which may be enabled by default: [Hummingbird 2.27.0](https://github.com/hummingbird-project/hummingbird/blob/2.27.0/Package.swift) and [swift-openapi-runtime 1.12.1](https://github.com/apple/swift-openapi-runtime/blob/1.12.1/Package.swift) are examples. Inspect the manifest of the version being resolved; neither the trait's presence, its name, nor its default is universal. For these versions, disable default traits with `traits: []` when no optional feature is needed:
 
 ```swift
 .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: []),
@@ -170,9 +168,9 @@ Always opt out of default traits when declaring `apple/swift-configuration`: use
 
 When other traits are required, list only those traits explicitly. The package-level example above uses Hummingbird's `traits: ["ConfigurationSupport"]` because the composition examples use its configuration integration; this also leaves `FullFoundation` disabled. Never enable the full default set just to recover one feature. [SwiftPM combines traits across the resolved graph](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/addingdependencies/): another dependency can enable `FullFoundation` again. Inspect transitive manifests and `swift package show-dependencies`, then verify the result with a Linux linking check; a direct `traits: []` declaration alone is not proof.
 
-Use SwiftNIO's `NIOFoundationEssentialsCompat` product and import for ByteBuffer/Data and Codable helpers rather than `NIOFoundationCompat`. It was introduced in [SwiftNIO 2.99.0](https://github.com/apple/swift-nio/releases/tag/2.99.0); raising the NIO version alone does not switch a dependency's declared product. [LoggingLoki 2.0.1](https://github.com/lovetodream/swift-log-loki/blob/v2.0.1/Package.swift) declares this compatibility module itself, so remove the old gateway workaround that added `NIOFoundationCompat` to the executable. Add an explicit NIO dependency and product only when our target imports it directly.
+Use SwiftNIO's `NIOFoundationEssentialsCompat` product and import for ByteBuffer/Data and Codable helpers ([SwiftNIO 2.99.0](https://github.com/apple/swift-nio/releases/tag/2.99.0) and later), not `NIOFoundationCompat`, which links full Foundation. [LoggingLoki 2.0.1](https://github.com/lovetodream/swift-log-loki/blob/v2.0.1/Package.swift) declares it itself, so an executable linking LoggingLoki needs no NIO product for it. Add an explicit NIO dependency and product only when our target imports it directly.
 
-Full Foundation may remain unavoidable for an application using well-known Swift server libraries. At the 2026-09-27 audit, [Vapor 4.122.2](https://github.com/vapor/vapor/blob/4.122.2/Package.swift) and [PostgresNIO 1.33.1](https://github.com/vapor/postgres-nio/blob/1.33.1/Package.swift) still pull in full Foundation and its internationalization/ICU libraries. Their consumers, including our Vapor and Postgres adapters, inherit that requirement. Recheck their latest releases and current source before repeating this conclusion; do not assume there is a disabling trait or replace a required library solely to satisfy a linking claim. Record the upstream package and resolved version, keep our own code on modern Essentials APIs, and migrate when a compatible upstream release permits it.
+Some required server libraries link full Foundation: [Vapor 4.122.2](https://github.com/vapor/vapor/blob/4.122.2/Package.swift) and [PostgresNIO 1.33.1](https://github.com/vapor/postgres-nio/blob/1.33.1/Package.swift) pull in full Foundation and its internationalization/ICU libraries, and so do their consumers, including our Vapor and Postgres adapters. Check the resolved releases rather than assuming either way; a required library stays even when it links full Foundation, and our own code stays on Essentials APIs.
 
 The delivery skill's [Foundation linking guidance](../../delivering-swift-services/references/delivery.md#foundation-linking) describes the separate verification gate. Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation.
 
@@ -265,7 +263,7 @@ Use plural feature folders such as `Items`, then group repository and use-case a
 
 In GRPC, keep the generated-service conformances at the feature root, one file per proto service. Put every request/input and entity/message conversion in that feature's single `Protobuf/` directory, shared by the three. Do not split it further. In HTTP, keep one controller per resource and the conversions in `Schemas/`, matching the gateway's layout so a controller reads the same whether it calls a use case or a stub. The contents of the HTTP target are in [http.md](http.md).
 
-There is no `Database/` in Core and no `Database/` in Postgres: the `Database` protocol comes from swift-persistence, `PostgresDatabase` and `PostgresScope` from swift-persistence-postgres, and the test double from `<Project>Testing`. There is no `Extensions/PostgresClient+withClient.swift` either; the driver ships it. The module writes scopes, statements, repositories, and migrations.
+The `Database` protocol comes from swift-persistence, `PostgresDatabase`, `PostgresScope`, and `PostgresClient.withClient` from swift-persistence-postgres, and the test double from `<Project>Testing`. The module writes scopes, statements, repositories, and migrations.
 
 When Temporal is required, keep its SDK dependency and all macro-decorated Workflows and Activities in `<Module>Workflows`. Keep Core free of Temporal by defining the workflow-client and Activity-service protocols plus workflow state/result values there.
 
