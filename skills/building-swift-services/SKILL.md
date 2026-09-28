@@ -184,6 +184,7 @@ For a focused change, load only the references the change touches and preserve t
 Do not call work complete until every applicable gate passes.
 
 - Every package and server application applies the shared Swift settings to all owned Swift targets and builds in Swift 6 language mode with `swift build` and no concurrency diagnostic silenced rather than resolved, and every `<Module>CoreTests` passes with `swift test` and no infrastructure.
+- Every Foundation import is the `#if canImport(FoundationEssentials)` block, never an unconditional `import FoundationEssentials` or plain `import Foundation`, and no new code uses `DateFormatter`, `ISO8601DateFormatter`, `NumberFormatter`, or `String(format:)`. Every declared `swift-configuration` has `traits: []`, `hummingbird` has only the traits it uses (`["ConfigurationSupport"]` with its configuration integration, otherwise `[]`), and `swift-openapi-runtime` has `traits: []`; a `from:` with no `traits:` argument on any of the three leaves full Foundation enabled.
 - No module imports another module's Core, Postgres, HTTP, or GRPC target; every cross-module dependency is a protocol in the consumer's Core, satisfied in the composition root.
 - Generated protobuf types appear only in GRPC targets and consumer adapters; generated OpenAPI types only in HTTP targets; Postgres types only in Postgres targets and the executable.
 - Every use case runs through `withTransaction`; no package declares a `Database`, `PostgresDatabase`, `PostgresScope`, `MockDatabase`, or `PostgresClient.withClient` of its own.

@@ -27,7 +27,7 @@ Keep an Xcode-style header:
 
 Use the current date and the repository's author convention for new files when known. Do not rewrite historical headers.
 
-Import no Foundation module when the standard library suffices. In files that need Foundation values, use `FoundationEssentials` directly when all supported platforms provide it, or this conditional import for SDK compatibility:
+Import no Foundation module when the standard library suffices. In files that need Foundation values, use this conditional import. The macOS SDK has no `FoundationEssentials` module, so any package that builds on Apple platforms — every package here declares `.macOS` — needs the fallback; an unconditional `import FoundationEssentials` compiles on Linux and fails on macOS:
 
 ```swift
 #if canImport(FoundationEssentials)
