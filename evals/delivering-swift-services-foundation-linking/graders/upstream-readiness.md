@@ -1,5 +1,6 @@
 ---
 type: llm
+focus: { source: file, path: foundation-status.md }
 ---
 
 PASS if the application note attributes its current full-Foundation linkage to the supplied resolved Vapor and PostgresNIO versions, preserves those required dependencies, and explains that own code should use FoundationEssentials and modern ISO 8601/JSON APIs now. It must say to recheck compatible upstream releases, trait activation across the graph, and the actual executable's linkage when updating dependencies; it must not treat the dated upstream constraint as permanent. Compatible dependency updates should be able to remove the remaining linkage without a further legacy API migration in own code, while publishing an upstream release alone does not update the application's pins. Required runtime shared libraries must still be shipped today.
