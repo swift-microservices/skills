@@ -291,7 +291,7 @@ let server = GRPCServer(
 )
 ```
 
-The public services get nothing. `BearerAuthenticationInterceptor` is in `AuthenticationGRPC`; `UserSettingsInterceptor` in `<Project>Persistence`, after the bearer interceptor because it reads what that one bound; `SPIFFEAuthenticationInterceptor` is in `AuthenticationSPIFFEGRPC`, which a package links only when it has an internal service to protect, because only the NIO Posix transport exposes the peer certificate. A gRPC monolith exposed to clients directly still terminates TLS at the ingress and still keeps its internal services for its own workers and for the module that one day ships alone; mTLS between modules does not exist because there is no connection between them.
+The public services get nothing. `BearerAuthenticationInterceptor` is in `AuthenticationGRPC`; `UserSettingsInterceptor` in `<Project>Persistence`, after the bearer interceptor because it reads what that one bound; `SPIFFEAuthenticationInterceptor` is in `AuthenticationSPIFFEGRPC`, which the executable links for incoming or outgoing SPIFFE mTLS, including a gateway that only calls upstream services. Peer binding uses the NIO Posix transport’s validated certificate chain. A gRPC monolith exposed to clients directly still terminates TLS at the ingress and still keeps its internal services for its own workers and for the module that one day ships alone; mTLS between modules does not exist because there is no connection between them.
 
 ## Lifecycle
 
@@ -360,7 +360,7 @@ provider task owns renewal; atomic updates go through `security.update`.
 Construct `security` once under Infrastructure using the provider's certificate chain, private
 key, and configured trust bundle. Parse `usersSPIFFEID` and `temporalSPIFFEID` from the exact
 expected upstream identities in configuration; managed external endpoints keep provider TLS.
-Do not reuse an ordinary mTLS factory with a leaf-name-only SPIFFE reader.
+Use the adapter for full-chain verification and TLS key-possession checks.
 
 **Every client waits for the connection, bounded by a deadline.** A gRPC call made while its channel is not ready fails fast by default, the error a caller hits on the first request after an idle period, a peer restart, or a rolling deploy. Enable *wait-for-ready* once as a client-wide default rather than per call: a `ServiceConfig` with one `MethodConfig` whose name is the empty-service global bucket (`MethodConfig.Name(service: "")`, the fallback the transport returns for any method with no more specific entry) applies to every method, with `waitForReady: true` and a `timeout` so a genuinely-down upstream still fails instead of hanging the caller forever.
 
@@ -430,7 +430,7 @@ struct Run: AsyncParsableCommand {
 
 There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. The one thing `worker run` must not do is open a server or read the verifying key; that is a fact of the command, kept by review, where it was once a fact of the manifest. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
 
-The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. Then create one `TemporalWorker`:
+The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. When the self-hosted Temporal frontend presents the configured X.509-SVID, create one `TemporalWorker` as below. Other frontends use their provider’s hostname-verified TLS and authentication requirements:
 
 ```swift
 let temporalWorker = try TemporalWorker(

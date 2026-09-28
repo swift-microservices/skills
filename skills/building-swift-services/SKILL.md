@@ -164,7 +164,7 @@ Add the HTTP surface:
 Add the gRPC surface:
 - [ ] 1. Contract: the module's proto files by audience, in <project>-protos tagged and pinned (microservices) or in the package's Protos/ (a gRPC monolith)
 - [ ] 2. <Module>GRPC (or <Service>GRPC): one conformance per proto service, feature-local Protobuf/ conversions, each handler insisting on its identity
-- [ ] 3. Root: mTLS factories, one GRPCServer with every module's services, the bearer and settings interceptors on the user services, the certificate interceptor on the internal ones, nothing on the public ones
+- [ ] 3. Root: shared SPIFFE security with exact expected peers, one GRPCServer with every module's services, the bearer and settings interceptors on the user services, the required SPIFFE interceptor on the internal ones, nothing on the public ones
 - [ ] 4. Consumers: a gRPC client adapter per port, over one GRPCClient per upstream with the propagating interceptor on user-service descriptors
 ```
 
@@ -193,7 +193,7 @@ Do not call work complete until every applicable gate passes.
 - Every entity identifier is database-generated (`uuidv7()` by default, `gen_random_uuid()` on an older instance) and absent from create inputs; every retryable mutation has owner-enforced idempotency; no table is queried, joined, or referenced by a foreign key from another module.
 - The role migrations precede every table; serving connects as the service role, and as the internal role where tenant tables exist, only the migration client as the owner, and no role has `BYPASSRLS`; every module's migrations are registered through its `<Module>Migrations` list in order.
 - Where tenant tables exist: every one has a tenant-isolation policy on `app.caller_user_id` with `USING` and `WITH CHECK`; the user services carry `UserSettingsInterceptor` after the bearer interceptor and the identifying tier carries `UserSettingsMiddleware` after the bearer middleware; the policies were exercised as each role with a user, another user, an administrator, and a process. Where none exist, the decision record says so.
-- Every gRPC contract is split by audience with the bearer interceptor on the user service, the certificate interceptor on the internal service, and nothing on the public one; every HTTP surface has session-issuing routes outside the authenticating middleware, an identifying tier that admits anonymous requests, a requiring tier that refuses them, and administrative routes reachable only through `AdminRequestContext`.
+- Every gRPC contract is split by audience with the bearer interceptor on the user service, the required SPIFFE interceptor on the internal service, and nothing on the public one; every HTTP surface has session-issuing routes outside the authenticating middleware, an identifying tier that admits anonymous requests, a requiring tier that refuses them, and administrative routes reachable only through `AdminRequestContext`.
 - Every process that receives a token verifies it with the public key; a token is forwarded only by `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors; no process asserts or mints an identity for another.
 - Every use case names its identity in its signature and decides authorization in its body; no handler, controller, interceptor, middleware, or policy decides it.
 - The bound user and process appear as `user_id` and `service_name` on every log line of a request.

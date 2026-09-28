@@ -86,7 +86,7 @@ These are the packages the architecture is built on, with their version floors. 
 | `postgres-migrations` | `1.2.0` | `PostgresMigrations` |
 | `postgres-nio` | `1.33.1` | `PostgresNIO`, `PostgresClient`, prepared statements, transactions |
 | `grpc-swift-2` | `2.4.0` | `GRPCCore`, `GRPCClient`, `GRPCServer`: with gRPC |
-| `grpc-swift-nio-transport` | `2.9.1` | `GRPCNIOTransportHTTP2`: with gRPC |
+| `grpc-swift-nio-transport` | `2.10.0` | `GRPCNIOTransportHTTP2Posix`: server-side gRPC and SPIFFE TLS |
 | `grpc-swift-extras` | `2.2.0` | `GRPCServiceLifecycle` adapters: with gRPC |
 | `grpc-swift-protobuf` | `2.4.0` | `GRPCProtobuf` and `GRPCProtobufGenerator`: with gRPC |
 | `swift-protobuf` | `1.32.0` | `SwiftProtobuf` messages and well-known types: with gRPC |
@@ -104,8 +104,8 @@ These are the packages the architecture is built on, with their version floors. 
 | `swift-persistence-postgres` | `0.2.0` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
 | `swift-authentication` | `0.2.0` | `Authentication`: the `Authenticator` protocol an HTTP target names to take any verifier |
 | `swift-authentication-jwt` | `0.2.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module |
-| `swift-authentication-spiffe` | `0.2.0` planned; verify publication | `AuthenticationSPIFFE`: identifier, trust bundle, complete X.509-SVID verification; optional `AuthenticationSPIFFEGRPC` is in swift-authentication-grpc |
-| `swift-authentication-grpc` | first tag containing `AuthenticationSPIFFEGRPC`; verify publication | `AuthenticationGRPC` for bearer interceptors; `AuthenticationSPIFFEGRPC` for SPIFFE mTLS and required service principals; `AuthenticationGRPCNIOTransport` for other certificate schemes |
+| `swift-authentication-spiffe` | `0.2.0` | `AuthenticationSPIFFE`: identifier, trust bundle, complete X.509-SVID verification; optional `AuthenticationSPIFFEGRPC` is in swift-authentication-grpc |
+| `swift-authentication-grpc` | `0.3.0` | `AuthenticationGRPC` for bearer interceptors; `AuthenticationSPIFFEGRPC` for SPIFFE mTLS and required service principals; `AuthenticationGRPCNIOTransport` for other certificate schemes |
 | `swift-authentication-hummingbird` | `0.2.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
 | `swift-authentication-vapor` | `0.2.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
 | `<project>-core` | first compatible tag | `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` |
@@ -124,7 +124,7 @@ dependencies: [
     .package(url: "https://github.com/hummingbird-project/postgres-migrations.git", from: "1.2.0"),
     .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.1"),
     .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),                 // with gRPC
-    .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.1"),     // with gRPC
+    .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.10.0"),     // with gRPC
     .package(url: "https://github.com/grpc/grpc-swift-extras.git", from: "2.2.0"),            // with gRPC
     .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),          // with gRPC
     .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.32.0"),             // with gRPC
@@ -139,7 +139,9 @@ dependencies: [
     .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
     .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.2.0"),          // with HTTP
     .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.2.0"),
-    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.2.0"),     // with gRPC
+    .package(url: "https://github.com/apple/swift-certificates.git", from: "1.20.0"),                        // with SPIFFE material parsing
+    .package(url: "https://github.com/swift-microservices/swift-authentication-spiffe.git", from: "0.2.0"),   // with SPIFFE
+    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.3.0"),     // with gRPC
     .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.2.0"), // with HTTP
     .package(url: "https://github.com/<organization>/<project>-core.git", from: "0.1.0"),
     .package(url: "https://github.com/<organization>/<project>-protos.git", from: "0.1.0"),   // with gRPC
@@ -518,10 +520,12 @@ The module blocks above, once per module, plus the shared HTTP target and one ex
         .product(name: "HummingbirdAuth", package: "hummingbird-auth"),              // with HTTP
         .product(name: "AuthenticationHummingbird", package: "swift-authentication-hummingbird"), // with HTTP
         .product(name: "GRPCCore", package: "grpc-swift-2"),                         // with gRPC
-        .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"), // with gRPC
+        .product(name: "GRPCNIOTransportHTTP2Posix", package: "grpc-swift-nio-transport"), // with gRPC
         .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),        // with gRPC
         .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),  // with gRPC
-        .product(name: "AuthenticationGRPCNIOTransport", package: "swift-authentication-grpc"), // only with an internal service
+        .product(name: "X509", package: "swift-certificates"), // read certificate chains and private keys
+        .product(name: "AuthenticationSPIFFE", package: "swift-authentication-spiffe"), // SPIFFE identities and trust
+        .product(name: "AuthenticationSPIFFEGRPC", package: "swift-authentication-grpc"), // incoming or outgoing SPIFFE mTLS
         .product(name: "AuthenticationJWT", package: "swift-authentication-jwt"),
         .product(name: "PersistencePostgres", package: "swift-persistence-postgres"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
@@ -557,10 +561,12 @@ The module blocks above, once, plus one executable:
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Configuration", package: "swift-configuration"),
         .product(name: "GRPCCore", package: "grpc-swift-2"),                         // with gRPC
-        .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"), // with gRPC
+        .product(name: "GRPCNIOTransportHTTP2Posix", package: "grpc-swift-nio-transport"), // with gRPC
         .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),        // with gRPC
         .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),  // with gRPC
-        .product(name: "AuthenticationGRPCNIOTransport", package: "swift-authentication-grpc"), // only with an internal service
+        .product(name: "X509", package: "swift-certificates"), // read certificate chains and private keys
+        .product(name: "AuthenticationSPIFFE", package: "swift-authentication-spiffe"), // SPIFFE identities and trust
+        .product(name: "AuthenticationSPIFFEGRPC", package: "swift-authentication-grpc"), // incoming or outgoing SPIFFE mTLS
         .product(name: "Hummingbird", package: "hummingbird"),                       // with HTTP
         .product(name: "HummingbirdAuth", package: "hummingbird-auth"),              // with HTTP
         .product(name: "AuthenticationHummingbird", package: "swift-authentication-hummingbird"), // with HTTP
@@ -614,10 +620,13 @@ Include a direct product dependency in every target that imports its module. The
         .product(name: "Hummingbird", package: "hummingbird"),
         .product(name: "AuthenticationJWT", package: "swift-authentication-jwt"),
         .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),  // the propagating interceptor
+        .product(name: "X509", package: "swift-certificates"), // read certificate chains and private keys
+        .product(name: "AuthenticationSPIFFE", package: "swift-authentication-spiffe"),
+        .product(name: "AuthenticationSPIFFEGRPC", package: "swift-authentication-grpc"), // upstream SPIFFE mTLS
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "JWTKit", package: "jwt-kit"),
         .product(name: "GRPCCore", package: "grpc-swift-2"),
-        .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+        .product(name: "GRPCNIOTransportHTTP2Posix", package: "grpc-swift-nio-transport"),
         .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),
         .product(name: "<Upstream>Protos", package: "<project>-protos"),             // one per upstream
         .product(name: "ServiceContextModule", package: "swift-service-context"),
