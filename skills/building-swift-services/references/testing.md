@@ -9,6 +9,7 @@ How a module's behavior is verified: the test target, the mocks, and the line be
 - The scoped database helper
 - What a use-case test covers
 - What a use-case test does not cover
+- Isolation contract tests
 - Transport tests
 
 ## The test target
@@ -96,6 +97,10 @@ That enumeration is the whole matrix: one test per case of the use case's error 
 - **Transport.** Status-code mapping belongs to the producer adapter or the controller and is exercised at the transport boundary (below), not by driving a server inside a use-case test.
 
 The result is that `swift test` runs the whole target in milliseconds with no containers, which is what allows CI to run it on every pull request (the delivering-swift-services skill).
+
+## Isolation contract tests
+
+A package that owns an API taking a caller-isolated callback — a `Database`, a runner, a client's `with...` method — tests that contract directly, because a regression to an actor hop still compiles for most callers. Call it from a custom actor and from a `@MainActor` test, each with a closure that mutates a non-`Sendable` reference the caller owns. Suspend inside the closure (`await Task.yield()` is enough) and assert isolation on both sides of the suspension with `assertIsolated()`/`MainActor.assertIsolated()`: a closure that never suspends cannot detect a hop. Cover a thrown error propagating unchanged, and cancelling the caller's task mid-operation. A use case does not need these tests; the package that defines the boundary does.
 
 ## Transport tests
 
