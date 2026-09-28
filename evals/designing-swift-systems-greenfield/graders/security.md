@@ -1,5 +1,6 @@
 ---
 type: llm
+focus: { source: file, path: design.md }
 ---
 
 PASS if the design says internal service-to-service calls are mutually authenticated with the stack's own CA, that users are identified by a token and processes (such as a worker or the payments service calling another) by their certificate, and that authorization decisions live inside the owning service's use cases.

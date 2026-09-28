@@ -60,7 +60,9 @@ claude plugin validate .           # Claude Code's own structural check
 claude plugin eval .               # run every eval case with and without the plugin
 ```
 
-Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`.
+Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`. Cases with a `scaffold.sh` need `--scaffold`, and cases that edit or build need `--allow-tools Bash Write Edit`; add `--keep-temp` to keep each run's workspace. The eval loader rejects any symbolic link under `evals/`, so keep SwiftPM `.build` directories out of `evals/results/`.
+
+`claude plugin eval` has no script grader. After a `building-swift-services-swift-settings` run, check its kept workspace with `python3 evals/building-swift-services-swift-settings/checks/verify.py <workspace>`: it asserts every target's settings, compiles independent actor and MainActor contract tests against the migrated API, and runs the executable.
 
 ## Contributing
 

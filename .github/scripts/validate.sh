@@ -71,7 +71,9 @@ for skill_dir in skills/*; do
       case $target in http://*|https://*|mailto:*) continue ;; esac
       if [[ $target == /* ]]; then resolved=$target; else resolved="${doc%/*}/$target"; fi
       [[ -e $resolved ]] || fail "$doc" "link to missing file '$target'"
-      if [[ $doc == "$skill" ]]; then
+      if [[ $target == ../* ]]; then
+        : # a sibling skill's file; it only has to exist
+      elif [[ $doc == "$skill" ]]; then
         parts=$(awk -F/ '{for (i = 1; i <= NF; i++) if ($i != "" && $i != ".") n++; print n + 0}' <<< "$target")
         [[ $parts -le 2 ]] || fail "$doc" "link '$target' nests deeper than one level"
       elif [[ $target == */* && $target != ../* ]]; then

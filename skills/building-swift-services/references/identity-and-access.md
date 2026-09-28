@@ -339,8 +339,6 @@ Do not bundle a key as a SwiftPM resource: it is not a leak for a public key, bu
 
 Ship a `scripts/generate-keys.sh` with the issuing service that writes the pair as PEM files and refuses to overwrite an existing pair without `--force`, since rotating invalidates every access token in flight. The private key has to land on disk for a container to mount it, so protect it there: create the directory `0700`, set `umask 077` *before* `openssl` writes so the key is never briefly world-readable between creation and `chmod`, and add the directory to `.gitignore`.
 
-jwt-kit is pinned below 5.7.0 in swift-authentication-jwt, `<project>-core`, and every service: 5.7.0's manifest turns warnings into errors, and Xcode passes `-suppress-warnings` to every package dependency, which the compiler refuses to combine — `swift build` passes and the Xcode build does not. Do not raise the pin until jwt-kit moves the setting out of its manifest.
-
 ## Rotation
 
 Rotating the signing keys means generating a new pair and restarting every service. Access tokens signed by the old key stop verifying and clients recover on their next refresh, provided refresh tokens are database rows rather than signed tokens. Rotating a process's identity is reissuing its leaf and restarting it, the same as any certificate. How keys and certificates are mounted is the delivering skill's subject.

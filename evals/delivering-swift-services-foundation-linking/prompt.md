@@ -4,7 +4,7 @@ allowed_tools: [Read, Glob, Grep, Write, Edit, Skill]
 tags: [delivering, foundation]
 ---
 
-We maintain a Swift 6.3 authentication library under ./acme-authentication and an application under ./acme-api. Both already pass static Linux SDK CI. Can we say they avoid full Foundation? Add the appropriate Foundation linking CI for the library on pull requests and main, and write ./foundation-status.md explaining the application status and how we should prepare for compatible upstream migrations. Preserve the application's chosen database and framework.
+We maintain a Swift 6.3 authentication library under ./acme-authentication and an application under ./acme-api. Both already pass static Linux SDK CI. Can we say they avoid full Foundation? Add the appropriate Foundation linking CI for the library on pull requests and main as ./acme-authentication/.github/workflows/foundation-linking.yml, and write ./foundation-status.md explaining the application status and how we should prepare for compatible upstream migrations. Preserve the application's chosen database and framework.
 
 Use these verified build facts for this offline evaluation; do not resolve or build packages:
 

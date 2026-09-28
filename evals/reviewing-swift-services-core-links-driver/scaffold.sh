@@ -61,7 +61,11 @@ let package = Package(
 )
 PKG
 cat > Sources/NotesCore/Notes/Note.swift <<'SWIFT'
+#if canImport(FoundationEssentials)
 package import FoundationEssentials
+#else
+package import Foundation
+#endif
 
 package struct Note: Equatable, Sendable {
     package let id: UUID
@@ -71,7 +75,11 @@ package struct Note: Equatable, Sendable {
 }
 SWIFT
 cat > Sources/NotesCore/Notes/NoteRepository.swift <<'SWIFT'
+#if canImport(FoundationEssentials)
 package import FoundationEssentials
+#else
+package import Foundation
+#endif
 
 package struct CreateNoteCommand: Sendable {
     package let userId: UUID

@@ -69,9 +69,9 @@ let package = Package(
 | [`InternalImportsByDefault` (SE-0409)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md) | Plain `import` is internal. Use `package import` when imported types appear in package API, and `public import` when they appear in public API; keep implementation-only imports internal. `public import` does not re-export the module's names. Check conformances and inlinable code too. |
 | [`NonisolatedNonsendingByDefault` (SE-0461)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md) | Nonisolated async functions and non-`@Sendable` async function types use caller isolation by default. This avoids an implicit actor hop; it neither makes shared state safe nor prevents reentrancy at `await`. Use `@concurrent` only when an async function intentionally leaves the caller's actor, with safe values crossing that boundary. |
 
-Default actor isolation is a separate decision: server packages and server applications retain nonisolated default isolation; do not add `.defaultIsolation(MainActor.self)` as part of this migration. A UI application's MainActor default may be appropriate, but does not apply to a server. For an Xcode-managed application, inspect its actual language, upcoming-feature, and default-isolation build settings; editing a dependency's `Package.swift` cannot configure the application target. This server skill does not prescribe a UI architecture or an Approachable Concurrency bundle.
+Default actor isolation is a separate decision: server packages and server applications retain nonisolated default isolation; do not add `.defaultIsolation(MainActor.self)` as part of this migration. A UI application's MainActor default may be appropriate, but does not apply to a server. For an Xcode-managed application, inspect its actual language, upcoming-feature, and default-isolation build settings; editing a dependency's `Package.swift` cannot configure the application target.
 
-Before changing existing targets, inspect their settings and dependency signatures. Do not add flags already mandatory in a newer selected language mode. Update source imports, existential spellings, generated-code configuration, and callback contracts together, then compile every affected target. Do not silence errors with unsafe flags, `@preconcurrency`, or `@unchecked Sendable`. Check exported API changes with a buildable baseline; migration-only allowlists must describe the exact intentional change and be removed when the migrated code becomes the base.
+Before changing existing targets, inspect their settings and dependency signatures. Do not add flags already mandatory in a newer selected language mode. Update source imports, existential spellings, generated-code configuration, and callback contracts together, then compile every affected target. Do not silence errors with unsafe flags, `@preconcurrency`, or `@unchecked Sendable`.
 
 ## Dependency baseline
 
@@ -100,15 +100,16 @@ These are the packages the architecture is built on. The versions are a floor fr
 | `swift-openapi-vapor` | current | `OpenAPIVapor`, the same for a Vapor surface |
 | `vapor` | `4.122.0` | `Vapor`, only when the HTTP surface is on Vapor instead of Hummingbird; `VaporTesting` for its tests |
 | `swift-temporal-sdk` | `1.0.0` | `Temporal`, only with durable orchestration |
-| `jwt-kit` | `"5.3.0"..<"5.7.0"` | `JWTKit`: the executable, for the EdDSA key types; the pin's reason is in identity-and-access.md |
+| `jwt-kit` | `5.7.1` | `JWTKit`: the executable, for the EdDSA key types |
 | `swift-service-context` | `1.3.0` | `ServiceContextModule`, wherever `ServiceContext.current` is read: the transport targets and the executable |
 | `swift-persistence` | `0.2.0` | `Persistence`: `Database<Scope>`, linked by every Core |
 | `swift-persistence-postgres` | `0.2.0` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
-| `swift-authentication` | `0.1.0` | `Authentication`: the `Authenticator` protocol an HTTP target names to take any verifier |
-| `swift-authentication-jwt` | `0.1.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module |
-| `swift-authentication-grpc` | `0.1.0` | `AuthenticationGRPC` for the bearer interceptors; `AuthenticationGRPCNIOTransport` for the certificate interceptor, only a package with an internal service |
-| `swift-authentication-hummingbird` | `0.1.1` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
-| `swift-authentication-vapor` | `0.1.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
+| `swift-authentication` | `0.2.0` | `Authentication`: the `Authenticator` protocol an HTTP target names to take any verifier |
+| `swift-authentication-jwt` | `0.2.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module |
+| `swift-authentication-x509` | `0.1.1` | `AuthenticationX509`: `SPIFFEAuthenticator` for a peer's certificate identity, linked by `<project>-core` |
+| `swift-authentication-grpc` | `0.2.0` | `AuthenticationGRPC` for the bearer interceptors; `AuthenticationGRPCNIOTransport` for the certificate interceptor, only a package with an internal service |
+| `swift-authentication-hummingbird` | `0.2.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
+| `swift-authentication-vapor` | `0.2.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
 | `<project>-core` | first compatible tag | `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` |
 | `<project>-protos` | first compatible tag | `<Module>Protos`, one product per module with a gRPC contract |
 | `swift-container-plugin` | `1.3.0` | `build-container-image` command plugin |
@@ -134,14 +135,14 @@ dependencies: [
     .package(url: "https://github.com/apple/swift-openapi-generator.git", from: "1.13.0"),    // with HTTP
     .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []), // with HTTP
     .package(url: "https://github.com/apple/swift-temporal-sdk.git", from: "1.0.0"),          // only with Temporal
-    .package(url: "https://github.com/vapor/jwt-kit.git", "5.3.0"..<"5.7.0"),
+    .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.7.1"),
     .package(url: "https://github.com/apple/swift-service-context.git", from: "1.3.0"),
     .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
     .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
-    .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.1.0"),          // with HTTP
-    .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.1.0"),
-    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.1.0"),     // with gRPC
-    .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.1.1"), // with HTTP
+    .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.2.0"),          // with HTTP
+    .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.2.0"),
+    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.2.0"),     // with gRPC
+    .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.2.0"), // with HTTP
     .package(url: "https://github.com/<organization>/<project>-core.git", from: "0.1.0"),
     .package(url: "https://github.com/<organization>/<project>-protos.git", from: "0.1.0"),   // with gRPC
     .package(url: "https://github.com/apple/swift-container-plugin.git", from: "1.3.0"),
@@ -173,7 +174,7 @@ Use SwiftNIO's `NIOFoundationEssentialsCompat` product and import for ByteBuffer
 
 Full Foundation may remain unavoidable for an application using well-known Swift server libraries. At the 2026-09-27 audit, [Vapor 4.122.2](https://github.com/vapor/vapor/blob/4.122.2/Package.swift) and [PostgresNIO 1.33.1](https://github.com/vapor/postgres-nio/blob/1.33.1/Package.swift) still pull in full Foundation and its internationalization/ICU libraries. Their consumers, including our Vapor and Postgres adapters, inherit that requirement. Recheck their latest releases and current source before repeating this conclusion; do not assume there is a disabling trait or replace a required library solely to satisfy a linking claim. Record the upstream package and resolved version, keep our own code on modern Essentials APIs, and migrate when a compatible upstream release permits it.
 
-The delivery skill's [Foundation linking guidance](https://github.com/swift-microservices/skills/blob/main/skills/delivering-swift-services/references/delivery.md#foundation-linking) describes the separate verification gate. Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation.
+The delivery skill's [Foundation linking guidance](../../delivering-swift-services/references/delivery.md#foundation-linking) describes the separate verification gate. Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation.
 
 ## Source tree of a module
 
