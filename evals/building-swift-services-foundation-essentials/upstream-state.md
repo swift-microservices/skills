@@ -12,6 +12,6 @@ These are supplied facts for a closed, offline scenario, not a permanently curre
 
 Sources: [swift-configuration manifest](https://github.com/apple/swift-configuration/blob/1.2.0/Package.swift), [JSON provider](https://github.com/apple/swift-configuration/blob/1.2.0/Sources/Configuration/Providers/Files/JSONSnapshot.swift), [Hummingbird](https://github.com/hummingbird-project/hummingbird/blob/2.27.0/Package.swift), [hummingbird-auth](https://github.com/hummingbird-project/hummingbird-auth/blob/2.5.0/Package.swift), [OpenAPI runtime](https://github.com/apple/swift-openapi-runtime/blob/1.12.1/Package.swift), [SwiftNIO](https://github.com/apple/swift-nio/blob/2.103.0/Package.swift).
 
-The executable reads configuration only from environment variables; it does not load JSON configuration files. HTTP event JSON decoding is a separate feature and must remain functional.
+The executable reads configuration only from environment variables; it does not load JSON configuration files. HTTP event JSON decoding is a separate feature.
 
-The service's supported toolchain and platform floors accept these releases. No other dependency edge in this fixture enables their default traits. The Hummingbird configuration integration is a required feature, not an unused dependency. The event date contract permits optional fractional seconds; it does not require localized display formatting.
+The service's supported toolchain and platform floors accept these releases. No other dependency edge in this fixture enables their default traits. The Hummingbird configuration integration is required. The event date contract permits optional fractional seconds; it does not require localized display formatting.

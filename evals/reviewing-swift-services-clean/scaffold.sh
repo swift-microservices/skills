@@ -20,8 +20,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
         .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
-        .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.1.0"),
-        .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.1.0"),
+        .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.2.0"),
+        .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.2.0"),
         .package(url: "https://github.com/acme/acme-core.git", from: "0.1.0"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.0"),
         .package(url: "https://github.com/hummingbird-project/postgres-migrations.git", from: "1.2.0"),

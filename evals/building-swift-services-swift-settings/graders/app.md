@@ -3,5 +3,5 @@ type: llm
 focus: { source: file, path: Sources/UtilityApp/main.swift }
 ---
 
-PASS if main.swift imports UtilityExtensions itself (MemberImportVisibility needs it in the file that calls `utilityLabel`), spells the existential `any OperationRunner`, and still prints the same labelled value.
-FAIL if the extension import exists only in another file, the existential is spelled without `any`, or the output behavior changes.
+PASS if main.swift imports every module whose members it uses (UtilityAdapter, UtilityCore, and UtilityExtensions for `utilityLabel`), spells the existential `any OperationRunner`, and prints `utility: 42`.
+FAIL if a member-providing import is missing from main.swift, the existential is spelled without `any`, or the output differs.
