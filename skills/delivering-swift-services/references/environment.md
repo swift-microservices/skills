@@ -142,6 +142,18 @@ Rotation is one rule for both kinds of key material: new pair plus restart for t
 
 ## Transport security: the certificate volume
 
+**Production SPIFFE deployments:** use an identity provider that attests workloads and renews
+short-lived SVIDs automatically. Supply complete certificate/key/bundle updates to
+`SPIFFETransportSecurity.update`; see the building skill's [SPIFFE reference](../../building-swift-services/references/spiffe.md).
+Monitor renewal and expiry, overlap roots during rotation, isolate environment trust, and bound
+connection age and drain grace. A provider outage may retain only still-valid material; never
+extend expiry locally. The adapter does not implement issuer communication.
+
+**Local development:** the one-shot CA recipe below is convenient
+for local Compose bootstrap. Its year-long certificates and manual restarts are not the
+production SPIFFE lifecycle. Do not propagate this recipe into a new enterprise deployment.
+
+
 Every gRPC connection in the stack is mutually authenticated — service to service, and every client of the Temporal frontend. The certificates are the one piece of key material that is not a host file: a one-shot service issues them into a named volume on the first `up`, so a platform that runs the Compose file as-is gets them with no host-side step, and losing the volume costs one regeneration and a restart, because nothing outside the stack trusts the CA.
 
 ```yaml

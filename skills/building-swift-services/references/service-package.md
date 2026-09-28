@@ -104,8 +104,8 @@ These are the packages the architecture is built on, with their version floors. 
 | `swift-persistence-postgres` | `0.2.0` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
 | `swift-authentication` | `0.2.0` | `Authentication`: the `Authenticator` protocol an HTTP target names to take any verifier |
 | `swift-authentication-jwt` | `0.2.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module |
-| `swift-authentication-x509` | `0.1.1` | `AuthenticationX509`: `SPIFFEAuthenticator` for a peer's certificate identity, linked by `<project>-core` |
-| `swift-authentication-grpc` | `0.2.0` | `AuthenticationGRPC` for the bearer interceptors; `AuthenticationGRPCNIOTransport` for the certificate interceptor, only a package with an internal service |
+| `swift-authentication-spiffe` | `0.2.0` planned; verify publication | `AuthenticationSPIFFE`: identifier, trust bundle, complete X.509-SVID verification; optional `AuthenticationSPIFFEGRPC` is in swift-authentication-grpc |
+| `swift-authentication-grpc` | first tag containing `AuthenticationSPIFFEGRPC`; verify publication | `AuthenticationGRPC` for bearer interceptors; `AuthenticationSPIFFEGRPC` for SPIFFE mTLS and required service principals; `AuthenticationGRPCNIOTransport` for other certificate schemes |
 | `swift-authentication-hummingbird` | `0.2.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
 | `swift-authentication-vapor` | `0.2.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
 | `<project>-core` | first compatible tag | `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` |

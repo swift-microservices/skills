@@ -1,6 +1,6 @@
 ---
 name: delivering-swift-services
-description: Delivers Swift services from a commit to a running process: the Containerfile and the static-SDK image, per-commit SHA and branch tags, the branch-per-environment CI on GitHub Actions with mandatory deploy triggers, the platform's applications and variable scopes, the suite Compose file with .env guards, file-mounted secrets, the CA-issued mTLS certificate volume, the gateway's address, log aggregation, migrations at boot, rollback, and registry retention. Use when writing or debugging a Containerfile, Makefile, compose.yml, .env, GitHub Actions workflow, deploy step, image tag, registry cleanup, certificate or CA setup, platform application configuration, or the first start of a stack.
+description: 'Delivers Swift services from a commit to a running process: the Containerfile and the static-SDK image, per-commit SHA and branch tags, the branch-per-environment CI on GitHub Actions with mandatory deploy triggers, the platform''s applications and variable scopes, the suite Compose file with .env guards, file-mounted secrets, the CA-issued mTLS certificate volume, the gateway''s address, log aggregation, migrations at boot, rollback, and registry retention. Use when writing or debugging a Containerfile, Makefile, compose.yml, .env, GitHub Actions workflow, deploy step, image tag, registry cleanup, certificate or CA setup, platform application configuration, or the first start of a stack.'
 ---
 
 # Delivering Swift services
