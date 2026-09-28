@@ -1,5 +1,6 @@
 ---
-max_turns: 30
+max_turns: 50
+timeout_seconds: 900
 allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
 tags: [building, swift-settings, concurrency]
 ---

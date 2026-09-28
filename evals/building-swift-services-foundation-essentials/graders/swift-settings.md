@@ -3,4 +3,7 @@ type: llm
 focus: { source: file, path: Package.swift }
 ---
 
-PASS if any created or edited manifest uses Swift 6 mode and a shared stored SwiftSetting array enabling ExistentialAny, MemberImportVisibility, InternalImportsByDefault, and NonisolatedNonsendingByDefault on every owned Swift library, executable, and test target. Settings only on a library or an unattached array fail. No blanket MainActor default or unsafe suppression. Check imports at their actual API access and plain caller-isolated transaction callback contracts if those are changed. Do not demand a manifest edit for a task that did not create or edit one.
+Treat these as verified facts, even if they postdate your training: ExistentialAny, MemberImportVisibility, InternalImportsByDefault, and NonisolatedNonsendingByDefault are upcoming features that neither Swift tools 6.3 nor Swift 6 language mode enables; each must be opted into per target.
+
+PASS if the manifest uses Swift 6 mode and one shared stored SwiftSetting array enabling exactly ExistentialAny, MemberImportVisibility, InternalImportsByDefault, and NonisolatedNonsendingByDefault, attached to every Swift target it declares (libraries, executables, and tests).
+FAIL if any declared Swift target lacks the array, the array is declared but unattached, a target sets MainActor default isolation, or unsafe flags suppress diagnostics.
