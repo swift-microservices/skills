@@ -257,15 +257,15 @@ Construct one server with every proto service the process serves, every module's
 
 ```swift
 // MARK: - gRPC
-let serverConfig = config.scoped(to: "grpc.server")
+let grpcReader = config.scoped(to: "grpc.server")
 let server = GRPCServer(
     transport: .http2NIOPosix(
         address: .ipv4(
-            host: serverConfig.string(forKey: "host", default: "0.0.0.0"),
-            port: serverConfig.int(forKey: "port", default: 50051)
+            host: grpcReader.string(forKey: "host", default: "0.0.0.0"),
+            port: grpcReader.int(forKey: "port", default: 50051)
         ),
-        transportSecurity: try security.serverTransportSecurity(),
-        config: SPIFFETransportSecurity.serverConfiguration
+        transportSecurity: serverTLS,
+        config: serverConfig
     ),
     services: [itemPublicService, itemService, itemInternalService, userPublicService, userService],
     interceptorPipeline: [
@@ -284,14 +284,14 @@ let server = GRPCServer(
             ])
         ),
         .apply(
-            SPIFFEAuthenticationInterceptor(security: security, identity: ServiceIdentity.init(spiffeID:)),
+            CertificateAuthenticationInterceptor(authenticator: serviceAuthenticator),
             to: .services([<Organization>_Catalog_V1_ItemInternalService.descriptor])
         ),
     ]
 )
 ```
 
-The public services get nothing. `BearerAuthenticationInterceptor` is in `AuthenticationGRPC`; `UserSettingsInterceptor` in `<Project>Persistence`, after the bearer interceptor because it reads what that one bound; `SPIFFEAuthenticationInterceptor` is in `AuthenticationSPIFFEGRPC`, which the executable links for incoming or outgoing SPIFFE mTLS, including a gateway that only calls upstream services. Peer binding uses the NIO Posix transport’s validated certificate chain. A gRPC monolith exposed to clients directly still terminates TLS at the ingress and still keeps its internal services for its own workers and for the module that one day ships alone; mTLS between modules does not exist because there is no connection between them.
+The public services get nothing. `BearerAuthenticationInterceptor` is in `AuthenticationGRPC`; `UserSettingsInterceptor` in `<Project>Persistence`, after the bearer interceptor because it reads what that one bound; `CertificateAuthenticationInterceptor` is in `AuthenticationGRPCNIOTransport`, which the executable links for inbound certificate interception. Peer binding uses the NIO Posix transport’s TLS-authenticated leaf; protected handlers require the resulting principal. A gRPC monolith exposed to clients directly still terminates TLS at the ingress and still keeps its internal services for its own workers and for the module that one day ships alone; mTLS between modules does not exist because there is no connection between them.
 
 ## Lifecycle
 
@@ -326,7 +326,7 @@ let usersClient = GRPCClient(
             host: try usersConfig.requiredString(forKey: "host"),
             port: try usersConfig.requiredInt(forKey: "port")
         ),
-        transportSecurity: try security.clientTransportSecurity(expectedServer: usersSPIFFEID),
+        transportSecurity: clientTLS,
         serviceConfig: .defaults
     ),
     interceptorPipeline: [
@@ -351,16 +351,12 @@ The gateway publishes no host port and needs no migration job; give it a health 
 
 ## Transport security factories
 
-For SPIFFE, follow [spiffe.md](spiffe.md). Construct one `SPIFFETransportSecurity` from the
-provider's validated material, use its server/client TLS factories and exact expected upstream
-IDs, and give the same instance to the SPIFFE interceptor. Pass
-`SPIFFETransportSecurity.serverConfiguration` to bound connection age and grace. The external
-provider task owns renewal; atomic updates go through `security.update`.
-
-Construct `security` once under Infrastructure using the provider's certificate chain, private
-key, and configured trust bundle. Parse `usersSPIFFEID` and `temporalSPIFFEID` from the exact
-expected upstream identities in configuration; managed external endpoints keep provider TLS.
-Use the adapter for full-chain verification and TLS key-possession checks.
+Follow [workload-mtls.md](workload-mtls.md) for `serverTLS`, `clientTLS`, and bounded `serverConfig`.
+Construct a standard `TimedCertificateReloader` once for workload credentials, supply explicit roots,
+and run it in the service group. Clients verify their configured DNS target. Bind certificates with
+`CertificateAuthenticationInterceptor(authenticator: serviceAuthenticator)` and require the principal
+in protected internal handlers. Temporal uses its own reloader, explicit roots and full hostname
+verification; `temporalTLS` is its native `.mTLS(certificateReloader:)` configuration.
 
 **Every client waits for the connection, bounded by a deadline.** A gRPC call made while its channel is not ready fails fast by default, the error a caller hits on the first request after an idle period, a peer restart, or a rolling deploy. Enable *wait-for-ready* once as a client-wide default rather than per call: a `ServiceConfig` with one `MethodConfig` whose name is the empty-service global bucket (`MethodConfig.Name(service: "")`, the fallback the transport returns for any method with no more specific entry) applies to every method, with `waitForReady: true` and a `timeout` so a genuinely-down upstream still fails instead of hanging the caller forever.
 
@@ -430,7 +426,7 @@ struct Run: AsyncParsableCommand {
 
 There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. The one thing `worker run` must not do is open a server or read the verifying key; that is a fact of the command, kept by review, where it was once a fact of the manifest. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
 
-The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. When the self-hosted Temporal frontend presents the configured X.509-SVID, create one `TemporalWorker` as below. Other frontends use their provider’s hostname-verified TLS and authentication requirements:
+The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. When the self-hosted Temporal frontend presents the configured X.509 certificate, create one `TemporalWorker` as below. Other frontends use their provider’s hostname-verified TLS and authentication requirements:
 
 ```swift
 let temporalWorker = try TemporalWorker(
@@ -439,7 +435,7 @@ let temporalWorker = try TemporalWorker(
         host: temporalHost,
         port: temporalConfig.int(forKey: "port", default: 7233)
     ),
-    transportSecurity: try security.clientTransportSecurity(expectedServer: temporalSPIFFEID),
+    transportSecurity: temporalTLS,
     activityContainers: ReservationActivities(service: activityService),
     workflows: [ReservationWorkflow.self],
     logger: logger

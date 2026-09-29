@@ -29,10 +29,9 @@ Every module and service shares one shape for a proven caller, consumed by tagge
 | --- | --- | --- | --- |
 | swift-authentication | `Authentication` | swift-service-context | `Authenticator<Credential, Identity>`, `CredentialIssuer`, `Principal<Identity, Credential>`, `PrincipalKey` — the shape, with no credential in it |
 | swift-authentication-jwt | `AuthenticationJWT` | jwt-kit | `JWTIssuer<Payload>` and `JWTAuthenticator<Payload>` over a `JWTKeyCollection` |
-| swift-authentication-spiffe | `AuthenticationSPIFFE` | swift-certificates | Strict `SPIFFEID`, domain-specific `SPIFFETrustBundle`, full-chain `SPIFFEAuthenticator` |
+| swift-authentication-x509 | `AuthenticationX509` | swift-certificates | `WorkloadIdentity`, `WorkloadCertificateAuthenticator` behind required native mTLS |
 | swift-authentication-grpc | `AuthenticationGRPC` | grpc-swift-2 | `BearerAuthenticationInterceptor`, `BearerPropagationInterceptor`, `Metadata.bearer`; any transport |
 | | `AuthenticationGRPCNIOTransport` | grpc-swift-nio-transport | `CertificateAuthenticationInterceptor`; needs the NIO Posix transport, the only one that exposes the certificate |
-| | `AuthenticationSPIFFEGRPC` | AuthenticationSPIFFE, NIO TLS | `SPIFFETransportSecurity`, required `SPIFFEAuthenticationInterceptor`, exact endpoint matching, atomic updates |
 | swift-authentication-hummingbird | `AuthenticationHummingbird` | hummingbird-auth | `BearerAuthenticationMiddleware` |
 | swift-authentication-vapor | `AuthenticationVapor` | vapor | `BearerAuthenticationMiddleware` for Vapor 4 |
 
@@ -42,7 +41,7 @@ An `Authenticator` answers one of three ways, and every transport honours them t
 
 | Product | Depends on | For |
 | --- | --- | --- |
-| `<Project>Authentication` | Authentication, AuthenticationJWT, AuthenticationSPIFFE, jwt-kit, swift-certificates, swift-service-context, swift-log | `UserIdentity`, `UserRole`, `ServiceIdentity`, `ServiceContext.user` and `.service`, the `.user` and `.service` log metadata providers, the EdDSA key initializers for `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>`, `ServiceIdentity.init(spiffeID:)` |
+| `<Project>Authentication` | Authentication, AuthenticationJWT, AuthenticationX509, jwt-kit, swift-certificates, swift-service-context, swift-log | `UserIdentity`, `UserRole`, `ServiceIdentity`, `ServiceContext.user` and `.service`, the `.user` and `.service` log metadata providers, the EdDSA key initializers for `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>`, `ServiceAuthenticator` delegating to the shared certificate authenticator |
 | `<Project>Persistence` | `<Project>Authentication`, PersistencePostgres, grpc-swift-2, hummingbird (and vapor where used) | `PostgresSettings.user(_:)`, `UserSettingsInterceptor` for gRPC, and `UserSettingsMiddleware` for HTTP — the bound user as the tenant setting |
 | `<Project>Testing` | `<Project>Authentication`, Persistence | `MockDatabase`, `MockUserAuthenticator` — test targets only |
 
@@ -161,7 +160,7 @@ On HTTP, Hummingbird ships the second half already, so the split is `BearerAuthe
 What a call proved lives in the task's `ServiceContext` — [swift-service-context](https://github.com/apple/swift-service-context), the one request-scoped carrier the server ecosystem shares — under a key per kind of caller, for the length of the call:
 
 - `ServiceContext.current?.user` is a `Principal<UserIdentity, String>`: the verified identity and the token that proved it. The bearer interceptor sets it on gRPC and the bearer middleware on HTTP.
-- `ServiceContext.current?.service` is a `Principal<ServiceIdentity, SPIFFEAuthenticator.Verification>`: the process and the certificate that named it. The SPIFFE interceptor sets it.
+- `ServiceContext.current?.service` is a `Principal<ServiceIdentity, Certificate>`: the process and the certificate that named it. The certificate interceptor sets it.
 
 They are separate keys in the same context — `PrincipalKey` is generic over both the identity and the credential — so a request can carry both: a service relaying a person's call arrives with its own certificate *and* the person's token, and neither interceptor touches the other's. A handler reads whichever it is written for; a test binds one with the standard `ServiceContext.withValue`.
 
@@ -192,7 +191,7 @@ package func callAsFunction(subject: UserIdentity, input: GetUserByIDUseCaseInpu
 }
 
 package func callAsFunction(service: ServiceIdentity, input: GetUserByIDUseCaseInput) async throws(GetUserByIDUseCaseError) -> User {
-    guard allowedReaders.contains(service.spiffeID) else { throw .forbidden }
+    guard allowedReaders.contains(service.uri) else { throw .forbidden }
     return try await find(try id(input))
 }
 ```
@@ -225,7 +224,7 @@ GRPCServer(
             to: .services([<Organization>_Users_V1_UserService.descriptor])
         ),
         .apply(
-            SPIFFEAuthenticationInterceptor(security: security, identity: ServiceIdentity.init(spiffeID:)),
+            CertificateAuthenticationInterceptor(authenticator: serviceAuthenticator),
             to: .services([<Organization>_Users_V1_UserInternalService.descriptor])
         ),
     ]
@@ -268,25 +267,17 @@ In a monolith no process boundary is crossed between the transport and the table
 
 A worker, a service reacting to a provider's webhook, the authenticating service reaching the users service before any caller exists — anything that calls other services with no inbound request behind it — is a principal of a second kind, and it is proved by a second mechanism. Every process in the mesh already presents one mTLS leaf on every connection it opens (*Transport security* in the delivering skill's environment reference). That certificate is the process's credential: there is no service token, no client secret, no exchange with the authenticating service, and no `service` role.
 
-**The name is a SPIFFE ID.** Each X.509-SVID leaf carries exactly one URI SAN,
-`spiffe://<trust-domain>/<process>`. DNS SANs are optional. Configure separate trust domains and
-roots for environments with different security policies; retain the full SPIFFE ID in
-`ServiceIdentity`, with a convenience name if useful.
+**The name is an HTTPS URI.** A leaf carries exactly one workload URI SAN, for example
+`https://identity.production.example/workloads/billing-worker`, plus server DNS SANs where needed.
+Use separate CA roots and identity authorities per environment. `AuthenticationX509` validates the
+URI and caller leaf validity after native required mTLS has verified its chain and key possession.
+Clients verify the actual server DNS name with `.fullVerification` and explicit roots.
 
-**Verification is complete.** `AuthenticationSPIFFE` verifies the presented chain against a
-`SPIFFETrustBundle` whose authorities are explicitly bound to one domain. It enforces SPIFFE
-identifier/profile rules in addition to certificate path validation. Invalid or missing
-identities and unknown domains throw; they never silently become anonymous.
-`AuthenticationSPIFFEGRPC` integrates this verifier into TLS, proves key possession, checks the
-exact expected server ID on clients, and requires chain context when binding each protected RPC.
-Use `SPIFFEAuthenticationInterceptor(security: security, identity: ServiceIdentity.init(spiffeID:))`;
-the organization initializer maps a validated ID to project vocabulary, not to permissions.
-See [SPIFFE integration](spiffe.md) for the composition and lifecycle contract.
-
-**A principal is not a permission.** Each internal use case explicitly authorizes the verified
-service for its operation. A trust-domain certificate alone grants no business access. The
-SPIFFE interceptor refuses absent or invalid identities. User bearer handling keeps its
-optional authentication semantics; the two principal keys do not compete.
+`WorkloadCertificateAuthenticator(authority:)` returns a complete `WorkloadIdentity`. The organization
+layer maps it to `ServiceIdentity`; `CertificateAuthenticationInterceptor(authenticator:)` binds a
+`Principal<ServiceIdentity, Certificate>`. Require that principal in each protected internal handler;
+the generic interceptor's unbound path must never become anonymous internal access. Use cases authorize
+exact identities before effects. See [workload mTLS](workload-mtls.md) for composition and renewal.
 
 **A process forwards nothing.** Its certificate is on the connection, so a client that speaks as the process carries no interceptor at all. A process that also relays a person's call does so through the bearer interceptor on the same client, applied to the user services alone; the two identities never compete for a header.
 
@@ -355,4 +346,4 @@ Ship a `scripts/generate-keys.sh` with the issuing service that writes the pair 
 
 ## Rotation
 
-Rotating the signing keys means generating a new pair and restarting every service. Access tokens signed by the old key stop verifying and clients recover on their next refresh, provided refresh tokens are database rows rather than signed tokens. Rotate workload certificates automatically through the identity provider and atomically update the gRPC adapter. Keep root overlap during planned rotation, finite connection age/grace, and an explicit shutdown path for emergency revocation. How keys and certificates are mounted is the delivering skill's subject.
+Rotating the signing keys means generating a new pair and restarting every service. Access tokens signed by the old key stop verifying and clients recover on their next refresh, provided refresh tokens are database rows rather than signed tokens. Rotate workload certificates through external renewal automation, atomically publish the chain, and run the standard timed reloader. Keep root overlap during planned rotation, finite connection age/grace, and an explicit shutdown path for emergency revocation. How keys and certificates are mounted is the delivering skill's subject.

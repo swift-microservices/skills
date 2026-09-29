@@ -138,20 +138,19 @@ Only the authenticating service mounts the private key. Every service that verif
 
 JWT signing keys and workload private keys are secret material. Production workload credentials come from the identity provider described below; local development can bootstrap them in an isolated certificate volume.
 
-JWT signing-key rotation follows the issuer rollout. Production SPIFFE renewal atomically updates the running adapter and bounds established-connection lifetimes; the local development certificate recipe uses reissue and restart.
+JWT signing-key rotation follows the issuer rollout. Production certificate renewal atomically publishes chains for the standard reloader and bounds established-connection lifetimes; the local development certificate recipe uses reissue and restart.
 
 ## Transport security: the certificate volume
 
-**Production SPIFFE deployments:** use an identity provider that attests workloads and renews
-short-lived SVIDs automatically. Supply complete certificate/key/bundle updates to
-`SPIFFETransportSecurity.update`; see the building skill's [SPIFFE reference](../../building-swift-services/references/spiffe.md).
-Monitor renewal and expiry, overlap roots during rotation, isolate environment trust, and bound
-connection age and drain grace. A provider outage may retain only still-valid material; never
-extend expiry locally. The adapter does not implement issuer communication.
+**Production native mTLS deployments:** an external CA and renewal process owns issuance and
+renewal. Issue one HTTPS URI identity per workload and the DNS SANs used to dial servers. Configure
+explicit environment CA roots. Run `TimedCertificateReloader` in each application's service group;
+atomically publish renewed chains in stable read-only application directory mounts. Keep issuer and
+provisioning credentials outside workloads. Root/private-key changes need coordinated delivery.
+See the building skill's [workload mTLS reference](../../building-swift-services/references/workload-mtls.md).
 
-**Local development:** the one-shot CA recipe below is convenient
-for local Compose bootstrap. Its year-long certificates and manual restarts are not the
-production SPIFFE lifecycle. Do not propagate this recipe into a new enterprise deployment.
+The local development recipe below uses disposable credentials; never promote its CA to production.
+
 
 
 In this local development recipe, every gRPC connection is mutually authenticated — service to service, and every client of the Temporal frontend. The certificates are the one piece of key material that is not a host file: a one-shot service issues them into a named volume on the first `up`, so a platform that runs the Compose file as-is gets them with no host-side step, and losing the volume costs one regeneration and a restart, because nothing outside the stack trusts the CA.
@@ -191,7 +190,7 @@ services:
         condition: service_completed_successfully
 ```
 
-The script is `step` and nothing else: one CA (`--profile root-ca`, EC P-256, ten years), then one leaf per process in a fixed list — every service, every worker (a process of its own, whatever image it runs), the gateway, the Temporal server, its UI and its CLI — with `--san spiffe://<project>/<process> --san <process> --san localhost --san 127.0.0.1`, `--not-after 8760h`, and step's default leaf usage, which is both server and client authentication because a process presents the same certificate in both directions. DNS SANs support hostname-verifying clients. SPIFFE clients verify the configured URI identity independently of the dial address; `SPIFFEAuthenticationInterceptor` binds the fully verified peer as `ServiceIdentity` — the certificate is the process's only credential; there is no service token and no `service` role (see *Processes* in the building-swift-services skill's identity-and-access reference). Each leaf directory also gets a copy of the CA certificate, so a process mounts one directory. The script skips whatever exists, so every later `up` is a no-op; `TLS_ROTATE=leaves` or `=all` reissues, followed by `docker compose up -d --force-recreate` — the same restart-to-rotate rule as the signing key. Files are `0644` and `ca/ca.key` is `0600`: isolation is by mount, not by mode, because the Temporal images run as their own users. `subpath` needs Docker Engine 26 / Compose 2.24 or later.
+The script is `step` and nothing else: one CA (`--profile root-ca`, EC P-256, ten years), then one leaf per process in a fixed list — every service, every worker (a process of its own, whatever image it runs), the gateway, the Temporal server, its UI and its CLI — with `--san https://identity.<project>.test/workloads/<process> --san <process> --san localhost --san 127.0.0.1`, `--not-after 8760h`, and step's default leaf usage, which is both server and client authentication because a process presents the same certificate in both directions. DNS SANs support hostname-verifying clients. Clients verify server DNS names; `CertificateAuthenticationInterceptor` with the shared workload authenticator binds the caller as `ServiceIdentity` — the certificate is the process's only credential; there is no service token and no `service` role (see *Processes* in the building-swift-services skill's identity-and-access reference). Each leaf directory also gets a copy of the CA certificate, so a process mounts one directory. The script skips whatever exists, so every later `up` is a no-op; `TLS_ROTATE=leaves` or `=all` reissues, followed by `docker compose up -d --force-recreate` — the same restart-to-rotate rule as the signing key. Files are `0644` and `ca/ca.key` is `0600`: isolation is by mount, not by mode, because the Temporal images run as their own users. `subpath` needs Docker Engine 26 / Compose 2.24 or later.
 
 The Temporal server reads the same volume through its own variables — `TEMPORAL_TLS_SERVER_CERT/KEY`, `TEMPORAL_TLS_SERVER_CA_CERT`, `TEMPORAL_TLS_FRONTEND_CERT/KEY`, `TEMPORAL_TLS_CLIENT1_CA_CERT`, `TEMPORAL_TLS_REQUIRE_CLIENT_AUTH: "true"`, and `TEMPORAL_TLS_INTERNODE_SERVER_NAME` / `TEMPORAL_TLS_FRONTEND_SERVER_NAME` set to its service name — the UI through `TEMPORAL_TLS_CA/CERT/KEY`, `TEMPORAL_TLS_SERVER_NAME` and `TEMPORAL_TLS_ENABLE_HOST_VERIFICATION`, and the namespace-creation CLI through `--tls-cert-path`, `--tls-key-path`, `--tls-ca-path` and `--tls-server-name` flags. The Swift `TemporalClient` and `TemporalWorker` take the same client factory as every `GRPCClient`.
 

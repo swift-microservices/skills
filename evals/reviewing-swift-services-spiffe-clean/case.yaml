@@ -1,5 +1,0 @@
-schema_version: "1.1"
-name: reviewing-swift-services-spiffe-clean
-tags: [reviewing, spiffe]
-context:
-  scaffold_script: scaffold.sh
