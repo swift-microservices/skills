@@ -33,7 +33,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 4. **A boundary earns its network hop.** A module boundary already separates concepts; a process boundary is paid for with a database, a contract, a certificate, and a data migration, so it must buy independent scaling, release, failure, placement, or compliance.
 5. **Consistency is decided per interaction, in writing.** Every cross-module or cross-service read or write names its source of truth, staleness, duplicate handling, and failure behavior.
 6. **Retry safety lives with the owner of the side effect.** An idempotency key is enforced atomically where the write happens, never in memory, a caller, or workflow history.
-7. **A credential says who is calling; the use case decides what they may do.** A user is proved by a token and a process by its certificate; roles travel, permissions do not. Authorization is a guard in the use case, never in a policy, a middleware, an interceptor, or a gateway.
+7. **Separate transport admission from user authorization.** mTLS admits internal peers. User JWTs identify users, and user use cases check their permissions. Internal use cases accept business input and enforce invariants. Database policies isolate tenants.
 8. **Trust nothing you did not verify yourself.** Every process that receives a token verifies it with the issuer's public key; a token crosses a process boundary only as the original credential; a process is its certificate. In a monolith that is one verification at the transport, because there is no boundary to cross.
 9. **Nothing is plaintext and nothing is published.** Every internal connection is mutually authenticated by a CA the stack issues itself; no internal port reaches a host interface.
 10. **Moving a module is a wiring change.** A consumer depends on a use-case protocol; what implements it is the composition root's business. Turning a module into a service swaps that implementation and nothing the consumer calls.
@@ -77,14 +77,14 @@ The rules follow from these. When a situation is not covered, decide from the pr
 ### Security and observability
 
 23. Terminate public TLS at the ingress or gateway; keep every internal gRPC connection mutually authenticated with the stack's CA; keep internal ports off the public ingress.
-24. Model process identity as a certificate (`ServiceIdentity`) and user identity as a token (`UserIdentity`). In a monolith, verify the token once at the transport. In microservices, verify it at the gateway and again at every service that receives it, with the issuer's public key; forward it unchanged with `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors alone; reach internal services by certificate; never trust an identity a caller asserts in metadata, and never mint a credential on a user's behalf.
+24. Use mTLS for service and worker connections and user JWTs for user operations. Internal handlers accept business input without a bound process principal. Verify the original user token at every receiving service, forward it only on user descriptors, and authorize user operations in the owning use case.
 25. Authorize inside the owning use case. Keep secrets as mounted files configured by path; connect as least-privilege database roles, one set per process; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, in both shapes, and keep what a caller may do in the use case. Row-level security is the default where more than one end user owns rows in one database; a single-tenant application, an internal tool, or a deployment per customer needs none, and the decision record says which.
 26. Establish structured logs with a service label and correlation id shipped in-process to one aggregator, request and error rates and latency per operation, pool and migration health, and graceful shutdown in every process.
 
 ### Turning a module into a service
 
 27. Do it only for a reason from shapes.md that has become concrete, and say which. A separate concept is not a reason; the module boundary already gives that.
-28. Release the contract in `<project>-protos` first, split by audience; give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are; in each consumer keep the use-case protocol and swap the injected implementation for a gRPC client adapter built in the consumer's composition root over mTLS with the propagating interceptor.
+28. Release the contract in `<project>-protos` first, split by audience; give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are; in each consumer keep the use-case protocol and swap the injected implementation for a gRPC client adapter built in the consumer's composition root over mTLS, with bearer propagation only for user descriptors.
 29. Never infer permission to move or drop rows, discard data, or delete a migration; finish the non-destructive work and surface the decision.
 
 ## Workflow

@@ -86,7 +86,7 @@ These are the packages the architecture is built on, with their version floors. 
 | `postgres-migrations` | `1.2.0` | `PostgresMigrations` |
 | `postgres-nio` | `1.33.1` | `PostgresNIO`, `PostgresClient`, prepared statements, transactions |
 | `grpc-swift-2` | `2.4.0` | `GRPCCore`, `GRPCClient`, `GRPCServer`: with gRPC |
-| `grpc-swift-nio-transport` | `2.9.1` | `GRPCNIOTransportHTTP2`: with gRPC |
+| `grpc-swift-nio-transport` | `2.10.0` | `GRPCNIOTransportHTTP2`: with gRPC |
 | `grpc-swift-extras` | `2.2.0` | `GRPCServiceLifecycle` adapters: with gRPC |
 | `grpc-swift-protobuf` | `2.4.0` | `GRPCProtobuf` and `GRPCProtobufGenerator`: with gRPC |
 | `swift-protobuf` | `1.32.0` | `SwiftProtobuf` messages and well-known types: with gRPC |
@@ -104,8 +104,8 @@ These are the packages the architecture is built on, with their version floors. 
 | `swift-persistence-postgres` | `0.2.0` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
 | `swift-authentication` | `0.2.0` | `Authentication`: the `Authenticator` protocol an HTTP target names to take any verifier |
 | `swift-authentication-jwt` | `0.2.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module |
-| `swift-authentication-x509` | `0.1.1` | `AuthenticationX509`: `SPIFFEAuthenticator` for a peer's certificate identity, linked by `<project>-core` |
-| `swift-authentication-grpc` | `0.2.0` | `AuthenticationGRPC` for the bearer interceptors; `AuthenticationGRPCNIOTransport` for the certificate interceptor, only a package with an internal service |
+| `swift-nio-extras` | `1.35.1` | `NIOCertificateReloading` for `TimedCertificateReloader`, linked directly by the executable |
+| `swift-authentication-grpc` | `0.3.0` | `AuthenticationGRPC` for user bearer authentication and propagation |
 | `swift-authentication-hummingbird` | `0.2.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
 | `swift-authentication-vapor` | `0.2.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
 | `<project>-core` | first compatible tag | `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` |
@@ -124,7 +124,8 @@ dependencies: [
     .package(url: "https://github.com/hummingbird-project/postgres-migrations.git", from: "1.2.0"),
     .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.1"),
     .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),                 // with gRPC
-    .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.1"),     // with gRPC
+    .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.10.0"),     // with gRPC
+    .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.1"),
     .package(url: "https://github.com/grpc/grpc-swift-extras.git", from: "2.2.0"),            // with gRPC
     .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),          // with gRPC
     .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.32.0"),             // with gRPC
@@ -139,7 +140,7 @@ dependencies: [
     .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
     .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.2.0"),          // with HTTP
     .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.2.0"),
-    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.2.0"),     // with gRPC
+    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.3.0"),     // with gRPC
     .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.2.0"), // with HTTP
     .package(url: "https://github.com/<organization>/<project>-core.git", from: "0.1.0"),
     .package(url: "https://github.com/<organization>/<project>-protos.git", from: "0.1.0"),   // with gRPC
@@ -149,7 +150,7 @@ dependencies: [
 
 Do not add every product to every target. Declare only the direct products imported by that target, and declare a package only when some target links one of its products; Xcode warns on a package no target uses. An HTTP-only package declares no grpc-swift, protobuf, or protos package; a gRPC-only package declares no Hummingbird or OpenAPI package. The container plugin is invoked from the package command line and is not attached to a source target.
 
-Depend on organization packages by tagged URL, never by `.package(path:)`. A path dependency builds only where the sibling repository happens to be checked out, so CI and container builds fail on a package that resolves locally, and a package can silently build against uncommitted contract changes. Publish and tag first, then pin `from:` the release containing what the package imports. Contract additions are additive: tag them as a minor release so consumers on the same major range pick them up without a manifest edit. How to verify a cross-repository change before tagging is in [identity-and-access.md](identity-and-access.md) under *The packages*. A library package never commits `Package.resolved`; an executable package does, and re-resolves it when a dependency's tag moves.
+Depend on organization packages by tagged URL, never by `.package(path:)`. A path dependency builds only where the sibling repository happens to be checked out, so CI and container builds fail on a package that resolves locally, and a package can silently build against uncommitted contract changes. Publish and tag first, then pin `from:` the release containing what the package imports. Contract additions are additive: tag them as a minor release so consumers on the same major range pick them up without a manifest edit. A library package never commits `Package.resolved`; an executable package does, and re-resolves it when a dependency's tag moves.
 
 After renaming a target, delete `.build` in that package and every consumer, or the stale `.swiftmodule` keeps the old module name and the compiler insists a module both exists and does not.
 
@@ -279,7 +280,10 @@ Sources/
     <Project>.swift
     Configuration/
       PostgresConfiguration.swift
-      TransportSecurity+ConfigReader.swift            # with gRPC
+      InMemoryProvider+ApplicationDefaults.swift
+      TimedCertificateReloader.Configuration+ConfigReader.swift
+      HTTP2ServerTransport.Posix.TransportSecurity+ConfigReader.swift
+      HTTP2ClientTransport.Posix.TransportSecurity+ConfigReader.swift            # with gRPC
       LokiLogProcessorConfiguration+ConfigReader.swift
       EdDSA.PublicKey+ConfigReader.swift
       EdDSA.PrivateKey+ConfigReader.swift             # the monolith issues tokens, so it holds the private key
@@ -327,7 +331,10 @@ Sources/
     <Service>.swift
     Configuration/
       PostgresConfiguration.swift
-      TransportSecurity+ConfigReader.swift
+      InMemoryProvider+ApplicationDefaults.swift
+      TimedCertificateReloader.Configuration+ConfigReader.swift
+      HTTP2ServerTransport.Posix.TransportSecurity+ConfigReader.swift
+      HTTP2ClientTransport.Posix.TransportSecurity+ConfigReader.swift
       LokiLogProcessorConfiguration+ConfigReader.swift
       EdDSA.PublicKey+ConfigReader.swift
       EdDSA.PrivateKey+ConfigReader.swift             # only the authenticating service
@@ -379,8 +386,10 @@ Sources/
     ├── Serve/
     │   └── Serve.swift
     └── Configuration/
+        ├── InMemoryProvider+ApplicationDefaults.swift
+        ├── TimedCertificateReloader.Configuration+ConfigReader.swift
         ├── EdDSA.PublicKey+ConfigReader.swift
-        └── TransportSecurity+ConfigReader.swift
+        └── HTTP2ClientTransport.Posix.TransportSecurity+ConfigReader.swift
 ```
 
 No `Database/`, no migrations, no `PostgresConfiguration`: a gateway owns no data.
@@ -519,9 +528,9 @@ The module blocks above, once per module, plus the shared HTTP target and one ex
         .product(name: "AuthenticationHummingbird", package: "swift-authentication-hummingbird"), // with HTTP
         .product(name: "GRPCCore", package: "grpc-swift-2"),                         // with gRPC
         .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"), // with gRPC
-        .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),        // with gRPC
+        .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),
+        .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),        // with gRPC
         .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),  // with gRPC
-        .product(name: "AuthenticationGRPCNIOTransport", package: "swift-authentication-grpc"), // only with an internal service
         .product(name: "AuthenticationJWT", package: "swift-authentication-jwt"),
         .product(name: "PersistencePostgres", package: "swift-persistence-postgres"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
@@ -558,9 +567,9 @@ The module blocks above, once, plus one executable:
         .product(name: "Configuration", package: "swift-configuration"),
         .product(name: "GRPCCore", package: "grpc-swift-2"),                         // with gRPC
         .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"), // with gRPC
-        .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),        // with gRPC
+        .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),
+        .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),        // with gRPC
         .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),  // with gRPC
-        .product(name: "AuthenticationGRPCNIOTransport", package: "swift-authentication-grpc"), // only with an internal service
         .product(name: "Hummingbird", package: "hummingbird"),                       // with HTTP
         .product(name: "HummingbirdAuth", package: "hummingbird-auth"),              // with HTTP
         .product(name: "AuthenticationHummingbird", package: "swift-authentication-hummingbird"), // with HTTP
@@ -619,6 +628,7 @@ Include a direct product dependency in every target that imports its module. The
         .product(name: "GRPCCore", package: "grpc-swift-2"),
         .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
         .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),
+        .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),
         .product(name: "<Upstream>Protos", package: "<project>-protos"),             // one per upstream
         .product(name: "ServiceContextModule", package: "swift-service-context"),
         .product(name: "Logging", package: "swift-log"),

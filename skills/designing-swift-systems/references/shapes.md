@@ -53,7 +53,7 @@ Modules talk through use-case protocols. A consumer module declares in its own C
 
 Dependency direction between modules is drawn and cycles are rejected, the same as between services. Break a cycle by reconsidering ownership, extracting a third module, or turning one direction into a fact the other module reacts to.
 
-Because the executable is the deployment unit, the monolith has one image, one configuration, one set of key files, and one process identity. A Temporal worker, when a module needs one, is `worker run` on the same executable, composing the modules that have Activities.
+Because the executable is the deployment unit, the monolith has one image, one configuration, one set of key files, and a service credential pair, plus dedicated Temporal credentials when needed. A Temporal worker, when a module needs one, is `worker run` on the same executable, composing the modules that have Activities.
 
 ## One database, many modules
 
@@ -77,7 +77,7 @@ Publish nothing but the edge. Internal gRPC ports stay off the ingress; public T
 
 ## Where identity is verified
 
-A user is proved by a token, a process by its certificate, and the use case decides what either may do. Where the token is verified depends on the shape:
+mTLS admits internal peers. JWTs identify users, and user use cases decide what those users may do. Internal use cases accept input and enforce business invariants. Where the token is verified depends on the shape:
 
 - **Monolith:** once, at the transport, because no process boundary is crossed. The HTTP middleware or the gRPC interceptor verifies the token with the issuer's public key and binds the caller; the tenant setting is bound beside it; every use case in every module reads the same bound caller.
 - **Microservices:** at every process that receives it. The gateway verifies; each service verifies again with the same public key; the token crosses a boundary only as the original bearer credential, forwarded by `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors alone. No process trusts an identity a caller asserts, and no process mints a credential on a user's behalf. Processes prove themselves to each other by certificate over mTLS from the stack's CA.
@@ -96,7 +96,7 @@ A module has earned its own service when at least one of these is concrete, meas
 
 "It is a separate concept" is not a reason; the module boundary already gives that. One service per entity, table, endpoint, or team name is not a boundary.
 
-Turning a module into a service is three moves, not a program. Release its contract in `<project>-protos`, split by audience. Give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are. In the consumer, keep the use-case protocol and swap the injected implementation for a gRPC client adapter conforming to the same protocol, constructed in the consumer's composition root over mTLS with the propagating interceptor. What the consumer calls does not change; what answers does. Moving existing rows into the new database, and removing them from the old one, is the user's decision, planned and executed explicitly.
+Turning a module into a service is three moves, not a program. Release its contract in `<project>-protos`, split by audience. Give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are. In the consumer, keep the use-case protocol and swap the injected implementation for a gRPC client adapter conforming to the same protocol, constructed in the consumer's composition root over mTLS, applying bearer propagation only to user descriptors. What the consumer calls does not change; what answers does. Moving existing rows into the new database, and removing them from the old one, is the user's decision, planned and executed explicitly.
 
 ## The decision record
 
