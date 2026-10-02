@@ -136,56 +136,55 @@ services:
 
 Only the authenticating service mounts the private key. Every service that verifies tokens merges `*jwt-verification` and mounts `jwt-public`; a worker mounts neither. Compose refuses to start a service whose secret's source file is missing, so a stack without keys fails at `up` rather than at the first request — the same guarantee a `${VAR:?message}` guard gives a variable. `docker compose config` validates a file whose secret source is missing; only `up` refuses.
 
-The signing pair is the only secret file. A process's credential is its certificate, issued by the stack's own CA into the certificate volume on the first `up` (below), so there is nothing to mint against a migrated database and the first start is not staged: generate the pair, fill `.env`, `docker compose up -d`.
+Signing keys, TLS private keys, and enrollment credentials are secret files. Provision each workload’s initial certificate before startup, then keep a renewer running beside it.
 
-Rotation is one rule for both kinds of key material: new pair plus restart for the signing key; reissue the leaves and restart for a process's identity (the building-swift-services skill's identity-and-access reference has the reasoning).
+JWT key rotation and TLS renewal have separate lifecycles. TLS leaves reload for new handshakes; CA trust changes require transport reconstruction.
 
 ## Transport security: the certificate volume
 
-Every gRPC connection in the stack is mutually authenticated — service to service, and every client of the Temporal frontend. The certificates are the one piece of key material that is not a host file: a one-shot service issues them into a named volume on the first `up`, so a platform that runs the Compose file as-is gets them with no host-side step, and losing the volume costs one regeneration and a restart, because nothing outside the stack trusts the CA.
+All internal gRPC connections use mTLS: gateway upstreams, service calls, worker calls, and Temporal frontend connections. Explicit roots define admitted peers. Certificates need the TLS purposes used by the process and DNS SANs for the names clients actually dial, including a Dokploy service's assigned internal DNS name. No application URI identity is needed.
 
-```yaml
-configs:
-  generate-tls:
-    file: ./scripts/generate-tls.sh
+Use Smallstep `step-ca` for issuance and `step` for enrollment, renewal, and rekeying. The online CA signs leaves with an intermediate; keep the root signing key offline and protect the intermediate key and unlock password. Do not distribute CA private keys to application containers. Pin reviewed image versions or digests and retain CA state across redeployments. See [Smallstep production guidance](https://smallstep.com/docs/step-ca/certificate-authority-server-production/).
 
-volumes:
-  tls-certs:
+### Mounts and scopes
 
-services:
-  tls-init:
-    image: smallstep/step-cli:0.30.6
-    user: root                       # the volume is created root-owned
-    configs:
-      - source: generate-tls
-        target: /generate-tls.sh
-    volumes:
-      - tls-certs:/tls               # the only read-write mount of the volume
-    entrypoint: ["/bin/sh", "/generate-tls.sh", "/tls"]
-    restart: "no"
+Give each workload instance its own directory containing `cert.pem` (leaf plus intermediates), `key.pem`, and `ca.pem` (trusted peers). The application mounts its directory read-only at `/run/tls`; its renewer mounts that same directory read-write. Do not mount a volume containing every workload's keys into every application. Directory mounts allow atomic replacement of files; individual file bind mounts can retain the old inode.
 
-  <service>:
-    environment:
-      <<: [*postgres-connection, *jwt-verification, *tls, *observability]
-    volumes:
-      - type: volume
-        source: tls-certs
-        target: /run/tls
-        read_only: true
-        volume:
-          subpath: <service>         # its own leaf and the CA, nothing else
-    depends_on:
-      tls-init:
-        condition: service_completed_successfully
+Temporal clients use separate files under `/run/temporal-tls`, independent `TEMPORAL_TLS_*` overrides, and a separate reloader even when the CA operator is the same. Trust bundles can differ by destination. Issue client/server EKUs appropriate to each use and protect key files with ownership and restrictive permissions that the actual container UID can read.
+
+The executable's application-default provider supplies the conventional paths. Repeat path environment variables only when overriding them; deployment supplies mounts, upstream addresses, and secrets. See the building skill's [configuration guide](../../building-swift-services/references/configuration.md).
+
+### Initial issuance
+
+Initialize the CA once, back up its state, and establish trust in its root through a verified channel. Enroll each workload using a narrowly scoped provisioner and short-lived enrollment credential. Issue only its required SANs and TLS purposes. Remove disposable enrollment secrets and jobs after successful publication; the application's own container never needs CA administration credentials.
+
+The application starts after its initial files are available. `TimedCertificateReloader.makeReloaderValidatingSources` rejects unusable certificate/key material at startup. The reloader is from `NIOCertificateReloading` in swift-nio-extras and runs in `ServiceGroup` with the gRPC or Temporal clients/server. It reads files; it does not request certificates from the CA.
+
+### Renewal and key rotation
+
+Run a `smallstep/step-cli` companion or a host service with a restart policy for each credential directory. A foreground renewal loop can use:
+
+```sh
+step ca renew /run/tls/cert.pem /run/tls/key.pem \
+  --ca-url https://step-ca.internal:9000 \
+  --root /run/tls/ca.pem \
+  --daemon \
+  --expires-in 8h
 ```
 
-The script is `step` and nothing else: one CA (`--profile root-ca`, EC P-256, ten years), then one leaf per process in a fixed list — every service, every worker (a process of its own, whatever image it runs), the gateway, the Temporal server, its UI and its CLI — with `--san spiffe://<project>/<process> --san <process> --san localhost --san 127.0.0.1`, `--not-after 8760h`, and step's default leaf usage, which is both server and client authentication because a process presents the same certificate in both directions. The DNS SAN is the Compose service name because that is what every client dials and verifies; the URI SAN is the process's identity, what a receiving service reads to name it through `ServiceAuthenticator` — the certificate is the process's only credential; there is no service token and no `service` role (see *Processes* in the building-swift-services skill's identity-and-access reference). A leaf issued before the URI was added identifies as nothing — `TLS_ROTATE=leaves` reissues them. Each leaf directory also gets a copy of the CA certificate, so a process mounts one directory. The script skips whatever exists, so every later `up` is a no-op; `TLS_ROTATE=leaves` or `=all` reissues, followed by `docker compose up -d --force-recreate` — the same restart-to-rotate rule as the signing key. Files are `0644` and `ca/ca.key` is `0600`: isolation is by mount, not by mode, because the Temporal images run as their own users. `subpath` needs Docker Engine 26 / Compose 2.24 or later.
+Here the CA endpoint is assumed to chain to that bundle; otherwise mount its root separately. Renewal normally authenticates with the current certificate/key and keeps the private key. A 24-hour leaf, renewal with eight hours remaining, and a 60-second application reload interval are example settings to test against the outage budget, not universal requirements. See [`step ca renew`](https://smallstep.com/docs/step-cli/reference/ca/renew/).
 
-The Temporal server reads the same volume through its own variables — `TEMPORAL_TLS_SERVER_CERT/KEY`, `TEMPORAL_TLS_SERVER_CA_CERT`, `TEMPORAL_TLS_FRONTEND_CERT/KEY`, `TEMPORAL_TLS_CLIENT1_CA_CERT`, `TEMPORAL_TLS_REQUIRE_CLIENT_AUTH: "true"`, and `TEMPORAL_TLS_INTERNODE_SERVER_NAME` / `TEMPORAL_TLS_FRONTEND_SERVER_NAME` set to its service name — the UI through `TEMPORAL_TLS_CA/CERT/KEY`, `TEMPORAL_TLS_SERVER_NAME` and `TEMPORAL_TLS_ENABLE_HOST_VERIFICATION`, and the namespace-creation CLI through `--tls-cert-path`, `--tls-key-path`, `--tls-ca-path` and `--tls-server-name` flags. The Swift `TemporalClient` and `TemporalWorker` take the same client factory as every `GRPCClient`.
+Use [`step ca rekey`](https://smallstep.com/docs/step-cli/reference/ca/rekey/) for a new private key. Stage and validate the new pair before publishing it. Two separate file renames are not a pair-atomic operation; coordinate publication and verify that a reader never activates a mismatched pair. Test the pinned renewer's behavior on the actual mounted filesystem. Failed application reloads retain the last usable pair and retry.
 
-The certificate volume reaches only the stack. A service that uses a managed Temporal instead of the `temporal` service above does not present its leaf to it and must not trust it with the internal CA; the `tls` variables stay exactly as they are for every connection between the stack's own processes, and the managed engine is configured in the `temporal` scope (see *Transport security factories* in the building-swift-services skill's composition reference).
+New TLS handshakes use the renewed pair; existing connections do not. Bound server connection age and drain grace so clients reconnect within the certificate lifecycle, accounting for long streams. Monitor renewal errors, reload failures, and remaining lifetime. Test CA downtime and controlled reenrollment after expiry. Revoking renewal at the CA does not by itself terminate existing TLS sessions or make every client check a revocation list.
 
-There is no plaintext mode and no mode variable. The images and the Compose file move together: an image that predates the factories against this file, or the reverse, breaks every call at once, because the Temporal frontend starts requiring client certificates the moment the file lands. A process started outside Compose runs the script into a directory of its own and sets the three paths. Probing a live server needs a leaf too — `grpcurl -cacert ca.pem -cert cert.pem -key key.pem` with any process's directory mounted from the volume — and a plaintext dial, or a certificate from another CA, is refused at the handshake.
+Rotate trust roots with an overlap of old and new trust, then rebuild transports or roll the applications before removing old trust. The leaf reloader does not reload CA bundles.
+
+### Temporal and verification
+
+Configure the Temporal server's frontend and internode TLS and every enabled supporting client explicitly. Its native certificate refresh is separate from Swift's reloader; verify the pinned server's reload behavior or roll it within the renewal window. Do not assume a Temporal namespace is a TLS authorization boundary. Keep the Temporal API private and define admission for each environment.
+
+Use real handshakes to prove rejection of missing/untrusted/expired client certificates and wrong server hostnames. Renew a leaf and verify the changed serial on a fresh connection without restarting Swift. Exercise a mismatched update, renewer and application restarts, CA downtime, connection draining, and overlapping CA rotation.
 
 ## The gateway's address
 
@@ -267,4 +266,4 @@ Reuse across a cutover works like the gateway's node: Grafana's identity and its
 
 ## Platforms without Compose secrets
 
-The equivalent of a secret is a file mount plus the path variable. The certificate volume is unaffected: it is created and filled by the Compose file itself. Most such platforms deploy a container whose mount is missing rather than refusing, so the failure appears in the logs as an unreadable key instead of a failed deploy — check them after the first rollout rather than reading a green deploy as proof the mount landed.
+The equivalent of a secret is a file mount plus the path variable. Certificate directories must be shared between each application and its renewer, with application mounts read-only. Verify that both reach the same files on the scheduled node. Most such platforms deploy a container whose mount is missing rather than refusing, so the failure appears in the logs as an unreadable key instead of a failed deploy — check them after the first rollout rather than reading a green deploy as proof the mount landed.

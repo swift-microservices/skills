@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: reviewing-swift-services-transport-configuration
+tags: [reviewing, mtls, configuration]
+context:
+  scaffold_script: scaffold.sh

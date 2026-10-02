@@ -119,8 +119,8 @@ For mutations, define a request identity when clients may retry after an ambiguo
 Identify public, private, administrative, and data-sensitive boundaries. Keep internal service ports off the public ingress by default.
 
 - Terminate public TLS at the platform ingress or the gateway's sidecar.
-- Mutually authenticate every internal gRPC connection with the stack's own CA; a process is its certificate, and there is no plaintext mode. The certificate names the process (`ServiceIdentity`, from its `spiffe://<project>/<process>` URI) and the token names the user (`UserIdentity`); authorization is decided in the use case against whichever it was handed, never in a policy or an interceptor.
-- Model process identity separately from end-user identity, a certificate rather than a token, and do not trust a caller merely because it is on an internal network.
+- Mutually authenticate internal gRPC connections against explicit CA trust and verify destination hostnames. Internal peers admitted by that trust can call internal RPCs; those use cases enforce business invariants. User operations additionally require verified user JWTs and owning-use-case authorization.
+- Keep mTLS admission separate from verified-user authorization. A private network does not substitute for TLS peer verification.
 - Keep secrets as mounted files configured by path, never in source control or environment variables.
 - Mark secret configuration values with `isSecret: true`.
 - Avoid logging tokens, credentials, sensitive payloads, or raw database errors.
@@ -134,7 +134,7 @@ This is the rule that makes microservices different from a monolith, where the t
 
 **A token crosses a process boundary only as the original bearer credential.** The gateway and any service that calls a user-facing service forward the caller's token unchanged with `BearerPropagationInterceptor<UserIdentity>`, applied to that upstream's user-service descriptors alone, so a public service is dialled with nothing and an internal one is reached by certificate. No process forwards an identity as metadata it asserts, no process trusts a `user_id` header, and no process mints a credential on a user's behalf: there is one issuer, the authenticating service, with the private key, and everyone else holds the public key.
 
-**A process proves itself by certificate.** Worker-to-service and service-to-service calls on internal contracts carry no user token; the caller is its certificate over mTLS, verified by `CertificateAuthenticationInterceptor` against the stack's trust domain, and the internal use case is handed a `ServiceIdentity`. When such a call acts for a named user, the user id is a field of the request, the internal use case checks the process is one it expects, and it reaches every row through the internal role rather than by impersonating the user.
+**Internal calls use transport trust.** Workers and services call internal descriptors over mTLS without a user token. The receiver accepts input directly, using its internal database scope. A user ID in that input names business data, not a principal to impersonate. Keep internal listeners private and gateway routes limited to public and user operations.
 
 **The tenant reaches the policy in each service on its own.** Each service's `UserSettingsInterceptor` binds `PostgresSettings.user(_:)` from the caller it verified, so the tenant policy in each database sees the user that service verified, not one a caller claimed.
 

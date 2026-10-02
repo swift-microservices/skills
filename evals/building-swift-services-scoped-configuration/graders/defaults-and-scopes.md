@@ -1,0 +1,6 @@
+---
+type: llm
+---
+
+PASS if each executable constructs environment-first providers followed by its own InMemoryProvider defaults; all specified mount paths appear in those application defaults and can be overridden independently. A single relative-key TimedCertificateReloader.Configuration init(config:) works unchanged with tls and temporal.tls, requiring certificatePath/privateKeyPath from the selected reader. Transport factories similarly read trustRootsPath relative to that scope. Catalog has separate required service and Temporal reloaders; Mailer constructs only its Temporal reloader and does not eagerly read absent serving/migration credentials.
+FAIL if paths are embedded in reusable adapters, the reader initializer also takes defaultPath/certificateDirectory/defaultSomething arguments, a boolean selects shared Temporal credentials, the reader ignores overrides, or Mailer needs unused scopes just to initialize configuration. Do not require identical application default values between executables.

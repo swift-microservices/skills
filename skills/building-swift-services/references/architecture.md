@@ -142,7 +142,7 @@ package struct PasswordPolicy: Equatable, Sendable {
 }
 ```
 
-A limit is never a `static let` on the use case: the use case is generic over its database type, and Swift refuses static stored properties in generic types, so the value has nowhere to live but the policy, which is also where a test can vary it. Name a rule expressed as numbers `XPolicy`, not `XConfiguration`. Configuration is deployment wiring that varies per environment; a policy is a product decision that would be identical in staging and production. The composition root reads configuration and translates it into policy; being loadable from `ConfigReader` does not make a value configuration. Name a duration `expiration`, matching the `expirationDate` it produces.
+A limit is never a `static let` on the use case: the use case is generic over its database type, and Swift refuses static stored properties in generic types, so the value has nowhere to live but the policy, which is also where a test can vary it. Name a rule expressed as numbers `XPolicy`, not `XConfiguration`. Configuration is deployment wiring that varies per environment; a policy is a product decision that would be identical in staging and production. An executable-local policy reader translates configuration into policy; being loadable from `ConfigReader` does not make a value configuration. Name the typed policy property `expiration`, matching `expirationDate`; name its numeric configuration key `expirationSeconds` to expose the unit.
 
 Do not inject a concrete collaborator that has no protocol: injection buys substitution, and a concrete type cannot be substituted. Either the seam is real and the parameter is a protocol, or the type is constructed where it is used. A policy is the exception because it is data, not a collaborator: the composition root builds it from configuration and passes it by value into the use case's initializer, which defaults the parameter to `.standard` so a test constructs the use case without it. A validator that applies such a policy, `PasswordValidator(policy:)`, travels the same way; a validator with no values to carry is not a type at all but a guard in the use case.
 
@@ -169,7 +169,7 @@ What stays per package is the wiring: configuration readers, transport-security 
 - gRPC service implementations, one per proto service: `ItemPublicService`, `ItemService`, `ItemInternalService`.
 - HTTP controller, one per resource: `ItemController`; contexts `IdentityRequestContext`, `AdminRequestContext`; conversions `ItemResponse+Schema.swift` in a module, `ItemResponse+RPC.swift` in a gateway.
 - Cross-module port in a consumer's Core: the producer's `XUseCaseProtocol`, or a narrow `<Entity>Client` port such as `AccountClient`; its gRPC implementation `GRPCAccountClient` in the consumer's GRPC target.
-- Identities: `UserIdentity` as `subject:`, `ServiceIdentity` as `service:`.
+- Identity: `UserIdentity` as `subject:` on user operations; internal operations accept business input directly after transport mTLS admission.
 - Temporal workflow, Activities, and client adapter: `ReservationWorkflow`, `ReservationActivities`, `TemporalReservationWorkflowClient`.
 - Identifier properties: `xId`, never `xID`. Strict camel case keeps `registrationId` aligned with SQL `registration_id` and proto `registration_id` with no acronym special-casing.
 

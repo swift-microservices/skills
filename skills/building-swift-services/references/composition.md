@@ -48,7 +48,7 @@ Put commands in `<Project>/<Command>/` (or `<Service>/<Command>/`); the migratio
 
 ## Environment configuration
 
-Start with `ConfigReader(provider: EnvironmentVariablesProvider())`, then scope by concern. Swift Configuration transforms camel-case scoped keys into variables:
+Build `ConfigReader(providers: [EnvironmentVariablesProvider(), InMemoryProvider.applicationDefaults])` once, then scope by concern. See [configuration.md](configuration.md) for native library readers, relative keys, application defaults, and validation boundaries. Swift Configuration transforms camel-case scoped keys into variables:
 
 ```dotenv
 POSTGRES_HOST=localhost
@@ -68,6 +68,11 @@ GRPC_ACCOUNTS_PORT=50051
 TLS_CERTIFICATE_PATH=/run/tls/cert.pem       # with gRPC
 TLS_PRIVATE_KEY_PATH=/run/tls/key.pem
 TLS_TRUST_ROOTS_PATH=/run/tls/ca.pem
+TLS_REFRESH_INTERVAL_SECONDS=60
+TEMPORAL_TLS_CERTIFICATE_PATH=/run/temporal-tls/cert.pem
+TEMPORAL_TLS_PRIVATE_KEY_PATH=/run/temporal-tls/key.pem
+TEMPORAL_TLS_TRUST_ROOTS_PATH=/run/temporal-tls/ca.pem
+TEMPORAL_TLS_REFRESH_INTERVAL_SECONDS=60
 JWT_PUBLIC_KEY_PATH=/run/secrets/jwt-public
 JWT_PRIVATE_KEY_PATH=/run/secrets/jwt-private  # only the process that issues tokens
 TEMPORAL_HOST=temporal
@@ -86,7 +91,7 @@ LOG_LEVEL=info
 
 `<name>` is the service name in a service and the project name in a monolith: `catalog_service` and `backend_service`. Roles belong to the process, so a monolith's ten modules share one set.
 
-Give each configuration an `init(config:)` extension in the executable's `Configuration` folder: `PostgresConfiguration.swift`, `TransportSecurity+ConfigReader.swift`, `EdDSA.PublicKey+ConfigReader.swift`, and so on. A small extension duplicated per package, not a shared package: configuration is where packages legitimately differ, which is why it is the one thing the shared packages deliberately do not carry.
+Prefer native library readers. For types without one, add a focused `Type+ConfigReader.swift` in the executable. Read relative keys and delegate to the existing initializer; keep deployment defaults in the application provider. Do not pass extra default or directory arguments.
 
 ```swift
 struct PostgresConfiguration: Sendable {
@@ -118,9 +123,9 @@ struct PostgresConfiguration: Sendable {
 
 Each connection reads its password when it is asked for rather than in `init`. That is what lets one type serve every command: `serve` reads the service and internal roles, `serve --migrate-database` the owner too, and `worker run` the worker role alone, so the worker's environment carries neither the owner pair nor the serving roles' secrets, and a missing secret still fails at startup, naming the key, because every command builds its clients before its `ServiceGroup` runs. The password properties are exposed so the role migrations can read them.
 
-Require hosts and secrets; default the constants. A constant is anything that never varies by deployment: the standard mount paths (`/run/tls/{cert,key,ca}.pem`, `/run/secrets/jwt-public`), well-known ports, the listen address, the log level, and the package's *own identity*, its database name and its role names, all derivable from its name by convention. Baking these into the `+ConfigReader` extensions (the environment always overrides a default) shrinks every deployment's variable set to topology and secrets. Require an upstream's host rather than defaulting it: a process that quietly dials `localhost` in a container reports a misconfiguration as a connection failure minutes later, at the first request, instead of at startup. And know what each library treats as required: a value your code used to default may be *required* by a stock configuration reader, and the missing variable then crash-loops the process at boot (the Temporal worker's task queue is the canonical example).
+Require topology and secrets where no appropriate default exists. Put application mount paths, database/role names, and task queues in the application defaults provider; library tuning defaults belong to their readers. A local application-specific wrapper such as `PostgresConfiguration` can own its process defaults. Use the pinned library’s documented required keys and native scoping.
 
-Key material, signing keys and certificates, is configured as a path and the file is opened here, in the composition root, never in a library. A path is the form NIOSSL and grpc-swift already take credentials in, it keeps a private key out of the environment, and it fails at startup naming the path. The rationale is in [identity-and-access.md](identity-and-access.md), *Key material in configuration*.
+Key material, signing keys and certificates, is configured as a path and file loading is delegated to the configured cryptographic library. A path is the form NIOSSL and grpc-swift already take credentials in, it keeps a private key out of the environment, and it fails at startup naming the path. The rationale is in [identity-and-access.md](identity-and-access.md), *Key material in configuration*.
 
 Where the values come from in a running environment is the delivering-swift-services skill's subject.
 
@@ -143,7 +148,7 @@ func run() async throws {
 
 A process serving both transports has one root, one set of use cases, and one `ServiceGroup` holding both the application and the server. Do not write two roots for two transports.
 
-**Logging.** Bootstrap the logging system inline, never behind a shared helper or module. Build one in-process log shipper, then `LoggingSystem.bootstrap` a `MultiplexLogHandler` of `StreamLogHandler.standardOutput` and the shipper's handler, so every line reaches both the container's stdout and the aggregator. Pass the process name as the handler's service label, and `<Project>Authentication`'s metadata providers as the bootstrap's, so every log line inside a request carries the bound caller, `user_id`, and `service_name` on a process that admits other processes, with no handler naming them. The rule is the shape: structured logs, one aggregator, the label and the providers on every line. The default shipper is `swift-log-loki` to Grafana Loki; the alternative is any `LogHandler` the deployment prefers — `StreamLogHandler` alone where the platform collects stdout, or an OTLP handler — and substituting one changes only this block.
+**Logging.** Bootstrap the logging system inline, never behind a shared helper or module. Build one in-process log shipper, then `LoggingSystem.bootstrap` a `MultiplexLogHandler` of `StreamLogHandler.standardOutput` and the shipper's handler, so every line reaches both the container's stdout and the aggregator. Pass the process name as the handler's service label, and `<Project>Authentication`'s metadata providers as the bootstrap's, so every log line inside a request carries the bound caller, `user_id`, with no handler naming them. The rule is the shape: structured logs, one aggregator, the label and the providers on every line. The default shipper is `swift-log-loki` to Grafana Loki; the alternative is any `LogHandler` the deployment prefers — `StreamLogHandler` alone where the platform collects stdout, or an OTLP handler — and substituting one changes only this block.
 
 ```swift
 // MARK: - Logging
@@ -161,7 +166,7 @@ LoggingSystem.bootstrap(
         handler.metadataProvider = metadataProvider
         return handler
     },
-    metadataProvider: .multiplex([.user, .service])   // `.user` alone on a process that admits no other process
+    metadataProvider: .user
 )
 let logger = Logger(label: "catalog")
 ```
@@ -264,7 +269,7 @@ let server = GRPCServer(
             host: serverConfig.string(forKey: "host", default: "0.0.0.0"),
             port: serverConfig.int(forKey: "port", default: 50051)
         ),
-        transportSecurity: try .mTLS(config: tlsConfig)
+        transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader)
     ),
     services: [itemPublicService, itemService, itemInternalService, userPublicService, userService],
     interceptorPipeline: [
@@ -282,15 +287,11 @@ let server = GRPCServer(
                 <Organization>_Users_V1_UserService.descriptor,
             ])
         ),
-        .apply(
-            CertificateAuthenticationInterceptor(authenticator: ServiceAuthenticator()),
-            to: .services([<Organization>_Catalog_V1_ItemInternalService.descriptor])
-        ),
     ]
 )
 ```
 
-The public services get nothing. `BearerAuthenticationInterceptor` is in `AuthenticationGRPC`; `UserSettingsInterceptor` in `<Project>Persistence`, after the bearer interceptor because it reads what that one bound; `CertificateAuthenticationInterceptor` is in `AuthenticationGRPCNIOTransport`, which a package links only when it has an internal service to protect, because only the NIO Posix transport exposes the peer certificate. A gRPC monolith exposed to clients directly still terminates TLS at the ingress and still keeps its internal services for its own workers and for the module that one day ships alone; mTLS between modules does not exist because there is no connection between them.
+Public and internal descriptors have no application authentication interceptor. `BearerAuthenticationInterceptor` binds users only on user descriptors; `UserSettingsInterceptor` follows it for tenant operations. The backend listener still requires mTLS for every descriptor. Keep internal operations private and outside gateway routes. A monolith uses local calls between its modules rather than internal network hops.
 
 ## Lifecycle
 
@@ -299,7 +300,7 @@ Own every long-lived thing with ServiceLifecycle:
 ```swift
 // MARK: - Lifecycle
 let serviceGroup = ServiceGroup(
-    services: [lokiProcessor, serviceClient, internalClient, accountsClient, application, server],
+    services: [lokiProcessor, certificateReloader, serviceClient, internalClient, accountsClient, application, server],
     gracefulShutdownSignals: [.sigint, .sigterm],
     logger: logger
 )
@@ -325,7 +326,7 @@ let usersClient = GRPCClient(
             host: try usersConfig.requiredString(forKey: "host"),
             port: try usersConfig.requiredInt(forKey: "port")
         ),
-        transportSecurity: try .mTLS(config: tlsConfig),
+        transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader),
         serviceConfig: .defaults
     ),
     interceptorPipeline: [
@@ -334,13 +335,13 @@ let usersClient = GRPCClient(
 )
 ```
 
-Under Composition, wrap each client in one generated stub per proto service, `UserPublicService.Client(wrapping:)` and `UserService.Client(wrapping:)` over the same `GRPCClient`, and hand the pair to the controller. The public stub is dialled with nothing, which is what the session-issuing RPCs expect: they run before any caller exists, so there is no token to forward. The gateway never speaks an internal service: it relays people, and a process is what an internal service admits.
+Under Composition, wrap each client in one generated stub per proto service, `UserPublicService.Client(wrapping:)` and `UserService.Client(wrapping:)` over the same `GRPCClient`, and hand the pair to the controller. The public stub is dialled with nothing, which is what the session-issuing RPCs expect: they run before any caller exists, so there is no token to forward. The gateway exposes only intended public and user operations; its mTLS credential must not be treated as permission to publish internal routes.
 
 Under Router, the same three tiers as a module's, without `UserSettingsMiddleware`: a gateway has no database for the setting to reach, and the tenant is bound again, from the forwarded token, inside the service that owns the rows. Under Hummingbird, `ApplicationConfiguration(reader:)` scoped to `http.server`. Under Lifecycle, the application and every client in one `ServiceGroup`:
 
 ```swift
 let serviceGroup = ServiceGroup(
-    services: [lokiProcessor, authenticationClient, usersClient, application],
+    services: [lokiProcessor, certificateReloader, authenticationClient, usersClient, application],
     gracefulShutdownSignals: [.sigint, .sigterm],
     logger: logger
 )
@@ -350,42 +351,53 @@ The gateway publishes no host port and needs no migration job; give it a health 
 
 ## Transport security factories
 
-Every internal gRPC connection is mutually authenticated, in both directions, with the one leaf certificate the process was issued (see *Transport security* in the delivering-swift-services skill). The factories live in the executable's `Configuration` folder as `TransportSecurity+ConfigReader.swift`, one per direction, on grpc-swift's own types, so a call site reads exactly like the library's `.plaintext` did, and there is no struct to carry two values and no mode to switch:
+Configure service connections with the `tls` reader and Temporal with `temporal.tls`. Each scope has its own certificate/key pair and trust bundle from application defaults. Use the configuration pattern in [configuration.md](configuration.md); adapters accept a reader, not a directory or default-path argument.
+
+Declare `NIOCertificateReloading` from swift-nio-extras and `GRPCServiceLifecycle` from grpc-swift-extras directly in the executable. Prime one `TimedCertificateReloader` per credential pair before constructing any transport:
 
 ```swift
-extension HTTP2ServerTransport.Posix.TransportSecurity {
-    /// A server cannot know a client's hostname, so it checks only that the client's certificate
-    /// chains to the CA: grpc's default for mTLS.
-    static func mTLS(config: ConfigReader) throws -> Self {
-        let certificateChain: [TLSConfig.CertificateSource] = [
-            .file(path: try config.requiredString(forKey: "certificatePath"), format: .pem)
-        ]
-        let privateKey: TLSConfig.PrivateKeySource = .file(
-            path: try config.requiredString(forKey: "privateKeyPath"),
-            format: .pem
-        )
-        let trustRoots: TLSConfig.TrustRootsSource = .certificates([
-            .file(path: try config.requiredString(forKey: "trustRootsPath"), format: .pem)
-        ])
-        return .mTLS(certificateChain: certificateChain, privateKey: privateKey) { tls in
-            tls.trustRoots = trustRoots
+let tlsConfig = config.scoped(to: "tls")
+var reloaderConfig = try TimedCertificateReloader.Configuration(config: tlsConfig)
+reloaderConfig.logger = logger
+reloaderConfig.onCertificateLoadFailed = { failure in
+    logger.warning("TLS certificate reload failed", metadata: ["error": "\(failure.error)"])
+}
+let certificateReloader = try TimedCertificateReloader.makeReloaderValidatingSources(
+    configuration: reloaderConfig
+)
+```
+
+The factory loads and validates the initial pair. Configuration construction does not start the reload loop. Own the reloader exactly once in the same `ServiceGroup` as the transports. Share it across service clients and the service listener only when the pair supports both purposes. Always construct a separate Temporal reloader with `config.scoped(to: "temporal.tls")`; it is a required lifecycle dependency, not an optional alternate path.
+
+The transport factories read trust relative to their reader and take the reloader as a runtime dependency:
+
+```swift
+extension HTTP2ClientTransport.Posix.TransportSecurity {
+    static func mTLS(config: ConfigReader, certificateReloader: any CertificateReloader) throws -> Self {
+        let trustRootsPath = try config.requiredString(forKey: "trustRootsPath")
+        return try .mTLS(certificateReloader: certificateReloader) {
+            $0.trustRoots = .certificates([.file(path: trustRootsPath, format: .pem)])
+            $0.serverCertificateVerification = .fullVerification
         }
     }
 }
 
-extension HTTP2ClientTransport.Posix.TransportSecurity {
-    /// A client knows exactly whom it dialled, so it checks the name as well as the chain.
-    static func mTLS(config: ConfigReader) throws -> Self {
-        // the same three sources
-        return .mTLS(certificateChain: certificateChain, privateKey: privateKey) { tls in
-            tls.trustRoots = trustRoots
-            tls.serverCertificateVerification = .fullVerification
+extension HTTP2ServerTransport.Posix.TransportSecurity {
+    static func mTLS(config: ConfigReader, certificateReloader: any CertificateReloader) throws -> Self {
+        let trustRootsPath = try config.requiredString(forKey: "trustRootsPath")
+        return try .mTLS(certificateReloader: certificateReloader) {
+            $0.trustRoots = .certificates([.file(path: trustRootsPath, format: .pem)])
+            $0.clientCertificateVerification = .noHostnameVerification
         }
     }
 }
 ```
 
-The reader is scoped to `tls`, so the operator sets `TLS_CERTIFICATE_PATH`, `TLS_PRIVATE_KEY_PATH`, and `TLS_TRUST_ROOTS_PATH`. A missing one fails at startup naming the key. Every `GRPCClient`, and the `TemporalClient` and `TemporalWorker` when the Temporal server runs inside the stack, take the client factory; the `GRPCServer` takes the server one. An HTTP-only monolith has no factories: it terminates nothing itself, and TLS toward the public is the ingress's. Do not share the file through a package: the shape is eight lines a package owns, and configuration is where packages differ.
+Import `Configuration`, `GRPCNIOTransportHTTP2`, and `NIOCertificateReloading` in these extension files. Server-side `.noHostnameVerification` still requires and verifies a client certificate against explicit trust; clients retain full server chain and hostname verification. An internal listener has no plaintext mode.
+
+Put server connection settings in `HTTP2ServerTransport.Posix.Config+ConfigReader.swift`. For example, read `maxConnectionAgeSeconds` as `Duration` with a 300-second default and `connectionGraceTimeSeconds` with a 30-second default. Choose bounds that fit certificate lifetime and long-running RPCs; keep them below the operational renewal budget. Do not scatter duration conversions or validation guards through the commands.
+
+The reloader changes the leaf pair used on new handshakes. It does not issue certificates, refresh a trust bundle, or re-authenticate existing connections. Failed updates retain the last usable pair and retry. Deployment owns Smallstep issuance/renewal, expiry monitoring, coordinated key publication, and CA rotation; see the delivery skill's [environment reference](../../delivering-swift-services/references/environment.md#transport-security-the-certificate-volume).
 
 **Every client waits for the connection, bounded by a deadline.** A gRPC call made while its channel is not ready fails fast by default, the error a caller hits on the first request after an idle period, a peer restart, or a rolling deploy. Enable *wait-for-ready* once as a client-wide default rather than per call: a `ServiceConfig` with one `MethodConfig` whose name is the empty-service global bucket (`MethodConfig.Name(service: "")`, the fallback the transport returns for any method with no more specific entry) applies to every method, with `waitForReady: true` and a `timeout` so a genuinely-down upstream still fails instead of hanging the caller forever.
 
@@ -403,24 +415,9 @@ extension ServiceConfig {
 }
 ```
 
-Pass it as `serviceConfig:` to every client's `.http2NIOPosix`, beside the mTLS factory. Do not reach for per-RPC `CallOptions` to set this: the generated call sites are scattered through use cases and adapters, and there is no single place to set a default `CallOptions`; `ServiceConfig` is that single place. The two are the same knob at different layers: the SDK unions a call's `CallOptions` with the method's `ServiceConfig`, filling only fields the call left unset, so `ServiceConfig` is the base default and `CallOptions` stays the per-RPC override for the rare call that needs a different timeout. The `GRPCServer` transport takes no service config, and a managed engine's client (below) carries its own.
+Pass it as `serviceConfig:` to every client's `.http2NIOPosix`, beside the mTLS factory. Do not reach for per-RPC `CallOptions` to set this: the generated call sites are scattered through use cases and adapters, and there is no single place to set a default `CallOptions`; `ServiceConfig` is that single place. The two are the same knob at different layers: the SDK unions a call's `CallOptions` with the method's `ServiceConfig`, filling only fields the call left unset, so `ServiceConfig` is the base default and `CallOptions` stays the per-RPC override for the rare call that needs a different timeout. The `GRPCServer` transport takes no service config, and Temporal uses its SDK’s client settings.
 
-**A managed workflow engine or any external endpoint is outside the stack.** The client factory is wrong on both counts for it: its trust roots are the internal CA, and the external frontend chains to a public one. Such a client uses TLS with the system trust roots and the provider's own credential, configured in that provider's scope beside its address:
-
-```swift
-let temporalClient = try TemporalClient(
-    target: .dns(host: temporalHost, port: 7233),        // the provider's endpoint
-    transportSecurity: .tls { tls in tls.trustRoots = .systemDefault },
-    configuration: .init(
-        instrumentation: .init(serverHostname: temporalHost),
-        namespace: temporalNamespace,
-        // the API key, from the `temporal` scope, through whichever option the pinned SDK exposes
-    ),
-    logger: logger
-)
-```
-
-Keep the two concerns in two scopes: `tls` is who the process is inside the stack; `temporal` is where the workflow engine is and how it is reached. Prefer an API key over registering a CA with the provider: it rotates from the provider's console and binds no vendor setting to the stack's CA.
+**Temporal has a dedicated credential scope.** Construct its transport with `temporal.tls` and a separate primed reloader. Use the Temporal SDK’s native reader for client/worker settings. Configure trust for the actual endpoint; the client validates its server hostname and CA chain. Both service and Temporal reloaders are required entries in the lifecycle when both are used.
 
 ## Temporal worker composition root
 
@@ -453,7 +450,7 @@ struct Run: AsyncParsableCommand {
 }
 ```
 
-There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. The one thing `worker run` must not do is open a server or read the verifying key; that is a fact of the command, kept by review, where it was once a fact of the manifest. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
+There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. The one thing `worker run` must not do is open a server or read the verifying key; keep those dependencies out of the worker command. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
 
 The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. Then create one `TemporalWorker`:
 
@@ -464,7 +461,7 @@ let temporalWorker = try TemporalWorker(
         host: temporalHost,
         port: temporalConfig.int(forKey: "port", default: 7233)
     ),
-    transportSecurity: try .mTLS(config: tlsConfig),
+    transportSecurity: try .mTLS(config: temporalTLSConfig, certificateReloader: temporalCertificateReloader),
     activityContainers: ReservationActivities(service: activityService),
     workflows: [ReservationWorkflow.self],
     logger: logger
@@ -473,9 +470,9 @@ let temporalWorker = try TemporalWorker(
 
 The configuration comes from the SDK's **own** reader, `TemporalWorker.Configuration(configReader:)`, handed the `temporal` scope, never a hand-built one; the serve side's client is the same shape, `TemporalClient.Configuration(configReader:)`. The SDK's keys become the environment contract: the worker *requires* `TEMPORAL_WORKER_NAMESPACE`, `_TASKQUEUE`, `_BUILDID`, `_CLIENT_IDENTITY`, and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`, and reads `_HEARTBEATINTERVALMS` optionally; set it (60000 is a sane interval) so the worker reports liveness to the engine; the SDK's default disables heartbeats entirely. The client reads `TEMPORAL_CLIENT_NAMESPACE` and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`. Only the dial target and the transport factory remain the composition root's job.
 
-Add the worker and every long-lived dependency used by Activities to one `ServiceGroup`. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
+Add the worker, both certificate reloaders, and every long-lived dependency used by Activities directly to one `ServiceGroup` services array. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
 
-A worker has no inbound request to forward, so it speaks as itself, and its certificate is how (see *Processes: the certificate is the credential* in [identity-and-access.md](identity-and-access.md)). There is nothing to exchange at startup and no credential to read: a worker whose leaf is missing fails in the transport factory naming the path, and one whose leaf lacks the URI SAN is refused at the first internal call as a peer the receiver cannot name. The same shape applies to any process that calls as itself: a webhook-handling `serve`, a scheduled job.
+A worker has no inbound user request to forward. It calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to webhook handlers and scheduled jobs; see [identity-and-access.md](identity-and-access.md).
 
 ## Migrations at boot
 
@@ -505,4 +502,4 @@ The flag is the default because it needs no platform support: one container, one
 
 ## Operator commands
 
-An operation that must never be reachable over the network, a data repair, a one-off export, is a subcommand, run by an operator against the package's own database. It follows the boot-migration shape: short-lived, stdout logging, a scoped client around the work. Print exactly the value the operator needs on standard output and nothing else there, so a redirect captures it. There is no credential-issuing command any more: a process's credential is its certificate, issued by the stack's CA (the delivering-swift-services skill).
+An operation that must never be reachable over the network, a data repair, a one-off export, is a subcommand, run by an operator against the package's own database. It follows the boot-migration shape: short-lived, stdout logging, a scoped client around the work. Print exactly the value the operator needs on standard output and nothing else there, so a redirect captures it. The stack's CA issues process certificates, as described by the delivering-swift-services skill.

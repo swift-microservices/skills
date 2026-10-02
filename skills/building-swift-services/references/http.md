@@ -74,7 +74,7 @@ Two targets, not four. A gateway owns no entities, no repositories, and no datab
 | `API` | Generated OpenAPI types, request contexts, error middleware and problem types, controllers, RPC conversions, route registration | Environment reading, client construction, logging setup, `@main` |
 | `<Project>` | ArgumentParser command tree, configuration, client and authenticator construction, router assembly, lifecycle — the target that builds the `JWTAuthenticator` from the key | Route handlers, schema conversion, business rules |
 
-`API` links `Hummingbird`, `HummingbirdAuth`, `Authentication`, `AuthenticationHummingbird`, and `<Project>Authentication`; the executable adds `AuthenticationJWT`, `AuthenticationGRPC`, `JWTKit`, the gRPC transport, and one `<Service>Protos` product per upstream. The gateway never speaks an internal service: it relays people, and a process is what an internal service admits.
+`API` links `Hummingbird`, `HummingbirdAuth`, `Authentication`, `AuthenticationHummingbird`, and `<Project>Authentication`; the executable adds `AuthenticationJWT`, `AuthenticationGRPC`, `JWTKit`, the gRPC transport, and one `<Service>Protos` product per upstream. The gateway routes only intended public and user operations; internal descriptors remain private.
 
 The exact source tree:
 
@@ -111,7 +111,7 @@ Sources/
     │   └── Serve.swift
     └── Configuration/
         ├── EdDSA.PublicKey+ConfigReader.swift
-        └── TransportSecurity+ConfigReader.swift
+        └── HTTP2ClientTransport.Posix.TransportSecurity+ConfigReader.swift
 ```
 
 A monolith's `<Module>HTTP` target keeps the same folders — `Controllers/`, `Schemas/Requests/`, `Schemas/Responses/` — under its own module, with the conversions named `X+Schema.swift`, and no `RPCError` conformance.

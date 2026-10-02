@@ -60,7 +60,7 @@ func makeSubject(role: UserRole) -> UserIdentity {
 }
 ```
 
-A test that needs the subject's own id — a "reads their own row" case — makes the identity with a fixed id instead. An internal use case takes `ServiceIdentity(name: "billing-worker")` inline.
+A test that needs the subject's own id — a "reads their own row" case — makes the identity with a fixed id instead. An internal use case takes business input directly; test its invariants without manufacturing a caller.
 
 Dates in mocks are fixed (`Date(timeIntervalSince1970:)`), never `Date()`: an assertion against a mock's output must be reproducible. The mock repositories and scopes are the service's own, because they mirror the service's repositories; only the two doubles every service would write identically are shared.
 

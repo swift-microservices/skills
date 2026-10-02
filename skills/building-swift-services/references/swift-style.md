@@ -112,7 +112,7 @@ The rest of Swift Concurrency is the `swift-concurrency` skill's subject ([AvdLe
 
 ## APIs and errors
 
-- Use `callAsFunction` for use cases, with the principal first and the `input:` label: `useCase(input: input)`, `useCase(subject: subject, input: input)`, `useCase(service: service, input: input)`.
+- Use `callAsFunction` for use cases, with the principal first and the `input:` label: `useCase(input: input)` for public/internal operations and `useCase(subject: subject, input: input)` for user operations.
 - Use typed throws for Core use-case protocols and implementations.
 - Catch named enum cases directly: `catch ItemRepositoryError.duplicateName`.
 - End with a deliberate catch-all mapping when the public typed error includes `.unknown`, and log the cause there with `String(reflecting:)`.

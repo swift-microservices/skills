@@ -106,7 +106,7 @@ package struct ItemService: <Organization>_Catalog_V1_ItemService.SimpleServiceP
 }
 ```
 
-One conformance per proto service: `ItemPublicService`, `ItemService`, `ItemInternalService`, each holding only the use cases its audience reaches. A handler on the user or internal service first insists on the principal the interceptor bound — a private `requireUser()` or `requireService()` reading `ServiceContext`, refusing with `.unauthenticated` (see *Identifying a caller versus requiring one* in [identity-and-access.md](identity-and-access.md)) — then translates the request to a use-case input, calls the use case with `subject:` or `service:`, and translates typed failures explicitly:
+One conformance per proto service: `ItemPublicService`, `ItemService`, `ItemInternalService`, each holding only its audience’s use cases. User handlers require a verified principal with `requireUser()`, then pass it as `subject:`. Internal handlers accept input directly because mTLS admits the connection. Both translate transport input and typed use-case failures explicitly:
 
 ```swift
 package func getItem(request: …, context: ServerContext) async throws -> … {
@@ -131,7 +131,7 @@ package func getItem(request: …, context: ServerContext) async throws -> … {
 | duplicate/conflict | `.alreadyExists` |
 | idempotency key reused with different input | `.failedPrecondition` |
 | missing entity | `.notFound` |
-| no principal bound (the handler's guard) | `.unauthenticated` |
+| no user principal bound (the user handler's guard) | `.unauthenticated` |
 | the use case's `.forbidden` | `.permissionDenied` |
 | unexpected internal failure | `.internalError` |
 
