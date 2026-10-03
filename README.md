@@ -7,7 +7,7 @@ Agent skills for building Swift systems the [swift-microservices](https://github
 | `designing-swift-systems` | choosing the shape (a modular monolith or microservices) and the transport (HTTP, gRPC, or both), cutting modules, communication, events and projections, consistency, and when a module becomes a service |
 | `building-swift-services` | creating or changing a module or a service: Core, Postgres with row-level security, the HTTP or gRPC transport, the executable, a gateway in front of services, and the tests |
 | `orchestrating-temporal-workflows` | workflows, Activities, signals, queries, and workers |
-| `delivering-swift-services` | images, Compose, secrets, certificates, CI, per-commit publishing, migrations in the pipeline |
+| `delivering-swift-services` | reusable library CI, images, Compose, secrets, certificates, service CI, per-commit publishing, migrations in the pipeline |
 | `reviewing-swift-services` | auditing an existing service against the rules, read-only, on request |
 
 ## Install in Claude Code

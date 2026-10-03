@@ -1,11 +1,15 @@
 ---
 name: delivering-swift-services
-description: Delivers Swift services from a commit to a running process: the Containerfile and the static-SDK image, per-commit SHA and branch tags, the branch-per-environment CI on GitHub Actions with mandatory deploy triggers, the platform's applications and variable scopes, the suite Compose file with .env guards, file-mounted secrets, the CA-issued mTLS certificate volume, the gateway's address, log aggregation, migrations at boot, rollback, and registry retention. Use when writing or debugging a Containerfile, Makefile, compose.yml, .env, GitHub Actions workflow, deploy step, image tag, registry cleanup, certificate or CA setup, platform application configuration, or the first start of a stack.
+description: Defines reusable Swift library CI and delivers Swift services from a commit to a running process. Covers compiler compatibility, package resolution, formatting, service images, publishing, deployment, Compose, mounted secrets, mTLS certificates, migrations, and rollback. Use when creating or changing library CI or service delivery workflows, Containerfiles, image publishing, deployment, certificates, or stack startup.
 ---
 
 # Delivering Swift services
 
 How a service gets from a merged commit to a process that answers, and how the whole stack runs on one host: the pipeline that publishes and deploys, and the environment the deployed system runs in. Preserve every convention unless the user explicitly changes it; where the repository already has an established convention that differs, the repository wins for unrelated code.
+
+For reusable library CI, read [library-ci.md](references/library-ci.md) and apply its gates.
+The service deployment rules below apply to executable services. Repository `AGENTS.md`
+profiles supply explicit compiler, platform, formatting, and coverage exceptions.
 
 Designing the shape, building the modules, services, and HTTP surface, and running workflows are separate skills; this one publishes and runs what they produce.
 
@@ -19,7 +23,8 @@ Each topic has exactly one home. Every other skill says only that a value "comes
 
 | Task | Read |
 | --- | --- |
-| Branches, CI, the tests job, the release image, per-commit publishing, the registry, deploy triggers, platform variable scopes, migrations in the pipeline, dependency updates, retention | [delivery.md](references/delivery.md) — the only file that describes the pipeline |
+| Reusable library CI, supported compilers, optional checks, library formatting, and repository exceptions | [library-ci.md](references/library-ci.md) |
+| Service branches, CI, the tests job, the release image, per-commit publishing, the registry, deploy triggers, platform variable scopes, migrations in the pipeline, dependency updates, retention | [delivery.md](references/delivery.md) — the service pipeline |
 | Images, the suite Compose file, Postgres instances, ports, secrets, the certificate volume, the gateway's address, log aggregation, verifying what a service receives | [environment.md](references/environment.md) — the only file that describes the running environment |
 
 ## Principles
@@ -41,7 +46,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 1. Two long-lived branches, two environments: every develop commit tests, publishes, and deploys to staging; every main commit tests and publishes, deploying to production once it exists. Promotion is a merge, never a steady-state cherry-pick.
 2. Pull requests run the tests job regardless of target. Reuse the swiftlang test workflow pinned to a release tag's commit SHA, collapsed to the one toolchain, OS, and architecture production runs, with `swift test --disable-automatic-resolution` so the committed `Package.resolved` is the build.
 3. Keep a static Linux SDK build in CI whenever the local image path is musl to catch SDK, C/C++, and dependency compatibility failures. Verify Foundation linking separately: a successful static build does not prove FoundationEssentials-only dependencies. Follow the linking gate in [delivery.md](references/delivery.md); document unavoidable upstream full-Foundation requirements while keeping our code on modern Essentials APIs.
-4. Pin third-party actions and reusable workflows to commit SHAs with the release tag as a comment, or the branch and date where the source publishes no tags; this applies to library repositories as much as services. Let dependabot move them, targeting develop for both the Swift and Actions ecosystems.
+4. Pin third-party actions and reusable workflows to reviewed commit SHAs with the release tag as a comment, or the branch and date when adopting functionality ahead of a release. Inspect nested workflow and script references before claiming the whole execution chain is pinned. Dependabot targets develop for services and main for libraries.
 5. A service executable commits `Package.resolved` and re-resolves it when a dependency's tag moves; a library package never commits it and releases from semver labels. Move a tag only before anything depends on it, because SwiftPM's fingerprint store on every consumer's machine remembers the old commit.
 6. When a private repository's arm runners are refused for billing, do not weaken the pipeline to pass: fund it, self-host, or publish through the local container-plugin build and a hand-triggered deploy until CI returns.
 
