@@ -7,7 +7,7 @@ Agent skills for building Swift systems the [swift-microservices](https://github
 | `designing-swift-systems` | choosing the shape (a modular monolith or microservices) and the transport (HTTP, gRPC, or both), cutting modules, communication, events and projections, consistency, and when a module becomes a service |
 | `building-swift-services` | creating or changing a module or a service: Core, Postgres with row-level security, the HTTP or gRPC transport, the executable, a gateway in front of services, and the tests |
 | `orchestrating-temporal-workflows` | workflows, Activities, signals, queries, and workers |
-| `delivering-swift-services` | reusable library CI, images, Compose, secrets, certificates, service CI, per-commit publishing, migrations in the pipeline |
+| `delivering-swift-services` | standard server-library CI, images, Compose, secrets, certificates, service CI, per-commit publishing, migrations in the pipeline |
 | `reviewing-swift-services` | auditing an existing service against the rules, read-only, on request |
 
 ## Install in Claude Code
@@ -63,6 +63,15 @@ claude plugin eval .               # run every eval case with and without the pl
 Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`. Cases with a `scaffold.sh` need `--scaffold`, and cases that edit or build need `--allow-tools Bash Write Edit`; add `--keep-temp` to keep each run's workspace. The eval loader rejects any symbolic link under `evals/`, so keep SwiftPM `.build` directories out of `evals/results/`.
 
 `claude plugin eval` has no script grader. After a `building-swift-services-swift-settings` run, check its kept workspace with `python3 evals/building-swift-services-swift-settings/checks/verify.py <workspace>`: it asserts every target's settings, compiles independent actor and MainActor contract tests against the migrated API, and runs the executable.
+
+Library CI evals cover an ordinary tested library, a real PostgreSQL provider, and a generated
+SDK with optional transport traits. Run the corresponding `delivering-swift-services-library-ci*`
+cases with `--scaffold`. Check kept workspaces independently with
+`python3 evals/delivering-swift-services-library-ci/checks/verify.py <workspace>` (requires PyYAML).
+Use `--provider postgres --foundation-exception PostgresNIO` for the database case and
+`--no-tests --traits --foundation-exception generator` for the generated SDK. Add `--warning-exception UnusedImportAccess` when the documented
+Swift 6.4 generator exception is needed. This checker tests workflow artifacts; it does not execute GitHub jobs or prove provider/linkage runtime results.
+
 
 ## Contributing
 

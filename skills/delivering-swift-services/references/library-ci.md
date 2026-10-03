@@ -1,78 +1,114 @@
-# Reusable library CI
+# Standard Swift library CI
 
-Use this profile for packages consumed by other packages: shared Core, contracts, SDKs, and
-standalone libraries. Repository `AGENTS.md` and explicit user decisions override defaults.
-Service deployment branches, image publishing, and locked service builds live in
-[delivery.md](delivery.md).
+This is the recommended CI pipeline for modern Swift libraries and the required standard for
+**all libraries used in swift-microservices server development**, including project-owned Core,
+contracts, SDKs, and adapters. Apply it as-is, adapting product names and documented capability
+exceptions. Repository `AGENTS.md` supplies the project profile and can override general decisions;
+record the reason and replacement coverage for each exception. Existing drift is not an exception.
+
+The design is mostly followed by Apple libraries, for example
+[swift-temporal-sdk](https://github.com/apple/swift-temporal-sdk/blob/main/.github/workflows/pull_request.yml)
+and [swift-configuration](https://github.com/apple/swift-configuration/blob/main/.github/workflows/pull_request.yml),
+with our Linux-only choice, stricter imports/Sendable checks, Foundation consumer checks, and
+package-specific additions. This is an ecosystem standard and recommendation, not a claim that
+Apple or Swift mandates every setting. Executable/application delivery lives in [delivery.md](delivery.md).
 
 ## Contents
 
-- [Shared design](#shared-design)
-- [Coverage and exceptions](#coverage-and-exceptions)
-- [Compact license headers](#compact-license-headers)
-- [Formatting profile](#formatting-profile)
-- [Workflow dependencies and releases](#workflow-dependencies-and-releases)
-- [Completion gates](#completion-gates)
+- [Events and gates](#events-and-gates)
+- [Compiler matrix](#compiler-matrix)
+- [Soundness and documentation](#soundness-and-documentation)
+- [Formatting and headers](#formatting-and-headers)
+- [Dependency resolution and workflow references](#dependency-resolution-and-workflow-references)
+- [Capability exceptions](#capability-exceptions)
+- [Validation and completion](#validation-and-completion)
 
-## Shared design
+## Events and gates
 
-Follow the design used by [Swift Temporal SDK](https://github.com/apple/swift-temporal-sdk/blob/main/.github/workflows/pull_request.yml)
-and [Swift Configuration](https://github.com/apple/swift-configuration/blob/main/.github/workflows/pull_request.yml):
-Swift.org soundness checks, SwiftNIO test/build workflows, and focused package-specific checks.
-These repositories select different optional jobs; copying every job is not the goal.
+| Gate | Pull requests | Main pushes |
+| --- | --- | --- |
+| Soundness: format, headers, DocC, scripts/YAML, hygiene | Yes | No |
+| Debug tests or meaningful build/consumer replacement | Yes | Yes |
+| Optimized release builds | Yes | Yes |
+| Static Linux SDK: released + main SDK, x86_64 musl | Yes | No |
+| Foundation consumer linking, where supported | Yes | Yes |
+| Exactly one SemVer impact label | Yes, also label changes | No |
 
-- Run tests and release builds on PRs and main pushes. Static Linux SDK checks follow
-  Swift Temporal SDK: x86_64 with the released and Swift main SDKs, on PRs only. The
-  swift-microservices profile has no scheduled CI; Dependabot checks for workflow updates.
-- Never commit `Package.resolved` in libraries. Resolve released dependencies from manifest
-  requirements in fresh CI checkouts; do not apply a service's `--disable-automatic-resolution`
-  command to an absent library lockfile. Keep application/service lockfiles tracked.
-- Test every supported stable compiler from the minimum tools version through the current
-  stable release. Enable next-release and main snapshots for forward compatibility. Require
-  stable checks for merging; snapshot failures remain visible and advisory unless the
-  repository explicitly makes them required. Do not hide failures with blanket success fallbacks.
-- Build optimized release products as well as running debug tests. Packages without meaningful
-  runtime tests still need build and consumer/contract validation; do not add placeholder tests.
-- Run formatting, license headers, documentation, and applicable script/YAML checks through
-  `swiftlang/github-workflows/soundness.yml`. The swift-microservices profile disables automatic
-  API-breakage checks with `api_breakage_check_enabled: false`; SemVer labels still record API
-  impact. The docs script adds the DocC plugin in its disposable checkout when needed.
-- Use `apple/swift-nio` workflows for generic test/build matrices. Swift.org's
-  `swift_package_test.yml` is also suitable, including for additional SDK checks.
-  Neither choice changes SwiftPM's test engine or requires a source dependency on SwiftNIO.
+There are **no scheduled workflow runs**, no API-breakage job, no macOS job, and no deployable
+images, deployment credentials, or deployment branches. Dependabot's weekly update schedule is
+separate from CI scheduling. PR code gates use `opened`, `reopened`, `synchronize`; the label gate
+also uses `labeled`, `unlabeled`. Main means `push.branches: [main]`.
 
-## Coverage and exceptions
+Copy [the PR template](../assets/library-pull-request.yml),
+[main template](../assets/library-main.yml), [label workflow](../assets/library-pr-label.yml),
+and [Dependabot configuration](../assets/library-dependabot.yml). Replace the DocC target name.
+Keep independent gates independent: do not add `needs: static-sdk` or cancellation wrappers
+around unrelated checks. Required merge checks should cover stable toolchains and applicable
+quality/integration gates. Snapshots remain visible and advisory unless explicitly required.
+Changing workflow YAML does not configure branch protection; verify/report that separately.
 
-Declare supported compilers and CI platforms in `AGENTS.md`. The swift-microservices profile
-uses Linux-only CI by user choice. Apple-platform compatibility is verified separately when
-needed; a successful Linux job does not establish macOS/iOS compatibility. If macOS CI is
-requested later, use runners the organization can access: SwiftNIO's current macOS workflow
-explicitly skips repositories outside `apple` and uses Apple's self-hosted pool.
+## Compiler matrix
 
-Add checks only for capabilities the library supplies or promises:
+Use `apple/swift-nio/.github/workflows/unit_tests.yml@main` and
+`release_builds.yml@main`. They are reusable CI machinery, not a SwiftNIO source dependency;
+SwiftPM still runs Swift Testing/XCTest. They supply evolving Linux compiler matrices and
+release/static builds, which is why this profile uses them rather than substituting the
+Swift.org package-test action. Swift.org supplies the soundness workflow.
 
-- Static Linux SDK builds follow the unmodified SwiftNIO workflow used by Swift Temporal SDK:
-  x86_64 with the latest released SDK and Swift main development SDK, on PRs only. SDK
-  cross-compilation checks build compatibility; it does not run the package tests. Document
-  unsupported products or traits and exact coverage rather than claiming the entire package.
-- A downstream consumer/linkage check when avoiding full Foundation is a requirement. The
-  swift-microservices gate uses `swift:6.3-noble` and `swift:6.4-noble`. Static SDK success proves
-  build compatibility, not the absence of Foundation code. Retain the
-  [Foundation-linking gate](delivery.md#foundation-linking) where applicable.
-- Real database/provider integration when behavior depends on that system. A database driver
-  can replace the generic unit-test workflow with a matching compiler matrix and a healthy
-  service container; preserve release/static build checks independently.
-- Default, disabled, and relevant enabled trait configurations when the package exposes traits.
-  Examples, C++ interoperability, benchmarks, and additional SDKs need an actual supported use.
+The current tools floor is **6.3**. Set `minimum_swift_version: "6.3"` and
+`linux_6_2_enabled: false` in both test and release jobs. Cover Swift 6.3, 6.4, nightly next,
+and nightly main. Preserve these test overrides:
 
-Record each exclusion, its reason, and any replacement coverage in the repository profile.
-Full Foundation through Vapor 4 or PostgresNIO is an upstream dependency exception; keep our
-code on FoundationEssentials where available.
+```yaml
+linux_6_3_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+linux_6_4_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+linux_nightly_next_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+```
 
-## Compact license headers
+Stable compilers fail on warnings; snapshots omit warnings-as-errors to expose upcoming
+compatibility without turning every new warning into a failure. Keep snapshot failures visible:
+no `|| true`, fake successes, or blanket `continue-on-error`. Recheck upstream inputs and enabled
+versions when raising the tools floor or adopting a newly released compiler.
 
-Enable license-header checking. Preserve the repository's license and copyright owner; the
-swift-microservices libraries use a three-line MIT header instead of Xcode author/date headers:
+The PR static SDK job calls `apple/swift-nio/.github/workflows/static_sdk.yml@main`
+**without input overrides**. Its defaults build `x86_64-swift-linux-musl` with the latest
+released SDK and Swift main development SDK. It cross-compiles; it does not execute tests.
+There is no ARM64 or next-release static SDK matrix in this profile. Linux success does not
+establish Apple-platform compatibility.
+
+## Soundness and documentation
+
+Use `swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.15` on PRs, with
+`api_breakage_check_enabled: false`, `license_header_check_enabled: true`, and explicit
+`docs_check_targets` for public targets. No separate API-diff job may re-enable the disabled gate.
+SemVer labels still record API impact and reviewers assess compatibility.
+
+Retain upstream format, license, DocC warnings-as-errors/analyze, shellcheck, yamllint,
+broken-symlink, unacceptable-language, and applicable Python lint defaults. Do not disable a
+check to make CI green. The docs script adds the DocC plugin only in its disposable checkout;
+a permanent DocC package dependency is unnecessary. Generated contracts are still documented;
+if analysis produces unavoidable generator warnings, record the exact scoped exception.
+For compiler warnings in released generated code, keep warnings-as-errors and downgrade only
+the demonstrated diagnostic group with `-Xswiftc -Wwarning -Xswiftc <Group>` on supported
+stable toolchains. Verify the group exists in each toolchain receiving the flag, record the generator/version and
+removal condition, and fix owned-source warnings. Do not use blanket suppression or unsafe
+manifest flags that prevent downstream consumption.
+
+## Formatting and headers
+
+Copy [the library formatter](../assets/library.swift-format) **byte-for-byte** to `.swift-format`:
+four-space indentation, 150-column lines, ordered imports, and every included rule unchanged.
+Do this for existing libraries when applying this standard too. The source is an Apple library
+formatter captured at commit `508797b5468dbc532f77c317bf9df0cb3231f5c1`; the checked-in asset is
+the profile, so later upstream changes require a deliberate update. Public documentation remains
+required even though the formatter does not enforce documentation on every declaration.
+Format and strictly lint all tracked Swift, including manifests and CI consumers, with the CI
+formatter toolchain (currently 6.3). Generated build output is not tracked or hand-formatted.
+The service profile's 400-column formatter does not apply to libraries.
+
+Enable compact license-header checking and preserve the repository's license/owner. MIT packages
+in this organization use:
 
 ```swift
 // Copyright (c) 2026 Zaid Rahhawi
@@ -80,46 +116,84 @@ swift-microservices libraries use a three-line MIT header instead of Xcode autho
 // See LICENSE for license information.
 ```
 
-Put the same three lines in `.license_header_template`, with `@@` instead of `//` and `YEARS`
-instead of the year. Shell headers use `##` after the shebang. Keep the tools-version directive
-first in `Package.swift`, followed by the compact header. Exclude `Package.swift` and `LICENSE`
-in `.licenseignore`: the upstream checker expects the header at line one and does not recognize
-an extensionless license file. Keep exclusions narrow and explain them in `AGENTS.md`.
+A proprietary project uses its recorded owner and `SPDX-License-Identifier: LicenseRef-Proprietary`,
+with the corresponding proprietary `LICENSE`; adopting CI never relicenses a package.
+`.license_header_template` uses `@@` instead of `//` and `YEARS` instead of the year. Shell headers
+use `##` immediately after `#!/bin/bash`; protobuf sources use `//` too.
+Keep `// swift-tools-version:` first in every manifest, followed by the compact header.
+`.licenseignore` excludes `Package.swift` (the upstream checker requires the header at line one)
+and `LICENSE` (extensionless text); add only specific consumer manifests or unsupported fixture
+file formats with a documented reason. Do not ignore all Sources, Tests, or generated-code inputs.
 
-## Formatting profile
+## Dependency resolution and workflow references
 
-For new swift-microservices libraries, copy [the library formatter](../assets/library.swift-format)
-to `.swift-format`. It is the exact file from Swift Temporal SDK commit
-`508797b5468dbc532f77c317bf9df0cb3231f5c1`: four-space indentation, 150-column lines,
-and ordered imports. Preserve an existing repository formatter unless changing it is requested.
-Public API documentation remains a repository requirement even though this config does not
-enforce documentation on every public declaration.
+**Never track `Package.resolved` in a library**, including nested consumer/Xcode copies. Ignore
+it by name, remove any tracked copies, and resolve released remote manifest requirements in
+fresh CI checkouts. Do not use `--disable-automatic-resolution`, `--force-resolved-versions`, or
+other locked-build flags without a lockfile. A local-path dependency is appropriate only in a
+CI consumer fixture that exercises this checkout. Applications and deployables retain validated
+lockfiles; their pipeline is separate.
 
-Format and strictly lint all tracked Swift files, including manifests, using the same formatter
-toolchain as the CI formatting job. The service profile's 400-column default is separate.
+Shared SwiftNIO workflows, the SemVer action, and Foundation consumer checks follow `@main`.
+Soundness uses its release tag; directly used standard Actions use major-version tags (currently
+`actions/checkout@v7`, with `persist-credentials: false`). This overrides the service SHA-pin
+rule. Moving refs include upstream changes and are not immutable; inspect current inputs.
+Dependabot checks `github-actions` weekly at `/`, targets main, and labels update PRs `semver/none`.
 
-## Workflow dependencies and releases
+Every PR has exactly one impact label: `⚠️ semver/major`, `🆕 semver/minor`, `🔨 semver/patch`,
+or `semver/none`. Preserve the repository's release mechanism: a manual label-based Auto Release
+may reuse the shared workflow at `@main`; a contract/SDK package can keep bare version tags.
+Adding CI does not publish a release. A bare-tag exception changes release machinery, not the
+SemVer PR gate.
 
-The swift-microservices library profile follows `@main` for shared SwiftNIO, release, and
-consumer-check workflows and the SwiftNIO SemVer action. Keep soundness on its release tag and
-standard Actions on major-version tags, matching Temporal's design. This profile overrides
-service SHA-pin defaults. Verify current reusable-workflow inputs; moving references include
-upstream changes and are not immutable. Other repository profiles may choose reviewed SHAs.
-Dependabot checks weekly, targets main, and labels workflow-update PRs `semver/none`; libraries have no
-deployment develop branch unless their profile explicitly defines one.
+## Capability exceptions
 
-Preserve the repository's SemVer-label and release automation policy. Contract packages may
-use bare tags; library CI does not impose a new release mechanism on an existing repository.
+**Foundation linking.** Use `vapor/ci/.github/workflows/check-foundation-linking.yml@main` twice,
+with `swift_image: swift:6.3-noble` and `swift:6.4-noble`, on PRs and main. It builds downstream
+release consumers and rejects full Foundation, Internationalization, and ICU linkage. Static SDK
+success does not prove this. A PostgresNIO or Vapor 4 product may require full Foundation upstream:
+list only those products in `excluded_products`, leaving unaffected products checked. If every
+product requires it, omit the gate and record why, which trait/product configurations it affects,
+and retained release/static coverage. Use FoundationEssentials in owned code where available;
+do not wrap standard types just to evade the checker.
 
-## Completion gates
+**PostgreSQL integration.** A package with actual database I/O tests replaces generic unit tests
+with a reusable custom Linux matrix on the same four toolchains and test flags. See
+[the PostgreSQL test template](../assets/library-postgres-tests.yml). Use a PostgreSQL 18 service
+(or the project's documented supported version), with `pg_isready -h 127.0.0.1` health checking:
+a Unix socket may report healthy during temporary initialization before TCP is ready. Connect
+tests to the service hostname and matching credentials/database; run `swift test --parallel`.
+A missing/unhealthy database fails, never skips the tests or substitutes mocks. Keep soundness,
+release, and PR-only static builds. Merely depending on PostgresNIO does not require a database
+service when tests exercise only settings/mocks.
 
-- Every declared stable compiler is covered and the minimum follows the manifest.
-- Applicable tests, release/static builds, soundness, and provider/consumer checks execute.
-- Tests and release builds run on PRs/main pushes; static SDK builds run on PRs only.
-  CI has no scheduled runs; Dependabot has the update schedule.
-- Compact headers pass the upstream checker; exclusions and the API-check setting match the profile.
-- Exclusions and advisory snapshot policy are explicit; required check names match branch protection.
-- Formatting matches the selected profile and all tracked Swift files pass strict lint.
-- Library resolved files remain ignored and generated lockfiles are never staged.
-- Validate workflow syntax and reusable-workflow inputs; report which checks ran locally and
-  which depend on GitHub runners, snapshots, or external integration systems.
+**Generated/no-test packages.** If there are no meaningful runtime tests, replace `swift test`
+with a four-toolchain `swift build` matrix using the same stable/snapshot flags, plus an actual
+downstream consumer that imports generated public messages/client protocols or exported SDK APIs.
+Use [the build template](../assets/library-builds.yml), adapted to those products/configurations.
+Do not create placeholder test targets or `#expect(true)` tests. Keep DocC, release and static
+builds. Run code generators on the host during cross-compilation; do not target the generator
+itself at the destination SDK or commit generated output to bypass plugin failures.
+
+**Traits.** Build default and disabled defaults, plus distinct supported enabled combinations.
+A second configuration that is identical to the default adds no coverage. Consumer checks must
+use the intended traits; state exactly what the default-only shared release/static workflows
+cover. Add a scoped trait build where promised static support would otherwise be untested.
+A default URLSession transport does not prove a custom-transport build. A generated full
+Foundation import can affect both configurations; do not claim disabling a transport makes it
+Foundation-free without a consumer linkage check.
+
+Add examples, C++ interoperability, or other SDKs only for capabilities the package supplies.
+Record exceptions in each repository's `AGENTS.md`, together with actual replacement coverage.
+
+## Validation and completion
+
+- Validate effective triggers, matrices, flags, reusable-workflow inputs, and workflow syntax;
+  run actionlint, strict yamllint, shellcheck where applicable, formatter and license checks.
+- Build/test supported configurations locally where available; prove database behavior against
+  the real provider when changing it. Verify downstream contracts rather than counting tests.
+- Check `git ls-files` contains no library resolved files and broad ignores do not conceal owned code.
+- Ensure all intended public targets are documented and label/dependency policies are configured.
+- Review branch-protection requirements separately; do not claim workflow edits configure them.
+- Report local results and remaining GitHub/Linux/snapshot validation accurately. Do not poll CI
+  indefinitely; configuration work can be reviewed without starting CI monitoring.

@@ -14,7 +14,7 @@ Match existing files before applying these defaults. Preserve user-authored form
 
 ## File form
 
-Keep an Xcode-style header by default; the [library CI license profile](../../delivering-swift-services/references/library-ci.md#compact-license-headers) can require compact SPDX headers instead:
+Keep an Xcode-style header by default; the [library CI license profile](../../delivering-swift-services/references/library-ci.md#formatting-and-headers) can require compact SPDX headers instead:
 
 ```swift
 //
@@ -163,6 +163,6 @@ Use this `.swift-format` baseline when the repository does not already provide o
 
 `indentConditionalCompilationBlocks` must remain `false` so conditional `FoundationEssentials` and `Foundation` imports stay flush-left.
 
-`lineLength` is deliberately `400` in the service default: declarations break where the author chooses. Explicit repository profiles override it. The [library CI profile](../../delivering-swift-services/references/library-ci.md#formatting-profile) uses Swift Temporal SDK's exact 150-column formatter for swift-microservices libraries.
+`lineLength` is deliberately `400` in the service default: declarations break where the author chooses. Explicit repository profiles override it. The [library CI profile](../../delivering-swift-services/references/library-ci.md#formatting-and-headers) uses the exact 150-column library formatter asset for swift-microservices libraries.
 
 Use the repository's formatter if it has configuration or a formatting command. Otherwise, inspect changed Swift files and use `swift format lint --strict` only if the installed toolchain and existing project support it. Do not introduce a new formatting tool or reformat unrelated files.

@@ -42,7 +42,7 @@ Each service repository carries four small workflows and a dependabot configurat
 | `cleanup-images.yml` | weekly cron | prunes the registry to a recent window |
 | `dependabot.yml` | weekly | Swift and Actions bumps as PRs against develop |
 
-Third-party actions and reusable workflows are pinned to commit SHAs with the release tag as a comment (`@<commit-sha>  # <tag>`, two spaces before `#` as yamllint's `--strict` comments rule requires); dependabot keeps the pins moving. Library workflow references follow [their CI profile](library-ci.md#workflow-dependencies-and-releases). The organization's own actions, where any exist, are pinned by SemVer tag (see *Deploying to the platform*).
+Third-party actions and reusable workflows are pinned to commit SHAs with the release tag as a comment (`@<commit-sha>  # <tag>`, two spaces before `#` as yamllint's `--strict` comments rule requires); dependabot keeps the pins moving. Library workflow references follow [their CI profile](library-ci.md#dependency-resolution-and-workflow-references). The organization's own actions, where any exist, are pinned by SemVer tag (see *Deploying to the platform*).
 
 ## The tests job
 
