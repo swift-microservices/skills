@@ -28,7 +28,7 @@ Two long-lived branches, each bound to one environment:
 
 Pull requests run the tests job regardless of target branch. Deployment steps are mandatory, not gated: a missing secret or variable fails the pipeline loudly through the action's own environment checks rather than skipping the deploy and reporting green. A pipeline that silently does less than it claims is worse than a red one.
 
-Versioning differs by what a repository is *for*. Services carry no SemVer tags and no releases: the commit is the version, the SHA is the deploy identifier. SemVer, API-breakage checks, and label-driven release automation belong to the shared packages — the protos, the swift-microservices packages, and `<project>-core` — whose consumers resolve version ranges (see *Contracts and compatibility* in the designing-swift-systems skill). A library package cuts a GitHub Release from the semver label on each merged pull request and never commits `Package.resolved`; a service executable commits it, and re-resolves it when a dependency's tag moves. Move a tag only before anything depends on it: SwiftPM remembers which commit a tag resolved to in `~/.swiftpm/security/fingerprints/<package>-*.json`, and a moved tag fails every consumer's resolve with "does not match previously recorded value" until that file is deleted on every machine that saw the old one.
+Versioning differs by what a repository is *for*. Services carry no SemVer tags and no releases: the commit is the version, the SHA is the deploy identifier. SemVer and label-driven release automation belong to the shared packages — the protos, the swift-microservices packages, and `<project>-core` — whose consumers resolve version ranges (see *Contracts and compatibility* in the designing-swift-systems skill). Automatic API-breakage checks follow the library's repository profile. A library package cuts a GitHub Release from the semver label on each merged pull request and never commits `Package.resolved`; a service executable commits it, and re-resolves it when a dependency's tag moves. Move a tag only before anything depends on it: SwiftPM remembers which commit a tag resolved to in `~/.swiftpm/security/fingerprints/<package>-*.json`, and a moved tag fails every consumer's resolve with "does not match previously recorded value" until that file is deleted on every machine that saw the old one.
 
 ## The workflow files
 
@@ -42,7 +42,7 @@ Each service repository carries four small workflows and a dependabot configurat
 | `cleanup-images.yml` | weekly cron | prunes the registry to a recent window |
 | `dependabot.yml` | weekly | Swift and Actions bumps as PRs against develop |
 
-Third-party actions and reusable workflows are pinned to commit SHAs with the release tag as a comment (`@<commit-sha>  # <tag>`, two spaces before `#` as yamllint's `--strict` comments rule requires); dependabot keeps the pins moving. The same rule holds in library repositories. The organization's own actions, where any exist, are pinned by SemVer tag (see *Deploying to the platform*).
+Third-party actions and reusable workflows are pinned to commit SHAs with the release tag as a comment (`@<commit-sha>  # <tag>`, two spaces before `#` as yamllint's `--strict` comments rule requires); dependabot keeps the pins moving. Library workflow references follow [their CI profile](library-ci.md#workflow-dependencies-and-releases). The organization's own actions, where any exist, are pinned by SemVer tag (see *Deploying to the platform*).
 
 ## The tests job
 

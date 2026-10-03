@@ -5,6 +5,15 @@ standalone libraries. Repository `AGENTS.md` and explicit user decisions overrid
 Service deployment branches, image publishing, and locked service builds live in
 [delivery.md](delivery.md).
 
+## Contents
+
+- [Shared design](#shared-design)
+- [Coverage and exceptions](#coverage-and-exceptions)
+- [Compact license headers](#compact-license-headers)
+- [Formatting profile](#formatting-profile)
+- [Workflow dependencies and releases](#workflow-dependencies-and-releases)
+- [Completion gates](#completion-gates)
+
 ## Shared design
 
 Follow the design used by [Swift Temporal SDK](https://github.com/apple/swift-temporal-sdk/blob/main/.github/workflows/pull_request.yml)
@@ -12,8 +21,8 @@ and [Swift Configuration](https://github.com/apple/swift-configuration/blob/main
 Swift.org soundness checks, SwiftNIO test/build workflows, and focused package-specific checks.
 These repositories select different optional jobs; copying every job is not the goal.
 
-- Run PR checks and compatibility builds on pushes to main. Schedule a weekly run on main
-  to detect dependency and compiler changes; twice-daily checks are an optional Apple cadence.
+- Run tests, release builds, and static Linux SDK checks on PRs and main pushes. The
+  swift-microservices profile has no scheduled CI; Dependabot checks for workflow updates.
 - Never commit `Package.resolved` in libraries. Resolve released dependencies from manifest
   requirements in fresh CI checkouts; do not apply a service's `--disable-automatic-resolution`
   command to an absent library lockfile. Keep application/service lockfiles tracked.
@@ -23,9 +32,10 @@ These repositories select different optional jobs; copying every job is not the 
   repository explicitly makes them required. Do not hide failures with blanket success fallbacks.
 - Build optimized release products as well as running debug tests. Packages without meaningful
   runtime tests still need build and consumer/contract validation; do not add placeholder tests.
-- Run formatting, API compatibility, documentation, and applicable script/YAML checks through
-  `swiftlang/github-workflows/soundness.yml`. Its documentation script can add the DocC plugin
-  in the disposable checkout, so no permanent manifest dependency is required.
+- Run formatting, license headers, documentation, and applicable script/YAML checks through
+  `swiftlang/github-workflows/soundness.yml`. The swift-microservices profile disables automatic
+  API-breakage checks with `api_breakage_check_enabled: false`; SemVer labels still record API
+  impact. The docs script adds the DocC plugin in its disposable checkout when needed.
 - Use `apple/swift-nio` workflows for generic test/build matrices. Swift.org's
   `swift_package_test.yml` is also suitable, including for additional SDK checks.
   Neither choice changes SwiftPM's test engine or requires a source dependency on SwiftNIO.
@@ -52,9 +62,25 @@ Add checks only for capabilities the library supplies or promises:
   Examples, C++ interoperability, benchmarks, and additional SDKs need an actual supported use.
 
 Record each exclusion, its reason, and any replacement coverage in the repository profile.
-For swift-microservices, source author headers replace license blocks, while the license file
-remains authoritative. Full Foundation through Vapor 4 or PostgresNIO is an upstream dependency
-exception; keep our code on FoundationEssentials where available.
+Full Foundation through Vapor 4 or PostgresNIO is an upstream dependency exception; keep our
+code on FoundationEssentials where available.
+
+## Compact license headers
+
+Enable license-header checking. Preserve the repository's license and copyright owner; the
+swift-microservices libraries use a three-line MIT header instead of Xcode author/date headers:
+
+```swift
+// Copyright (c) 2026 Zaid Rahhawi
+// SPDX-License-Identifier: MIT
+// See LICENSE for license information.
+```
+
+Put the same three lines in `.license_header_template`, with `@@` instead of `//` and `YEARS`
+instead of the year. Shell headers use `##` after the shebang. Keep the tools-version directive
+first in `Package.swift`, followed by the compact header. Exclude `Package.swift` and `LICENSE`
+in `.licenseignore`: the upstream checker expects the header at line one and does not recognize
+an extensionless license file. Keep exclusions narrow and explain them in `AGENTS.md`.
 
 ## Formatting profile
 
@@ -70,12 +96,13 @@ toolchain as the CI formatting job. The service profile's 400-column default is 
 
 ## Workflow dependencies and releases
 
-Pin actions and reusable workflows to reviewed commit SHAs with a release tag or branch/date
-comment. A reviewed main commit is appropriate when needed inputs precede an upstream release.
-Inspect internal calls and downloaded scripts: a pinned SwiftNIO caller can still execute
-nested workflows and scripts from upstream main. Do not describe it as fully immutable.
-Dependabot updates workflow references on main; a library has no deployment develop branch
-unless its own profile explicitly defines one.
+The swift-microservices library profile follows `@main` for shared SwiftNIO, release, and
+consumer-check workflows and the SwiftNIO SemVer action. Keep soundness on its release tag and
+standard Actions on major-version tags, matching Temporal's design. This profile overrides
+service SHA-pin defaults. Verify current reusable-workflow inputs; moving references include
+upstream changes and are not immutable. Other repository profiles may choose reviewed SHAs.
+Dependabot checks weekly, targets main, and labels workflow-update PRs `semver/none`; libraries have no
+deployment develop branch unless their profile explicitly defines one.
 
 Preserve the repository's SemVer-label and release automation policy. Contract packages may
 use bare tags; library CI does not impose a new release mechanism on an existing repository.
@@ -84,6 +111,8 @@ use bare tags; library CI does not impose a new release mechanism on an existing
 
 - Every declared stable compiler is covered and the minimum follows the manifest.
 - Applicable tests, release/static builds, soundness, and provider/consumer checks execute.
+- CI runs on PRs/main pushes only; Dependabot has the update schedule.
+- Compact headers pass the upstream checker; exclusions and the API-check setting match the profile.
 - Exclusions and advisory snapshot policy are explicit; required check names match branch protection.
 - Formatting matches the selected profile and all tracked Swift files pass strict lint.
 - Library resolved files remain ignored and generated lockfiles are never staged.

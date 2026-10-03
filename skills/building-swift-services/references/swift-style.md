@@ -14,7 +14,7 @@ Match existing files before applying these defaults. Preserve user-authored form
 
 ## File form
 
-Keep an Xcode-style header:
+Keep an Xcode-style header by default; the [library CI license profile](../../delivering-swift-services/references/library-ci.md#compact-license-headers) can require compact SPDX headers instead:
 
 ```swift
 //
@@ -25,7 +25,7 @@ Keep an Xcode-style header:
 //
 ```
 
-Use the current date and the repository's author convention for new files when known. Do not rewrite historical headers.
+Use the current date and the repository's author convention for new files when known. Rewrite historical headers only when an explicit profile change is requested.
 
 Import no Foundation module when the standard library suffices. In files that need Foundation values, use this conditional import. The macOS SDK has no `FoundationEssentials` module, so any package that builds on Apple platforms — every package here declares `.macOS` — needs the fallback; an unconditional `import FoundationEssentials` compiles on Linux and fails on macOS:
 

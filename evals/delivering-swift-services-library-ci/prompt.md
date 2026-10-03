@@ -12,8 +12,10 @@ manifest and source files needed to demonstrate the configuration.
 
 Use the exact Swift Temporal SDK formatting profile provided by the skill. CI should run on
 Linux only; I do not want macOS CI. Check supported stable compilers, compiler snapshots,
-release builds, documentation, API compatibility, formatting, and static Linux compatibility.
-Document repository-specific exceptions in AGENTS.md. Keep dependency resolutions untracked.
-Use released requirements for source dependencies, if any, and reviewed references for Actions.
+release builds, documentation, compact license headers, formatting, and static Linux compatibility.
+Disable automatic API-breakage checking. Run tests, release builds, and static SDK checks on
+PRs and main pushes only, with no scheduled CI. Follow the mostly `@main` workflow references and
+give Dependabot workflow-update PRs the `semver/none` label. Document exceptions in AGENTS.md.
+Keep dependency resolutions untracked and use released requirements for source dependencies.
 Do not add deployment branches, containers, registry publishing, or deploy credentials. Do not
 commit or push. Verify what the environment permits and report remaining validation honestly.
