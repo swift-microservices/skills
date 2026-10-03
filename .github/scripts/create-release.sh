@@ -42,6 +42,7 @@ esac
 [[ ${GITHUB_REPOSITORY:-} =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail "Set GITHUB_REPOSITORY to owner/repository."
 [[ ${GITHUB_REF:-} == refs/heads/main && $(git branch --show-current) == main ]] || fail "Releases must run on main."
 [[ -z $(git status --porcelain) ]] || fail "The working tree must be clean."
+[[ $(git rev-parse --is-shallow-repository) == false ]] || fail "Releases require full Git history."
 head=$(git rev-parse HEAD)
 require_current_main
 
@@ -59,12 +60,21 @@ is_ancestor "$latest_tag" "$head" || fail "The latest release tag is not an ance
 # Paginate and compare commits, so PRs are counted by the tag's contents rather
 # than by publication time or the CLI's default page limit.
 prs=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&per_page=100")
-pr_rows=$(jq -c '.[][] | select(.merged_at != null and .merge_commit_sha != null)' <<< "$prs")
+pr_rows=$(jq -c '.[][]
+  | select(.merged_at != null and .merge_commit_sha != null)
+  | select(any(.labels[]; .name == "⚠️ semver/major"
+    or .name == "🆕 semver/minor" or .name == "🔨 semver/patch"))' <<< "$prs")
 bump='none'
 while IFS= read -r pr; do
   [[ -n $pr ]] || continue
   commit=$(jq -r '.merge_commit_sha' <<< "$pr")
   [[ $commit =~ ^[0-9a-f]{40}$ ]] || fail "Invalid PR merge commit $commit."
+  # GitHub retains merged PRs after a history reset. With full history, a
+  # commit absent from this checkout cannot be an ancestor of main.
+  if ! git cat-file -e "$commit^{commit}" 2>/dev/null; then
+    echo "Skipping PR #$(jq -r '.number' <<< "$pr"): merge commit is absent from fetched history."
+    continue
+  fi
   is_ancestor "$commit" "$head" || continue
   if is_ancestor "$commit" "$latest_tag"; then
     continue
