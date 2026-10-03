@@ -66,7 +66,7 @@ Release and tag the proto package before adding a remote dependency to producer 
 
 Name RPCs for business capabilities, not CRUD tables. Include only the fields consumers need.
 
-For create operations, omit the entity identifier from the request when the service owns that entity. Let the owning database generate it and return it in the response entity. Keep identifiers as protobuf strings on the wire and parse or format UUIDs at the transport boundary. Format UUID strings lowercased on the wire in every service; Foundation's `uuidString` is uppercase, so convert with `.lowercased()` explicitly. Do not let a caller choose an owned entity identifier merely to make retries convenient; define a separate `idempotency_key` when the mutation can be retried:
+For create operations, omit the service-generated entity identifier: the owning database generates it and returns it in the response entity. Preserve and validate an externally assigned standard/provider identifier, such as a WebAuthn credential ID, when the contract requires it. Keep identifiers as protobuf strings on the wire and parse or format UUIDs at the transport boundary. Format UUID strings lowercased on the wire in every service; Foundation's `uuidString` is uppercase, so convert with `.lowercased()` explicitly. Do not let a caller choose a service-generated entity identifier merely to make retries convenient; define a separate `idempotency_key` when the mutation can be retried:
 
 ```proto
 message CreateItemRequest {

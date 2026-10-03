@@ -23,7 +23,7 @@ public protocol Database<Scope>: Sendable {
 }
 ```
 
-There is one entry point. Every unit of work is a transaction, one read included, because under row-level security the tenant is set on the transaction and the policies read it from there, so a read outside one sees no rows rather than failing. A module with no policies pays a transaction it did not need; a module with them cannot forget. Do not declare a `Database` protocol of the module's own, and do not add a `withConnection`: the shape is the package's so that `<Project>Persistence` and `<Project>Testing` fit every module. See *Scope and database* in [persistence.md](persistence.md).
+There is one entry point. Every SQL unit of work is a transaction, one read included, because under row-level security the tenant is set on the transaction and the policies read it from there, so a read outside one sees no rows rather than failing. A module with no policies pays a transaction it did not need; a module with them cannot forget. Do not declare a `Database` protocol of the module's own, and do not add a `withConnection`: the shape is the package's so that `<Project>Persistence` and `<Project>Testing` fit every module. Operations using only nontransactional stores or computation need no artificial database dependency. See *Scope and database* in [persistence.md](persistence.md).
 
 Do not hold a transaction across a remote call, nor across a call into another module's port. The connection is pooled, so a slow dependency becomes pool exhaustion and one module's latency spike takes this one down with it; and in a monolith the port may become a remote call the day the producer ships alone, so the consumer is written as if it already were.
 
@@ -47,7 +47,7 @@ package struct Item: Equatable, Sendable {
 }
 ```
 
-Keep write inputs to repositories as commands. A create command carries only what the caller owns — never the identifier or a persistence-stamped date:
+Keep write inputs to repositories as commands. A create command carries only what the caller owns — never a service-generated identifier or persistence-stamped date. An externally assigned standard/provider identifier is validated and preserved instead:
 
 ```swift
 package struct CreateItemCommand: Sendable {
@@ -121,7 +121,7 @@ package struct CreateItemUseCase<DatabaseType>: CreateItemUseCaseProtocol where 
 
 The guards are the use case's business rules, stated where they apply; see *Business rules, policies, and adapters* in [architecture.md](architecture.md). Build the command inside the closure and execute it on the next line rather than nesting the construction in the call.
 
-**User authorization is explicit.** User use cases take `subject: UserIdentity, input:` and check permission before I/O, throwing their own `.forbidden`. Public and internal use cases take `input:`. Internal peers are admitted by mTLS; their use cases enforce input validity, resource relationships, state transitions, and idempotency without reading a request principal. Two audiences may share a private implementation after their respective checks. Core never reads `ServiceContext`. See [identity-and-access.md](identity-and-access.md).
+**User authorization is explicit.** User use cases take `subject: UserIdentity` and business `input:` when needed; self-only operations derive the resource ID from the subject, and operations with no other data omit `input:` rather than declaring an empty carrier. Explicit permission predicates run before I/O and throw the use case's own `.forbidden`; deriving a self-only resource ID from the subject needs no redundant equality guard. Public and internal use cases take `input:`. Internal peers are admitted by mTLS; their use cases enforce input validity, resource relationships, state transitions, and idempotency without reading a request principal. Two audiences may share a private implementation after their respective checks. Core never reads `ServiceContext`. See [identity-and-access.md](identity-and-access.md).
 
 An input carries a value in the type the transport already validated it into: an enum as the enum, a timestamp as a `Date`, so the use case does not re-parse it. The caller's own id arrives in the `subject`, already a `UUID`. A value the wire still carries as a string — a target user's id in a request body — is parsed by the use case, which owns that error.
 

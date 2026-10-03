@@ -76,7 +76,7 @@ Give every service an exclusive database and migration history. Other services u
 
 Where that database lives is decided per environment, not per service, and recorded once: an instance per service (complete isolation, N clusters to run), one instance with a database and owner per service (the default: logical isolation Postgres enforces itself, one cluster to run, cluster-wide recovery and role names), or a schema per service (cheapest, and held apart only by review). The building skill's persistence reference weighs the three with the recovery, pooling, replica, connection-budget, and placement concerns that usually decide. Postgres is the default store; a module may own a different store when its measured access pattern is a different shape, provided one store stays the truth for each entity and no transaction spans two stores.
 
-Identifier ownership follows data ownership. The database that owns the canonical entity generates its identifier (`uuidv7()` by default, `gen_random_uuid()` on an older instance). Create contracts omit that identifier, and consumers store the returned foreign identifier only after successful creation. A pending process in another service uses its own locally generated record identifier; it must not reserve the future canonical identifier.
+Identifier ownership follows data ownership. The database that owns the canonical entity generates its service-owned identifier (`uuidv7()` by default, `gen_random_uuid()` on an older instance). Externally assigned standard/provider identifiers retain their documented authority. Create contracts omit a service-generated identifier, and consumers store the returned foreign identifier only after successful creation. A pending process in another service uses its own locally generated record identifier; it must not reserve the future canonical identifier.
 
 Classify each invariant:
 
@@ -85,7 +85,7 @@ Classify each invariant:
 - For eventual consistency, publish a fact and maintain an idempotent local projection.
 - For a multi-step business process, persist workflow state and define compensation rather than holding locks across services.
 
-Never open a local transaction and make a remote call before committing it. Never claim exactly-once delivery. Design event consumers and imports to tolerate duplicates. If atomic database mutation plus event publication is required, use a transactional outbox and an independently retryable publisher.
+Do not make remote calls inside a local transaction except the building skill's [bounded single-use-secret rotation read](../../building-swift-services/references/core.md#database-boundary). Never claim exactly-once delivery. Design event consumers and imports to tolerate duplicates. If atomic database mutation plus event publication is required, use a transactional outbox and an independently retryable publisher.
 
 Document consistency explicitly for every cross-service read or write:
 

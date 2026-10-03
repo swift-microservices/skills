@@ -1,22 +1,19 @@
 # Delivery
 
-How a service moves from a commit to a running process: branches and environments, the CI that gates them, the image build, per-commit publishing, and deployment. This file owns the pipeline; environment.md owns what the deployed system looks like once it is running, and says only that images "come from delivery".
+How a service moves from a commit to a running process: branches and environments, the CI that gates them, the image build, per-commit publishing, and deployment. This file owns publishing and deployment; [services-ci.md](services-ci.md) owns application validation and [library-ci.md](library-ci.md) owns reusable package CI. environment.md owns what the deployed system looks like once it is running, and says only that images "come from delivery".
 
 This file is the worked default: GitHub Actions, a container registry, a Dokploy-style platform reached by API. The skill's rules state the principle each piece satisfies and name the alternative, so another CI or platform passes the same gates by satisfying the same principle.
 
 ## Contents
 
 - Branches are environments
-- The workflow files
-- The tests job
-- Foundation linking
+- Validation before publishing
 - The release image
 - Publishing per commit
 - The registry
 - Deploying to the platform
 - Platform configuration and its traps
 - Migrations in the pipeline
-- Dependency updates
 - Retention
 
 ## Branches are environments
@@ -26,71 +23,22 @@ Two long-lived branches, each bound to one environment:
 - **`develop` is staging.** Every commit publishes an image and deploys it — tests, image, deploy trigger, boot-time migrations, unattended. Staging is where push-and-see-it-running lives.
 - **`main` is production.** Every commit publishes an image; the deploy steps exist only once a production platform does. Promotion is a merge from develop to main — after the first sync, never cherry-picks, so the histories stay converged and script or workflow fixes ride the same merge as code.
 
-Pull requests run the tests job regardless of target branch. Deployment steps are mandatory, not gated: a missing secret or variable fails the pipeline loudly through the action's own environment checks rather than skipping the deploy and reporting green. A pipeline that silently does less than it claims is worse than a red one.
+Pull requests follow [services-ci.md](services-ci.md) regardless of target branch and never publish or deploy. After successful validation and publication, deployment steps are mandatory: a missing secret or variable fails loudly rather than skipping deployment and reporting green. A pipeline that silently does less than it claims is worse than a red one.
 
-Versioning differs by what a repository is *for*. Services carry no SemVer tags and no releases: the commit is the version, the SHA is the deploy identifier. SemVer, API-breakage checks, and label-driven release automation belong to the shared packages — the protos, the swift-microservices packages, and `<project>-core` — whose consumers resolve version ranges (see *Contracts and compatibility* in the designing-swift-systems skill). A library package cuts a GitHub Release from the semver label on each merged pull request and never commits `Package.resolved`; a service executable commits it, and re-resolves it when a dependency's tag moves. Move a tag only before anything depends on it: SwiftPM remembers which commit a tag resolved to in `~/.swiftpm/security/fingerprints/<package>-*.json`, and a moved tag fails every consumer's resolve with "does not match previously recorded value" until that file is deleted on every machine that saw the old one.
+Versioning differs by what a repository is *for*. Services carry no SemVer tags and no releases: the commit is the version, the SHA is the deploy identifier. SemVer and label-driven release automation belong to the shared packages — the protos, the swift-microservices packages, and `<project>-core` — whose consumers resolve version ranges (see *Contracts and compatibility* in the designing-swift-systems skill). Automatic API-breakage checks follow the library's repository profile. A library records SemVer impact and follows its own release mechanism without committing `Package.resolved`; a service executable commits it, and re-resolves it when a dependency's tag moves. Move a tag only before anything depends on it: SwiftPM remembers which commit a tag resolved to in `~/.swiftpm/security/fingerprints/<package>-*.json`, and a moved tag fails every consumer's resolve with "does not match previously recorded value" until that file is deleted on every machine that saw the old one.
 
-## The workflow files
+## Validation before publishing
 
-Each service repository carries four small workflows and a dependabot configuration:
-
-| File | Trigger | Does |
-| --- | --- | --- |
-| `pull_request.yml` | every PR | the tests job |
-| `develop.yml` | push to develop | tests → publish → deploy (staging) |
-| `main.yml` | push to main | tests → publish (production deploy steps join when the platform exists) |
-| `cleanup-images.yml` | weekly cron | prunes the registry to a recent window |
-| `dependabot.yml` | weekly | Swift and Actions bumps as PRs against develop |
-
-Third-party actions and reusable workflows are pinned to commit SHAs with the release tag as a comment (`@<commit-sha>  # <tag>`, two spaces before `#` as yamllint's `--strict` comments rule requires); dependabot keeps the pins moving. The same rule holds in library repositories. The organization's own actions, where any exist, are pinned by SemVer tag (see *Deploying to the platform*).
-
-## The tests job
-
-CI reuses `swiftlang/github-workflows`' `swift_package_test.yml`, pinned to a release tag's commit SHA, collapsed from its default sweep to the one cell that matches production:
-
-```yaml
-jobs:
-  tests:
-    name: Tests
-    uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@<commit-sha>  # <tag>
-    with:
-      linux_swift_versions: '["<toolchain>"]'
-      linux_os_versions: '["<os>"]'
-      linux_host_archs: '["<arch>"]'          # the arch production runs; never test what nothing ships
-      linux_build_command: "swift test --disable-automatic-resolution"
-      enable_windows_checks: false             # defaults to true; refuse the surprise
-```
-
-`--disable-automatic-resolution` makes the committed `Package.resolved` the build: CI fails when the manifest and the pin drift instead of silently resolving something newer. The macOS/iOS jobs run on runners only the swiftlang organization has — leave them off. One accepted trade comes with the reuse: no dependency caching (every run resolves and compiles cold; the price of not maintaining the workflow). Keep a static Linux SDK build beside it whenever the local image path is musl to catch SDK and dependency compatibility failures; vendored C++ in the protobuf toolchain has broken musl builds outright, which is why the check runs on every change. This is separate from checking whether the resolved graph links full Foundation.
-
-Private repositories have no free allotment for arm runners: a job on `ubuntu-24.04-arm` is refused before it starts when the account's billing lapses, and every run on the deployment branches fails the same way while nothing in the code changed. Either fund the account, host an arm runner of your own, or accept that publishing happens through the local path — build the image with the package's container plugin on an arm machine, push it with a write token, and trigger the platform's deploy by hand — until CI is back. A green pipeline is the normal path, not the only one.
-
-## Foundation linking
-
-Prefer FoundationEssentials when Foundation types are needed and use modern APIs even when an upstream dependency requires full Foundation. Before changing dependencies, verify the latest compatible releases and their trait defaults. The building skill owns the [API policy](../../building-swift-services/references/swift-style.md#foundation-and-modern-apis) and [dependency/trait guidance](../../building-swift-services/references/service-package.md#foundation-dependencies-and-traits).
-
-For a library whose resolved products can avoid full Foundation, run Vapor's [Foundation linking workflow](https://github.com/vapor/ci/blob/main/.github/workflows/check-foundation-linking.yml) on pull requests and main (and any deployment branch consuming the library):
-
-```yaml
-jobs:
-  foundation-linking:
-    name: Foundation linking
-    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@<commit-sha>  # main as of <date>
-    with:
-      swift_image: swift:6.3-noble
-```
-
-vapor/ci publishes no release tags, so pin the reusable workflow to a reviewed `main` commit like any other third-party action and move the SHA deliberately. This workflow builds a release consumer of the package's library products and inspects its Linux shared-library dependencies. It rejects `libFoundation.so`, `libFoundationInternationalization.so`, and `lib_FoundationICU.so`; `libFoundationEssentials.so` is allowed. Check the current workflow implementation and use the supported toolchain when adopting it. Reproduce the same release-consumer build and library inspection locally before claiming that a dependency or trait change passes.
-
-For a service executable, inspect the actual Linux release binary and its transitive shared-library dependencies (for example with `ldd` in the build image). The library-consumer workflow does not substitute for checking an application's executable, and a static binary has no dynamic library list to inspect. A successful static SDK build proves compatibility, not the absence of statically linked Foundation code.
-
-Applications using prominent server libraries such as Vapor 4 or PostgresNIO may still require full Foundation; verify their current state rather than assuming every application can remove it. Record the responsible upstream package, resolved version, and any intentional internationalization use. Do not add a gate that is guaranteed to fail for that documented graph, claim it is Essentials-only, or silently disable a previously passing check to hide a regression. Keep the gate on libraries that can satisfy it and recheck the application when upstream releases change. Ship every required runtime library when using a dynamic release binary.
+Follow [services-ci.md](services-ci.md) for workflow layout, source quality, locked tests, static
+SDK compatibility, executable Foundation/runtime inspection and weekly dependency updates.
+PRs validate without publishing or deploying. Deployment branches pass their required checks,
+build and smoke-check the final image, and publish that same image before deployment.
 
 ## The release image
 
 Published images build from a `Containerfile`, two stages, glibc:
 
-- **Build stage** on the Swift toolchain image: `COPY ./Package.*` and `swift package resolve` as their own layer so dependency resolution caches while manifests are unchanged, then `swift build --configuration release --static-swift-stdlib --product <service>`, then stage the binary, `swift-backtrace-static`, and every `*.resources` bundle.
+- **Build stage** on the Swift toolchain image: `COPY ./Package.*` and `swift package --disable-automatic-resolution resolve` as their own layer so dependency resolution caches while manifests are unchanged, then `swift build --configuration release --disable-automatic-resolution --static-swift-stdlib --product <service>`, then stage the binary, `swift-backtrace-static`, and every `*.resources` bundle.
 - **Runtime stage** on the matching minimal OS image: `ca-certificates` and `tzdata`, any additional shared libraries required by the inspected release binary, an unprivileged system user with `/app` as home, the staged files copied in with that owner, `SWIFT_BACKTRACE` configured, `ENTRYPOINT ["./<service>"]`.
 
 A `.dockerignore` beside it excludes version control, `.github`, build state, secrets patterns, and everything not needed to compile the package.
@@ -99,7 +47,7 @@ Build natively for the deployment host's architecture — an ARM host means an A
 
 ## Publishing per commit
 
-The publish job runs after tests on every push to a deployment branch: buildx builds the Containerfile with the GitHub Actions layer cache and pushes two tags —
+The image job runs after all checks on a deployment-branch push: buildx loads the native Containerfile image using the GitHub Actions layer cache, the final image is smoke-checked, and that same image is pushed with two tags —
 
 ```
 ghcr.io/<organization>/<organization>-<service>:<short-sha>
@@ -159,10 +107,6 @@ Migrations run **in the serving container, at boot**: the application's command 
 The trade, accepted with open eyes: the owner credentials sit in the serving container's environment for its lifetime. The serving *process* still connects only as the confined role — the row-level-security posture is unchanged — but a compromise of the container's environment now yields the owner pair. Two residual cautions: multiple replicas of one service would race the apply at startup (fine on one node; an advisory lock before the list when replicas arrive), and a failed migration crash-loops the new task while the platform's rolling update keeps the old one serving.
 
 Two facts boot-ordering cannot fix, and one rule that absorbs both: the old build briefly runs against the new schema during every deploy, and a rollback runs old code against a schema that migrated forward — **so migrations are expand/contract**. Adding tables, nullable columns, and indexes is always safe; renames, drops, and tightening constraints ship in a *later* commit, only after no deployed code references the old shape. A genuinely breaking migration is the rare event where the deploy is watched rather than unattended.
-
-## Dependency updates
-
-Dependabot targets develop (`target-branch: "develop"` on both the `swift` and `github-actions` ecosystems), so a bump lands as a PR into staging's branch, deploys to staging on merge, and reaches production by promotion like every other change. The configuration is read from the default branch, so the copy on main is the one that counts; security updates ignore the target and PR against main by design — a CVE fix offered straight at the production track is a feature. A new tag on a contract package arrives through the same door: dependabot PRs it against develop, and CI is the cross-repo integration test.
 
 ## Retention
 

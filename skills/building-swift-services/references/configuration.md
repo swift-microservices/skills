@@ -34,19 +34,30 @@ import Configuration
 
 extension InMemoryProvider {
     static var applicationDefaults: Self {
-        .init(values: [
+        let taskQueue: ConfigValue = "catalog"
+        return .init(values: [
             "tls.certificatePath": "/run/tls/cert.pem",
             "tls.privateKeyPath": "/run/tls/key.pem",
             "tls.trustRootsPath": "/run/tls/ca.pem",
+            "jwt.publicKeyPath": "/run/secrets/jwt-public",
+            "postgres.db": "acme_catalog",
+            "postgres.serviceUser": "catalog_service",
+            "postgres.internalUser": "catalog_internal",
+            "postgres.workerUser": "catalog_worker",
+            "grpc.server.host": "0.0.0.0",
+            "grpc.server.port": 50051,
+            "loki.url": "http://localhost:3100",
             "temporal.tls.certificatePath": "/run/temporal-tls/cert.pem",
             "temporal.tls.privateKeyPath": "/run/temporal-tls/key.pem",
             "temporal.tls.trustRootsPath": "/run/temporal-tls/ca.pem",
+            "temporal.taskQueue": taskQueue,
+            "temporal.worker.taskqueue": taskQueue,
         ])
     }
 }
 ```
 
-Only include scopes the application uses. Application-specific means the executable chooses the mount layout, database/role names, task queues, and other deployment conventions. It does not mean passing `defaultPath` or `certificateDirectory` arguments to reusable initializers. Environment variables still override these values.
+Only include scopes the application uses. The application provider owns TLS/JWT mount paths, database/role names, listener bindings, task queues, application URLs, and other deployment conventions. Adapters consume these with required accessors; the provider satisfies an omitted environment override. A local wrapper such as `PostgresConfiguration` owns role selection and parsing, not a second copy of deployment defaults. A recorded project exception in `AGENTS.md` may choose another owner. Do not pass `defaultPath` or `certificateDirectory` arguments to reusable initializers. Environment variables still override these values.
 
 A library's ordinary tuning defaults can stay in its reader or designated initializer. Do not repeat every library default in the application provider. Require topology and secrets where there is no appropriate default. A worker reads only its own role credentials; defer migration/serving credentials until those connections are constructed.
 
@@ -73,7 +84,7 @@ extension TimedCertificateReloader.Configuration {
 
 Accept only the reader for configuration values. A logger is acceptable when the object's construction actually requires one; the certificate configuration initializer does not. Set reload callbacks and the logger in the composition root. Runtime dependencies are different: `mTLS(config:certificateReloader:)` legitimately takes the existing reloader.
 
-Policy readers can be executable-local extensions too. Keep Core's policy types independent of Swift Configuration. Read related settings from a snapshot when a mutable provider must yield a consistent configuration; constructing a value once does not make it dynamically reconfigure when a provider changes.
+Policy readers can be executable-local extensions too. Keep Core's policy types independent of Swift Configuration. Derive policy defaults from Core's `.standard` values in the application provider rather than repeating literals in adapters. Use throwing reads for security settings so an absent override gets the standard value but a malformed supplied value fails. Read related settings from a snapshot when consistency matters; constructing a value once does not make it dynamically reconfigure when a provider changes.
 
 ## Names, units, and validation
 

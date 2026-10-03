@@ -1,0 +1,39 @@
+name: Builds and consumers
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+
+jobs:
+  builds:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "6.3 Noble"
+            image: "swift:6.3-noble"
+            arguments: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+          - name: "6.4 Resolute"
+            image: "swift:6.4-resolute"
+            arguments: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+          - name: "nightly-next Noble"
+            image: "swiftlang/swift:nightly-6.4.x-noble"
+            arguments: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+          - name: "nightly-main Noble"
+            image: "swiftlang/swift:nightly-main-noble"
+            arguments: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build library
+        run: swift build ${{ matrix.arguments }}
+      - name: Build downstream consumer
+        run: swift build --package-path .github/Fixtures/Consumer ${{ matrix.arguments }}

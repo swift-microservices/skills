@@ -14,7 +14,7 @@ Match existing files before applying these defaults. Preserve user-authored form
 
 ## File form
 
-Keep an Xcode-style header:
+Keep an Xcode-style header by default; the [library CI license profile](../../delivering-swift-services/references/library-ci.md#formatting-and-headers) can require compact SPDX headers instead:
 
 ```swift
 //
@@ -25,7 +25,7 @@ Keep an Xcode-style header:
 //
 ```
 
-Use the current date and the repository's author convention for new files when known. Do not rewrite historical headers.
+Use the current date and the repository's author convention for new files when known. Rewrite historical headers only when an explicit profile change is requested.
 
 Import no Foundation module when the standard library suffices. In files that need Foundation values, use this conditional import. The macOS SDK has no `FoundationEssentials` module, so any package that builds on Apple platforms — every package here declares `.macOS` — needs the fallback; an unconditional `import FoundationEssentials` compiles on Linux and fails on macOS:
 
@@ -112,7 +112,7 @@ The rest of Swift Concurrency is the `swift-concurrency` skill's subject ([AvdLe
 
 ## APIs and errors
 
-- Use `callAsFunction` for use cases, with the principal first and the `input:` label: `useCase(input: input)` for public/internal operations and `useCase(subject: subject, input: input)` for user operations.
+- Use `callAsFunction` for use cases, with the principal first and the `input:` label: `useCase(input: input)` for public/internal operations and `useCase(subject: subject, input: input)` for user operations; omit `input:` when the operation has no business input.
 - Use typed throws for Core use-case protocols and implementations.
 - Catch named enum cases directly: `catch ItemRepositoryError.duplicateName`.
 - End with a deliberate catch-all mapping when the public typed error includes `.unknown`, and log the cause there with `String(reflecting:)`.
@@ -163,6 +163,6 @@ Use this `.swift-format` baseline when the repository does not already provide o
 
 `indentConditionalCompilationBlocks` must remain `false` so conditional `FoundationEssentials` and `Foundation` imports stay flush-left.
 
-`lineLength` is deliberately `400`: the formatter must never mechanically wrap a line, so declarations break only where the author chooses. Do not lower it to a conventional 100/120 limit.
+`lineLength` is deliberately `400` in the service default: declarations break where the author chooses. Explicit repository profiles override it. The [library CI profile](../../delivering-swift-services/references/library-ci.md#formatting-and-headers) uses the exact 150-column library formatter asset for swift-microservices libraries.
 
 Use the repository's formatter if it has configuration or a formatting command. Otherwise, inspect changed Swift files and use `swift format lint --strict` only if the installed toolchain and existing project support it. Do not introduce a new formatting tool or reformat unrelated files.

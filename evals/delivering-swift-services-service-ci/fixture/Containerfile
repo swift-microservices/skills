@@ -1,0 +1,13 @@
+FROM swift:6.3-noble AS build
+WORKDIR /build
+COPY Package.* ./
+RUN swift package resolve
+COPY . .
+RUN swift build --configuration release --static-swift-stdlib --product example-service
+RUN mkdir /staging && cp .build/release/example-service /staging/
+FROM ubuntu:noble
+RUN useradd --system --create-home --home-dir /app example
+WORKDIR /app
+COPY --from=build --chown=example:example /staging/example-service /app/
+USER example
+ENTRYPOINT ["./example-service"]

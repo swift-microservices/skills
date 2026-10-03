@@ -1,0 +1,39 @@
+name: Main
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    name: Unit tests
+    uses: apple/swift-nio/.github/workflows/unit_tests.yml@main
+    with:
+      minimum_swift_version: "6.3"
+      linux_6_2_enabled: false
+      linux_6_3_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+      linux_6_4_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+      linux_nightly_next_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+      linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+
+  release-builds:
+    name: Release builds
+    uses: apple/swift-nio/.github/workflows/release_builds.yml@main
+    with:
+      minimum_swift_version: "6.3"
+      linux_6_2_enabled: false
+
+  foundation-linking:
+    name: Foundation linking
+    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@main
+    with:
+      swift_image: swift:6.3-noble
+
+  foundation-linking-swift64:
+    name: Foundation linking Swift 6.4
+    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@main
+    with:
+      swift_image: swift:6.4-noble
