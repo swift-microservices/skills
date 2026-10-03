@@ -191,7 +191,7 @@ extension UserIdentity {
 }
 ```
 
-In a monolith the admin context is not the authorization: the use case still checks `.admin` in its own body and throws its own `.forbidden`, and the context is what keeps an administrative handler from being reachable without a caller at all. The check exists twice only in the sense that the transport refuses early what the use case would refuse anyway; the use case's copy is the one the tests cover.
+`AdminRequestContext` adds a security gate using verified JWT role claims without database lookups. Apply it to individual verbs or a whole administrative route collection. The owning use case still enforces the role, resource, and business permissions required by its own contract and tests them there; an optional API collection restriction supplements those checks.
 
 ## Router tiers
 

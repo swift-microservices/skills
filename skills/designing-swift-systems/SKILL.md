@@ -5,7 +5,7 @@ description: Designs a Swift server system the swift-microservices way, or resha
 
 # Designing Swift systems
 
-One way to decide what a system is, how its modules are cut, and how they talk, before any of it is built. It encodes shape, boundary, ownership, and consistency rules learned from running such systems on the [swift-microservices](https://github.com/swift-microservices) packages and an organization layer, `<project>-core`. Preserve every convention unless the user explicitly changes it; where the repository already has an established convention that differs, the repository wins for unrelated code.
+One way to decide what a system is, how its modules are cut, and how they talk, before any of it is built. It encodes shape, boundary, ownership, and consistency rules learned from running such systems on the [swift-microservices](https://github.com/swift-microservices) packages and an organization layer, `<project>-core`. Read applicable `AGENTS.md` files first: their project profile, styles, and recorded exceptions override these general conventions. Preserve unrelated established code.
 
 Building a module or service, the HTTP surface, and the gateway a design calls for, orchestrating Temporal workflows, and delivering images are separate skills; this one produces the design.
 
@@ -54,7 +54,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 7. A module never imports another module's Core, Postgres, or transport target; only the composition root sees more than one module. A consumer module declares the use-case protocol it needs in its own Core, and the root injects the producer's use case (monolith) or a gRPC client adapter conforming to the same protocol (microservices).
 8. Draw dependency direction between modules and reject cycles. Break one by reconsidering ownership, extracting a third module, or replacing a synchronous edge with a fact the other side reacts to.
 9. Prefer fewer modules when boundaries are uncertain and fewer services always; two modules merge for free, two services cost a data migration.
-10. The owning database generates every entity identifier; default `UUID DEFAULT uuidv7()` (Postgres 18), alternative `gen_random_uuid()` on an older instance at the cost of index locality. A create contract omits it, a consumer stores the returned identifier only after success, and a pending process elsewhere uses its own local identifier.
+10. Externally assigned standard/provider identifiers retain their documented authority. The owning database generates service-owned entity identifiers; default `UUID DEFAULT uuidv7()` (Postgres 18), alternative `gen_random_uuid()` on an older instance at the cost of index locality. A create contract omits it, a consumer stores the returned identifier only after success, and a pending process elsewhere uses its own local identifier.
 11. Never share tables between modules or services, query another module's tables, join across modules or databases, or make a distributed transaction. Where each service's database lives is a deployment choice recorded once: an instance per service, a database on a shared instance (default), or a schema per service, in that order of isolation. Postgres is the default store; another store is a per-module choice from a measured access pattern, with one store as the truth for each entity.
 
 ### Communication
@@ -69,7 +69,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 ### Consistency and reliability
 
 18. Keep a strong invariant inside one module and one local transaction. For a cross-module or cross-service decision, ask the owner and define the timeout behavior; for eventual consistency, publish a fact and keep an idempotent local projection; for a multi-step process, persist workflow state with compensation.
-19. Never hold a local transaction across a call to another module or service. Never claim exactly-once delivery; design consumers to tolerate duplicates. Use a transactional outbox only when an atomic mutation plus publication is required.
+19. Do not hold a local transaction across another module or service call, except the bounded single-use-secret rotation read described in the building skill's [Core reference](../building-swift-services/references/core.md#database-boundary). Never claim exactly-once delivery; design consumers to tolerate duplicates. Use a transactional outbox only when an atomic mutation plus publication is required.
 20. Set caller deadlines from the latency budget; retry only transient failures on idempotent operations, with bounded attempts, backoff, and jitter, and one owner of retries per call chain.
 21. Add circuit breaking, load shedding, bulkheads, caching, or hedging only when measured failure or latency patterns justify them, at the caller or transport boundary.
 22. A cache is a read optimization decided from a measured read the database cannot serve, never a consistency mechanism: it holds no decision, has a TTL from the interaction's staleness budget, and is reached through a port and adapter the building-swift-services skill describes in its persistence reference.
@@ -78,7 +78,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 
 23. Terminate public TLS at the ingress or gateway; keep every internal gRPC connection mutually authenticated with the stack's CA; keep internal ports off the public ingress.
 24. Use mTLS for service and worker connections and user JWTs for user operations. Internal handlers accept business input without a bound process principal. Verify the original user token at every receiving service, forward it only on user descriptors, and authorize user operations in the owning use case.
-25. Authorize inside the owning use case. Keep secrets as mounted files configured by path; connect as least-privilege database roles, one set per process; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, in both shapes, and keep what a caller may do in the use case. Row-level security is the default where more than one end user owns rows in one database; a single-tenant application, an internal tool, or a deployment per customer needs none, and the decision record says which.
+25. Authorize resource and business access inside the owning use case; an optional API gate may additionally reject from verified JWT role claims without database lookups. Keep secrets as mounted files configured by path; connect as least-privilege database roles, one set per process; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, in both shapes, and keep what a caller may do in the use case. Row-level security is the default where more than one end user owns rows in one database; a single-tenant application, an internal tool, or a deployment per customer needs none, and the decision record says which.
 26. Establish structured logs with a service label and correlation id shipped in-process to one aggregator, request and error rates and latency per operation, pool and migration health, and graceful shutdown in every process.
 
 ### Turning a module into a service
@@ -109,11 +109,11 @@ Design a system:
 Do not call a design complete until every applicable gate passes.
 
 - The decision record states the shape and the transport, and a microservices shape names at least one module with a concrete reason to run alone.
-- Every module or service in the map owns one capability and its data; no table is read by two modules; no identifier is generated outside its owner; the dependency graph has no cycle; no module imports another module's targets.
+- Every module or service in the map owns one capability and its data; no table is read by two modules; no service-owned identifier is generated outside its owner; the dependency graph has no cycle; no module imports another module's targets.
 - Every cross-module interaction has a chosen mechanism and a consistency record naming source of truth, staleness, duplicates, and failure behavior; every remote boundary also has a stated reason and a versioned contract split by audience.
-- No local transaction spans a call to another module or service; every retry is bounded and limited to idempotent operations; every mutation that may be retried has an owner-enforced key.
+- No local transaction spans a call to another module or service except the documented, deadline-bounded single-use-secret rotation read; every retry is bounded and limited to idempotent operations; every mutation that may be retried has an owner-enforced key.
 - Every event has an owner-side outbox written in the mutation's transaction, a consumer that tolerates duplicates by event id, and, where a projection exists, one that is rebuildable from the owner; no broker exists with fewer than two consumers.
-- Every internal connection is mTLS from the stack's CA; users are tokens, processes are certificates; the token is verified once at the transport in a monolith and at every receiving process in microservices; authorization is placed in use cases only; every policy is tenant isolation and nothing else.
+- Every internal connection is mTLS from the stack's CA; users are tokens, processes are certificates; the token is verified once at the transport in a monolith and at every receiving process in microservices; resource and business authorization stays in use cases; optional API route gates may additionally check verified JWT roles without database lookups; every policy is tenant isolation and nothing else.
 - Turning a module into a service leaves the consumer's use-case protocol intact, the contract released and tagged, and every destructive data step decided by the user, not inferred.
 
 If a gate requires an unresolved product, consistency, security, or data-migration decision, stop at the safe boundary and request that decision rather than inventing behavior.

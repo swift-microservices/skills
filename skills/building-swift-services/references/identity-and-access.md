@@ -60,12 +60,14 @@ On tenant operations, the user settings interceptor or middleware follows bearer
 | Audience | Use-case signature | Access boundary |
 | --- | --- | --- |
 | Public | `callAsFunction(input:)` | Operation-specific credentials or proofs |
-| User / administrator | `callAsFunction(subject: UserIdentity, input:)` | Verified user; owning use case checks role and resource access |
+| User / administrator | `callAsFunction(subject: UserIdentity, input:)` (omit empty input) | Verified user; owning use case checks role and resource access |
 | Internal service / worker | `callAsFunction(input:)` | Peer admitted by transport mTLS; owning use case checks business invariants |
 
 Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep backend listeners private and gateway routes limited to public and user operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
 
-A user use case checks permission before side effects and throws its own `.forbidden`. The producer translates that to `permissionDenied` (HTTP 403). Internal input still requires valid relationships, legal state transitions, consistency, and idempotency. A user ID in internal input identifies a resource; it is not a verified user principal.
+An HTTP route collection or verb may additionally be protected by `AdminRequestContext` or equivalent middleware using only verified JWT role claims, without database lookups. This early gate supplements the owning use case; it does not replace resource or business authorization.
+
+A self-only operation derives its user ID from `subject`, never a business input. Explicit permission predicates are checked before side effects and throw the use case's own `.forbidden`; deriving a self-only ID from the subject needs no redundant equality guard. The producer translates that to `permissionDenied` (HTTP 403). Internal input still requires valid relationships, legal state transitions, consistency, and idempotency. A user ID in internal input identifies a resource; it is not a verified user principal.
 
 When two audiences share business work, expose a user overload and an input-only internal overload with a private common implementation. Do not let the user overload skip its permission check.
 

@@ -58,7 +58,7 @@ For duplicate detection, inspect the server error code and the exact constraint 
 
 ## Identifiers, dates, and secrets
 
-The owning database generates identifiers and stamps persistence-owned dates. Default: `uuidv7()`, built into PostgreSQL 18, whose time-ordered values keep the primary-key index local. Alternative: `gen_random_uuid()` on an older instance, at the cost of that locality; nothing in Swift changes, because Core never sees how the value was made.
+The owning database generates service-owned identifiers and stamps persistence-owned dates. Externally assigned standard/provider identifiers, such as WebAuthn credential IDs, are validated and preserved; they may be command fields and primary keys without a generated UUID. They are not retry keys. For service-generated UUIDs, default: `uuidv7()`, built into PostgreSQL 18, whose time-ordered values keep the primary-key index local. Alternative: `gen_random_uuid()` on an older instance, at the cost of that locality; nothing in Swift changes, because Core never sees how the value was made.
 
 ```sql
 CREATE TABLE items (
@@ -76,7 +76,7 @@ VALUES ($1)
 RETURNING id, name, creation_date
 ```
 
-Decode identifiers as `UUID`, dates as `Date`, and return a Core entity from the repository. Do not put `id` in a create command; do not put a timestamp there unless time is a true caller-supplied business value. Do not add an identifier-generator protocol or generate entity ids in a use case, repository, workflow, RPC client, or another service.
+Decode service-generated UUID identifiers as `UUID`, external identifiers in their standard/provider type, dates as `Date`, and return a Core entity from the repository. Do not put a service-generated `id` in a create command; do not put a timestamp there unless time is a true caller-supplied business value. Do not add an identifier-generator protocol or generate service-owned entity ids in a use case, repository, workflow, RPC client, or another service.
 
 Name stored dates `creation_date`, `update_date`, `expiration_date`, `consumption_date`, and equivalent noun-based names, with the Swift forms `creationDate`, `updateDate`, `expirationDate`, `consumptionDate`. Do not use `created_at`, `expires_at`, `expiry_date`, or Swift `somethingAt` names. Noun-based names describe the stored value rather than the event, and they convert mechanically between SQL snake case and Swift camel case with no special cases.
 
@@ -201,7 +201,7 @@ Dropping a table, deleting a migration, or moving data is a destructive product 
 
 ## One database, many modules
 
-A monolith has one database, owned by its executable, and every module owns its own tables inside it. The ownership rules between modules are the ones between services, enforced by review rather than by a network: a module creates and migrates its tables, generates its identifiers, and reads and writes them through its own repositories; no other module queries them, joins to them, or declares a foreign key onto them. A relationship across modules is a stored identifier plus a call through the other module's use-case protocol, exactly as it would be a stored identifier plus an RPC between services. Table names stay unqualified and there is no schema per module: the boundary is the target graph, not a namespace, and a module that later becomes a service takes its tables to its own database with a `pg_dump` of those tables and no renames.
+A monolith has one database, owned by its executable, and every module owns its own tables inside it. The ownership rules between modules are the ones between services, enforced by review rather than by a network: a module creates and migrates its tables, generates its service-owned identifiers, and reads and writes them through its own repositories; no other module queries them, joins to them, or declares a foreign key onto them. A relationship across modules is a stored identifier plus a call through the other module's use-case protocol, exactly as it would be a stored identifier plus an RPC between services. Table names stay unqualified and there is no schema per module: the boundary is the target graph, not a namespace, and a module that later becomes a service takes its tables to its own database with a `pg_dump` of those tables and no renames.
 
 Roles are per process, not per module. A monolith therefore has one set — `<project>_service`, `<project>_internal`, `<project>_worker` — created by the same three migrations, and one `PostgresClient` per role in its composition root; a module's tenant-scoped scope and its internal scope are built over the shared clients. Each module's Postgres target exposes its migrations as an ordered list, and the composition root registers the role migrations first and then every module's list in module dependency order:
 

@@ -19,7 +19,7 @@ The composition root is the one place that knows the shape. It composes one modu
 
 ## Command tree
 
-Name the executable target after the service or the project, not `<Service>Server`. The root command defaults to serving. Migrations run before the process serves; by default they are a `serve` flag applied in-process before the server binds, and a platform that orders jobs or starts several replicas at once runs them as a `migrate` subcommand one-shot instead (see *Migrations at boot* below).
+Name the executable target after the service or project by default; use a collision-safe name such as `AuthenticationServer` when a dependency already owns the default, and record it in `AGENTS.md`. The root command defaults to serving. Migrations run before the process serves; by default they are a `serve` flag applied in-process before the server binds, and a platform that orders jobs or starts several replicas at once runs them as a `migrate` subcommand one-shot instead (see *Migrations at boot* below).
 
 ```text
 backend                          # a monolith; a service reads `catalog`
@@ -209,7 +209,7 @@ let itemController = ItemController(createItem: createItemUseCase, /* … */)
 let itemService = ItemService(createItem: createItemUseCase, /* … */)          // with gRPC
 ```
 
-Compose modules in dependency order, producers before consumers, so a port is satisfied by a value that already exists. A cycle between two modules' ports is a design fault; resolve it by reconsidering ownership, never by a lazy reference. A transaction never spans the local call, exactly as it never spans a remote one: the consumer's use case calls the port before or after its own `withTransaction`, not inside it.
+Compose modules in dependency order, producers before consumers, so a port is satisfied by a value that already exists. A cycle between two modules' ports is a design fault; resolve it by reconsidering ownership, never by a lazy reference. Keep the port call outside the consumer's `withTransaction`, except for the bounded single-use-secret rotation read documented in [core.md](core.md#database-boundary).
 
 The root, and only the root, imports every module. A module that imports another compiles today and cannot be moved tomorrow.
 
