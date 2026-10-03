@@ -109,8 +109,8 @@ Review progress:
 **7. Tests** — read `Tests/<Service>CoreTests`, and `Tests/<Service>WorkflowsTests` where the service has Workflows.
 - The target depends on Core, `Logging`, `<Project>Authentication`, and `<Project>Testing`; it is swift-testing, with no `@testable` and no XCTest.
 - Mocks are actors in `Mocks/`, the database is built through a scoped `withDatabase` helper over `MockDatabase`, subjects come from `makeSubject(role:)`, dates are fixed.
-- Every use case has the success path of each overload, every guard including the authorization guard asserting the repository was never reached, and one test per case of its error enum. List each use case with a missing row of that matrix.
-- Core use-case tests do not bind `ServiceContext`. Separate transport tests should verify bearer binding and real mTLS admission/renewal.
+- Tests cover distinct business decisions, success contracts, meaningful error classifications, and authorization before I/O. Require a call-count or fail-if-reached witness for no-I/O claims. Identify missing behavior, redundant implementation checks, or mock-only guarantees; do not impose a test per enum case or overload.
+- Core use-case tests do not bind `ServiceContext`. Prefer the router harness for credential/role refusals; live transports prove descriptor-scoped propagation, receiver verification, wire conversion, and lifecycle. Generic TLS admission/renewal can live once in a shared contract suite per the project profile. Fixture-only configuration is not production-wiring evidence.
 - With a `<Service>Workflows` target, `<Service>WorkflowsTests` runs every Workflow on the time-skipping test server in `.serialized` suites, covers each branch and one non-retryable failure, and replays recorded histories. A Workflow with no end-to-end test, a branch no test reaches, or a suite that round-trips payloads by hand instead is a finding. Evidence: `grep -rn "temporalTimeSkippingTestServer\|WorkflowReplayer" Tests`.
 - Then run `swift test`; a failure is blocking, quote it.
 

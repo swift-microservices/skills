@@ -129,8 +129,8 @@ The rules follow from these. When a situation is not covered, decide from the pr
 
 52. Give every module a `<Module>CoreTests` target on swift-testing, depending on Core, `swift-log`, `<Project>Authentication`, and `<Project>Testing`. Plain imports; needing `@testable` signals a wrong access level.
 53. Test use cases against an actor mock repository and `MockDatabase` through a scoped `withDatabase` helper in `Mocks/`; build subjects with `makeSubject(role:)`. Fixed dates, never `Date()`.
-54. Cover the success path of each overload, every guard including the authorization guard asserting the repository was never reached, and every repository-error-to-use-case-error translation. Use-case tests bind no `ServiceContext`; `swift test` needs no infrastructure.
-55. Test an HTTP surface by composing the application as `serve` does over mocked use-case protocols (a module) or mocked generated client protocols (a gateway), with a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway key, covering the tier matrix and each error translation.
+54. Cover distinct business decisions, success contracts, authorization before I/O, and meaningful error classifications. Parameterize equivalent cases; a test per error enum case or overload is not a quota. Use-case tests bind no `ServiceContext` and require no infrastructure. See [testing.md](references/testing.md) for test ownership and consolidation.
+55. Test an HTTP surface by composing the application as `serve` does over mocked use-case protocols (a module) or mocked generated client protocols (a gateway), with a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway key, covering authentication/role tiers, route-specific conversions, and distinct error mappings. Test shared mappings once; use live transports only for behavior the router harness cannot prove.
 
 ### Working in an existing package
 
@@ -144,7 +144,7 @@ Copy the checklist that matches the task and check items off as you go.
 Build a module or service:
 - [ ] 1. Shape: confirm monolith or microservice and HTTP, gRPC, or both; in a monolith, swift package init once and add the module's targets to the existing package, otherwise swift package init --type executable and reshape to <Service>Core, <Service>Postgres, the transport targets, <Service>
 - [ ] 2. Core: entities, commands, repositories, scope protocols, use-case contracts with the identity in the signature, typed errors with .forbidden, policies, use cases with their guards, the ports it needs from other modules
-- [ ] 3. Tests: <Module>CoreTests with mock repositories and scopes, withDatabase over MockDatabase, makeSubject, the guard/translation/success matrix
+- [ ] 3. Tests: <Module>CoreTests with mock repositories and scopes, withDatabase over MockDatabase, makeSubject, focused decision, guard, translation, and success coverage
 - [ ] 4. Postgres: one scope per role, statements, repositories, error translation, tenant policies where rows belong to users, <Module>Migrations in order; in a service CreateServiceRole first and the other roles, in a monolith the roles already exist at the executable
 - [ ] 5. Transport: the HTTP surface, the gRPC surface, or both (the checklists below)
 - [ ] 6. Root: configuration, logging with the metadata providers, migrations behind --migrate-database (or a migrate one-shot), one client per role and one database per module per role, the cross-module injections, lifecycle
@@ -157,7 +157,7 @@ Add the HTTP surface:
 - [ ] 2. Contexts and errors in <Project>HTTP for a monolith, in the target itself for a service: IdentityRequestContext, AdminRequestContext, ErrorMiddleware, the Problem types and the use-case error conformances
 - [ ] 3. Controllers: one per resource over the module's use-case protocols, registration methods named for their tier, X+Schema.swift conversions that throw
 - [ ] 4. Root: the authenticator from the public key, the three tiers with BearerAuthenticationMiddleware, UserSettingsMiddleware where tenant tables exist, IsAuthenticatedMiddleware, every module's controllers mounted, ApplicationConfiguration(reader:), the application in the ServiceGroup
-- [ ] 5. Tests over mocked use-case protocols: anonymous → 401, an unverifiable token → 401, the user and admin paths, each error translation
+- [ ] 5. Tests over mocked use-case protocols: anonymous → 401, an unverifiable token → 401, the user and admin paths, distinct error mappings
 ```
 
 ```
