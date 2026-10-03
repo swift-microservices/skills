@@ -21,8 +21,9 @@ and [Swift Configuration](https://github.com/apple/swift-configuration/blob/main
 Swift.org soundness checks, SwiftNIO test/build workflows, and focused package-specific checks.
 These repositories select different optional jobs; copying every job is not the goal.
 
-- Run tests, release builds, and x86_64/ARM64 static Linux SDK builds on PRs and main pushes.
-  The swift-microservices profile has no scheduled CI; Dependabot checks for workflow updates.
+- Run tests and release builds on PRs and main pushes. Static Linux SDK checks follow
+  Swift Temporal SDK: x86_64 with the released and Swift main SDKs, on PRs only. The
+  swift-microservices profile has no scheduled CI; Dependabot checks for workflow updates.
 - Never commit `Package.resolved` in libraries. Resolve released dependencies from manifest
   requirements in fresh CI checkouts; do not apply a service's `--disable-automatic-resolution`
   command to an absent library lockfile. Keep application/service lockfiles tracked.
@@ -50,10 +51,10 @@ explicitly skips repositories outside `apple` and uses Apple's self-hosted pool.
 
 Add checks only for capabilities the library supplies or promises:
 
-- Static Linux SDK builds for x86_64 and ARM64 in this profile, using the released and
-  development SDKs. Cross-compilation checks build compatibility; it does not run ARM64 tests.
-  Document unsupported products or traits and the exact coverage rather than silently
-  claiming the entire package.
+- Static Linux SDK builds follow the unmodified SwiftNIO workflow used by Swift Temporal SDK:
+  x86_64 with the latest released SDK and Swift main development SDK, on PRs only. SDK
+  cross-compilation checks build compatibility; it does not run the package tests. Document
+  unsupported products or traits and exact coverage rather than claiming the entire package.
 - A downstream consumer/linkage check when avoiding full Foundation is a requirement. The
   swift-microservices gate uses `swift:6.3-noble` and `swift:6.4-noble`. Static SDK success proves
   build compatibility, not the absence of Foundation code. Retain the
@@ -67,10 +68,6 @@ Add checks only for capabilities the library supplies or promises:
 Record each exclusion, its reason, and any replacement coverage in the repository profile.
 Full Foundation through Vapor 4 or PostgresNIO is an upstream dependency exception; keep our
 code on FoundationEssentials where available.
-
-The current SwiftNIO static SDK workflow shares one concurrency group across invocations.
-When calling it for both architectures, make ARM64 depend on x86_64 and use
-`if: ${{ !cancelled() }}` so it still runs after a failed x86_64 build. Keep existing check names stable.
 
 ## Compact license headers
 
@@ -118,7 +115,8 @@ use bare tags; library CI does not impose a new release mechanism on an existing
 
 - Every declared stable compiler is covered and the minimum follows the manifest.
 - Applicable tests, release/static builds, soundness, and provider/consumer checks execute.
-- CI runs on PRs/main pushes only; Dependabot has the update schedule.
+- Tests and release builds run on PRs/main pushes; static SDK builds run on PRs only.
+  CI has no scheduled runs; Dependabot has the update schedule.
 - Compact headers pass the upstream checker; exclusions and the API-check setting match the profile.
 - Exclusions and advisory snapshot policy are explicit; required check names match branch protection.
 - Formatting matches the selected profile and all tracked Swift files pass strict lint.
