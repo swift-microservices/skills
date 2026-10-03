@@ -12,7 +12,9 @@ manifest and source files needed to demonstrate the configuration.
 
 Use the exact Swift Temporal SDK formatting profile provided by the skill. CI should run on
 Linux only; I do not want macOS CI. Check supported stable compilers, compiler snapshots,
-release builds, documentation, compact license headers, formatting, and static Linux compatibility.
+release builds, documentation, compact license headers, formatting, and x86_64/ARM64 static Linux
+compatibility using released and development SDKs. Cross-compilation is sufficient for these checks.
+Include separate Foundation-linking checks on Swift 6.3 Noble and Swift 6.4 Noble.
 Disable automatic API-breakage checking. Run tests, release builds, and static SDK checks on
 PRs and main pushes only, with no scheduled CI. Follow the mostly `@main` workflow references and
 give Dependabot workflow-update PRs the `semver/none` label. Document exceptions in AGENTS.md.
