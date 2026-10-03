@@ -116,7 +116,7 @@ Review progress:
 
 **8. Delivery** — read `.github/workflows`, the Containerfile, and `Package.resolved`.
 - The executable commits `Package.resolved`; CI resolves from it. The image is built for the deployment architecture with the static Linux SDK.
-- Claims about avoiding full Foundation have separate Linux linking evidence as described in the delivery skill's [linking guidance](../delivering-swift-services/references/delivery.md#foundation-linking). A successful static SDK build is insufficient evidence. Check that a previously passing linking gate remains enabled, and that any unavoidable upstream requirement is recorded with its resolved version rather than presented as an Essentials-only graph.
+- Claims about avoiding full Foundation have separate Linux evidence: [library consumer linking](../delivering-swift-services/references/library-ci.md#capability-exceptions) or [service executable inspection](../delivering-swift-services/references/services-ci.md#release-image-and-foundation). A successful static SDK build is insufficient evidence. Check that a previously passing linking gate remains enabled, and that any unavoidable upstream requirement is recorded with its resolved version rather than presented as an Essentials-only graph.
 - Every commit to a deployment branch publishes a SHA tag and the branch tag; the deploy step is mandatory, not skipped on a missing secret. A pre-existing infrastructure failure, such as a runner the account cannot bill, is reported as a decision, not a defect of the service.
 - Migrations run before serving, with `serve --migrate-database` at boot or a `migrate` one-shot ordered before the rollout, from a short-lived owner client; the serving clients never hold owner credentials.
 

@@ -173,7 +173,7 @@ Use SwiftNIO's `NIOFoundationEssentialsCompat` product and import for ByteBuffer
 
 Some required server libraries link full Foundation: [Vapor 4.122.2](https://github.com/vapor/vapor/blob/4.122.2/Package.swift) and [PostgresNIO 1.33.1](https://github.com/vapor/postgres-nio/blob/1.33.1/Package.swift) pull in full Foundation and its internationalization/ICU libraries, and so do their consumers, including our Vapor and Postgres adapters. Check the resolved releases rather than assuming either way; a required library stays even when it links full Foundation, and our own code stays on Essentials APIs.
 
-The delivery skill's [Foundation linking guidance](../../delivering-swift-services/references/delivery.md#foundation-linking) describes the separate verification gate. Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation.
+The delivery skill describes [library consumer linking](../../delivering-swift-services/references/library-ci.md#capability-exceptions) and [service executable inspection](../../delivering-swift-services/references/services-ci.md#release-image-and-foundation) separately. Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation.
 
 ## Source tree of a module
 
