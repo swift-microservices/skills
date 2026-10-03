@@ -104,10 +104,10 @@ struct PostgresConfiguration: Sendable {
     init(config: ConfigReader) throws {
         self.host = try config.requiredString(forKey: "host")
         self.port = config.int(forKey: "port", default: 5432)
-        self.database = config.string(forKey: "db", default: "<project>_<service>")
-        self.serviceUser = config.string(forKey: "serviceUser", default: "<name>_service")
-        self.internalUser = config.string(forKey: "internalUser", default: "<name>_internal")
-        self.workerUser = config.string(forKey: "workerUser", default: "<name>_worker")
+        self.database = try config.requiredString(forKey: "db")
+        self.serviceUser = try config.requiredString(forKey: "serviceUser")
+        self.internalUser = try config.requiredString(forKey: "internalUser")
+        self.workerUser = try config.requiredString(forKey: "workerUser")
         self.config = config
     }
 
@@ -123,7 +123,7 @@ struct PostgresConfiguration: Sendable {
 
 Each connection reads its password when it is asked for rather than in `init`. That is what lets one type serve every command: `serve` reads the service and internal roles, `serve --migrate-database` the owner too, and `worker run` the worker role alone, so the worker's environment carries neither the owner pair nor the serving roles' secrets, and a missing secret still fails at startup, naming the key, because every command builds its clients before its `ServiceGroup` runs. The password properties are exposed so the role migrations can read them.
 
-Require topology and secrets where no appropriate default exists. Put application mount paths, database/role names, and task queues in the application defaults provider; library tuning defaults belong to their readers. A local application-specific wrapper such as `PostgresConfiguration` can own its process defaults. Use the pinned library’s documented required keys and native scoping.
+Require topology and secrets where no appropriate default exists. Put application mount paths, database/role names, listener bindings, task queues, and URLs in the application defaults provider; library tuning defaults belong to their readers. A local wrapper such as `PostgresConfiguration` owns parsing and role-specific connections. Record exceptions to default ownership in `AGENTS.md`. Use the pinned library’s documented required keys and native scoping; required SDK keys may be satisfied by application defaults. If workflow starts and worker polling use different SDK keys for one queue, derive both defaults from one value and document that overrides must agree.
 
 Key material, signing keys and certificates, is configured as a path and file loading is delegated to the configured cryptographic library. A path is the form NIOSSL and grpc-swift already take credentials in, it keeps a private key out of the environment, and it fails at startup naming the path. The rationale is in [identity-and-access.md](identity-and-access.md), *Key material in configuration*.
 
@@ -153,7 +153,7 @@ A process serving both transports has one root, one set of use cases, and one `S
 ```swift
 // MARK: - Logging
 let lokiProcessor = LokiLogProcessor(
-    configuration: LokiLogProcessorConfiguration(config: config.scoped(to: "loki"))
+    configuration: try LokiLogProcessorConfiguration(config: config.scoped(to: "loki"))
 )
 let logLevel = config.string(forKey: "logLevel", default: Logger.Level.info)
 LoggingSystem.bootstrap(
@@ -266,8 +266,8 @@ let serverConfig = config.scoped(to: "grpc.server")
 let server = GRPCServer(
     transport: .http2NIOPosix(
         address: .ipv4(
-            host: serverConfig.string(forKey: "host", default: "0.0.0.0"),
-            port: serverConfig.int(forKey: "port", default: 50051)
+            host: try serverConfig.requiredString(forKey: "host"),
+            port: try serverConfig.requiredInt(forKey: "port")
         ),
         transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader)
     ),
@@ -295,7 +295,7 @@ Public and internal descriptors have no application authentication interceptor. 
 
 ## Lifecycle
 
-Own every long-lived thing with ServiceLifecycle:
+Own every long-lived runnable dependency with ServiceLifecycle:
 
 ```swift
 // MARK: - Lifecycle
@@ -308,6 +308,8 @@ try await serviceGroup.run()
 ```
 
 Include the application with HTTP, the server with gRPC, both when both. When the package uses Temporal, construct one long-lived `TemporalClient` in `serve`, inject a `<Feature>WorkflowClient` adapter into Core use cases, and include the client in `ServiceGroup`. Do not run workflow definitions or Activity implementations in the serving process.
+
+A project may record borrowed SDK-managed HTTP singletons such as `HTTPClient.shared` as a lifecycle exception in `AGENTS.md`. The application does not own or shut down that singleton; requests still belong to the RPC or Activity making them. An explicitly constructed HTTP client remains the application's shutdown responsibility.
 
 ## The gateway composition root
 
@@ -468,9 +470,9 @@ let temporalWorker = try TemporalWorker(
 )
 ```
 
-The configuration comes from the SDK's **own** reader, `TemporalWorker.Configuration(configReader:)`, handed the `temporal` scope, never a hand-built one; the serve side's client is the same shape, `TemporalClient.Configuration(configReader:)`. The SDK's keys become the environment contract: the worker *requires* `TEMPORAL_WORKER_NAMESPACE`, `_TASKQUEUE`, `_BUILDID`, `_CLIENT_IDENTITY`, and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`, and reads `_HEARTBEATINTERVALMS` optionally; set it (60000 is a sane interval) so the worker reports liveness to the engine; the SDK's default disables heartbeats entirely. The client reads `TEMPORAL_CLIENT_NAMESPACE` and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`. Only the dial target and the transport factory remain the composition root's job.
+The configuration comes from the SDK's **own** reader, `TemporalWorker.Configuration(configReader:)`, handed the `temporal` scope, never a hand-built one; the serve side's client is the same shape, `TemporalClient.Configuration(configReader:)`. Preserve the SDK's environment names: `TEMPORAL_WORKER_NAMESPACE`, `_TASKQUEUE`, `_BUILDID`, `_CLIENT_IDENTITY`, and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`. Required SDK values may come from application defaults, such as a project task queue; otherwise the environment must supply them. `_HEARTBEATINTERVALMS` is optional; set it (60000 is a sane interval) so the worker reports liveness, which the SDK default disables. The client reads `TEMPORAL_CLIENT_NAMESPACE` and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`. Only the dial target and transport factory remain the composition root's job.
 
-Add the worker, both certificate reloaders, and every long-lived dependency used by Activities directly to one `ServiceGroup` services array. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
+Add the worker, both certificate reloaders, and every owned runnable dependency used by Activities directly to one `ServiceGroup` services array; the recorded borrowed HTTP-singleton exception also applies here. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
 
 A worker has no inbound user request to forward. It calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to webhook handlers and scheduled jobs; see [identity-and-access.md](identity-and-access.md).
 
