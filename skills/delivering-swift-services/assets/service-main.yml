@@ -1,0 +1,44 @@
+name: Main
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/checks.yml
+    with:
+      service_product: example-service
+
+  publish:
+    name: Publish image
+    needs: [checks]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      service_product: example-service
+      image_repository: ghcr.io/example/example-service
+      publish: true
+
+  deploy:
+    name: Deploy production
+    needs: [publish]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    steps:
+      - name: Deploy to production Dokploy
+        uses: benbristow/dokploy-deploy-action@3a2a16f0158b41377adf300c9dd6d3d396aa7586  # 0.2.2
+        with:
+          dokploy_url: ${{ secrets.PROD_DOKPLOY_URL }}
+          api_token: ${{ secrets.PROD_API_TOKEN }}
+          application_id: ${{ secrets.PROD_APPLICATION_ID }}

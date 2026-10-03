@@ -1,0 +1,44 @@
+name: Develop
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [develop]
+
+concurrency:
+  group: deploy-develop
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Checks
+    uses: ./.github/workflows/checks.yml
+    with:
+      service_product: example-service
+
+  publish:
+    name: Publish image
+    needs: [checks]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      service_product: example-service
+      image_repository: ghcr.io/example/example-service
+      publish: true
+
+  deploy:
+    name: Deploy staging
+    needs: [publish]
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
+    steps:
+      - name: Deploy to staging Dokploy
+        uses: benbristow/dokploy-deploy-action@3a2a16f0158b41377adf300c9dd6d3d396aa7586  # 0.2.2
+        with:
+          dokploy_url: ${{ secrets.DOKPLOY_URL }}
+          api_token: ${{ secrets.API_TOKEN }}
+          application_id: ${{ secrets.APPLICATION_ID }}

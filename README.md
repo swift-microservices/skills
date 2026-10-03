@@ -7,7 +7,7 @@ Agent skills for building Swift systems the [swift-microservices](https://github
 | `designing-swift-systems` | choosing the shape (a modular monolith or microservices) and the transport (HTTP, gRPC, or both), cutting modules, communication, events and projections, consistency, and when a module becomes a service |
 | `building-swift-services` | creating or changing a module or a service: Core, Postgres with row-level security, the HTTP or gRPC transport, the executable, a gateway in front of services, and the tests |
 | `orchestrating-temporal-workflows` | workflows, Activities, signals, queries, and workers |
-| `delivering-swift-services` | standard server-library CI, images, Compose, secrets, certificates, service CI, per-commit publishing, migrations in the pipeline |
+| `delivering-swift-services` | standard library/service CI, images, Compose, secrets, certificates, service CI, per-commit publishing, migrations in the pipeline |
 | `reviewing-swift-services` | auditing an existing service against the rules, read-only, on request |
 
 ## Install in Claude Code
@@ -72,6 +72,13 @@ Use `--provider postgres --foundation-exception PostgresNIO` for the database ca
 `--no-tests --traits --foundation-exception generator` for the generated SDK. Add `--warning-exception UnusedImportAccess` when the documented
 Swift 6.4 generator exception is needed. This checker tests workflow artifacts; it does not execute GitHub jobs or prove provider/linkage runtime results.
 
+
+Service CI evals cover a deployable executable and a server/worker command profile. They preserve
+existing tests and explicit application style exceptions without adding infrastructure fixtures.
+Run `delivering-swift-services-service-ci*` with `--scaffold` and inspect kept workspaces with
+`python3 evals/delivering-swift-services-service-ci/checks/verify.py <workspace>`; add `--worker`
+for the worker case. This checks effective workflow and image-validation artifacts, not live
+publication/deployment or GitHub execution.
 
 ## Contributing
 

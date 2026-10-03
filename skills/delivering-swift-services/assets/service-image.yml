@@ -1,0 +1,75 @@
+name: Service image
+
+on:
+  workflow_call:
+    inputs:
+      service_product:
+        type: string
+        required: true
+      image_repository:
+        type: string
+        required: true
+      build_target:
+        type: string
+        default: ""
+      worker:
+        type: boolean
+        default: false
+      publish:
+        type: boolean
+        default: false
+
+# Permissions are inherited: PR callers grant contents: read; publishing
+# callers additionally grant packages: write.
+jobs:
+  image:
+    name: Build and validate image
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+        with:
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
+      - name: Build release image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
+        with:
+          context: .
+          file: Containerfile
+          target: ${{ inputs.build_target }}
+          platforms: linux/arm64
+          load: true
+          push: false
+          tags: service-ci:${{ github.sha }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=service-image
+          cache-to: type=gha,scope=service-image,mode=max
+      - name: Check runtime libraries and commands
+        env:
+          CI_IMAGE: service-ci:${{ github.sha }}
+          SERVICE_PRODUCT: ${{ inputs.service_product }}
+          HAS_WORKER: ${{ inputs.worker }}
+        run: bash .github/scripts/check-image.sh "$CI_IMAGE" "$SERVICE_PRODUCT" "$HAS_WORKER"
+      - name: Log in to GitHub Container Registry
+        if: ${{ inputs.publish }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish validated image
+        if: ${{ inputs.publish }}
+        env:
+          CI_IMAGE: service-ci:${{ github.sha }}
+          IMAGE_REPOSITORY: ${{ inputs.image_repository }}
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+        run: |
+          case "$DEPLOY_BRANCH" in develop|main) ;; *) exit 1 ;; esac
+          commit_tag="${IMAGE_REPOSITORY}:${GITHUB_SHA::7}"
+          branch_tag="${IMAGE_REPOSITORY}:${DEPLOY_BRANCH}"
+          docker tag "$CI_IMAGE" "$commit_tag"
+          docker push "$commit_tag"
+          docker tag "$CI_IMAGE" "$branch_tag"
+          docker push "$branch_tag"
