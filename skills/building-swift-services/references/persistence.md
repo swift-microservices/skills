@@ -203,22 +203,16 @@ Dropping a table, deleting a migration, or moving data is a destructive product 
 
 A monolith has one database, owned by its executable, and every module owns its own tables inside it. The ownership rules between modules are the ones between services, enforced by review rather than by a network: a module creates and migrates its tables, generates its service-owned identifiers, and reads and writes them through its own repositories; no other module queries them, joins to them, or declares a foreign key onto them. A relationship across modules is a stored identifier plus a call through the other module's use-case protocol, exactly as it would be a stored identifier plus an RPC between services. Table names stay unqualified and there is no schema per module: the boundary is the target graph, not a namespace, and a module that later becomes a service takes its tables to its own database with a `pg_dump` of those tables and no renames.
 
-Roles are per process, not per module. A monolith therefore has one set — `<project>_service`, `<project>_internal`, `<project>_worker` — created by the same three migrations, and one `PostgresClient` per role in its composition root; a module's tenant-scoped scope and its internal scope are built over the shared clients. Each module's Postgres target exposes its migrations as an ordered list, and the composition root registers the role migrations first and then every module's list in module dependency order:
+Roles are per process, not per module. A monolith therefore has one set — `<project>_service`, `<project>_internal`, `<project>_worker` — created by the same three migrations, and one `PostgresClient` per role in its composition root; a module's tenant-scoped scope and its internal scope are built over the shared clients. Each module's Postgres target declares its migration types; the composition root's `Migrations.swift` adds every one of them by hand, the role migrations first and then each module's tables and policies in module dependency order:
 
 ```swift
-// Sources/CatalogPostgres/Migrations/CatalogMigrations.swift
-package enum CatalogMigrations {
-    package static func migrations(internalRole: String) -> [any DatabaseMigration] {
-        [CreateItemsTable(), CreateItemsRLSPolicy(internalRole: internalRole)]
-    }
-}
-
 // Sources/Backend/Database/Migrations.swift
 await migrations.add(CreateServiceRole(...))
 await migrations.add(CreateInternalRole(...))
-for migration in UsersMigrations.migrations(internalRole: internalRole) + CatalogMigrations.migrations(internalRole: internalRole) {
-    await migrations.add(migration)
-}
+await migrations.add(CreateUsersTable())
+await migrations.add(CreateUsersRLSPolicy(internalRole: internalRole))
+await migrations.add(CreateItemsTable())
+await migrations.add(CreateItemsRLSPolicy(internalRole: internalRole))
 ```
 
 The list is append-only across modules as much as within one: adding a module appends its migrations after every existing module's, so an existing database applies them in place. Row-level security is unchanged — the tenant predicate on each tenant table, the internal role's `USING (true)` policy, the setting bound per request — and a module that owns no tenant table simply has no policies; the roles exist once for the process regardless.
@@ -290,7 +284,7 @@ let database = PostgresDatabase<PostgresBillingScope>(client: serviceClient, log
 let internalDatabase = PostgresDatabase<PostgresBillingInternalScope>(client: internalClient, logger: logger)
 ```
 
-The two databases are built the same way; what differs is the role each client connects as and which RPC services or route tiers reach each. The unscoped database sees every row, so every query on it names the user it means in its own `WHERE` clause, and the use case logs every use of it for a named user. An administrator's call arrives with a user bound and a tenant setting applied, and the internal role's `USING (true)` policy ignores it. A use case whose scope protocol is adopted only by the internal scope cannot be built over the tenant-scoped database, and the reverse; that refusal is the compiler's, not a code review's. A service whose one table is the tenant itself — users, where a person's own row and an administrator's any row are one use case deciding — may build only the unscoped database and leave the service role unused; say so in the composition root.
+The two databases are built the same way; what differs is the role each client connects as and which RPC services or route tiers reach each. The unscoped database sees every row, so every query on it names the user it means in its own `WHERE` clause, and the use case logs every use of it for a named user. An administrator's call arrives with a user bound and a tenant setting applied, and the internal role's `USING (true)` policy ignores it. A use case whose scope protocol is adopted only by the internal scope cannot be built over the tenant-scoped database, and the reverse; that refusal is the compiler's, not a code review's. A self-only read is its own use case on the tenant-scoped database and takes no id, even where the tenant is the row itself: a person's own record is `GetProfile`, served as the service role under the tenant policy, and an administrator's read of any record by id is a separate use case on the unscoped database. One RPC never serves both.
 
 **A worker connects to its own service's database directly**, as the worker role, with the same `USING (true)` policy and its own secret, and builds the unscoped kind of database over `Postgres<Service>WorkerScope` in its own composition root (see *Worker composition* in the orchestrating-temporal-workflows skill). An Activity is inside the service's boundary and its input is durable workflow state rather than a caller's request, so nothing is gained by putting a network hop between it and the tables it owns. A worker never opens another service's database; it calls that service's internal RPC, which runs the use case over that service's unscoped database.
 

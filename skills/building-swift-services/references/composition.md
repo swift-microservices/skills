@@ -413,17 +413,19 @@ if migrateDatabase {
 }
 ```
 
-`PostgresClient.withClient` comes from `PersistencePostgres`: it starts the client in a task group and cancels it when the operation returns or throws. `Migrations.run()` in `Database/Migrations.swift` adds the list explicitly in order: the role migrations first, `CreateServiceRole` before the others, reading each role's password from the configuration, then every module's `<Module>Migrations.migrations(internalRole:)` in module dependency order, and applies it:
+`PostgresClient.withClient` comes from `PersistencePostgres`: it starts the client in a task group and cancels it when the operation returns or throws. `Migrations.run()` in `Database/Migrations.swift` adds every migration explicitly, one call each, in the order databases apply them: the role migrations first, `CreateServiceRole` before the others, reading each role's password from the configuration, then each module's tables and policies in module dependency order, and applies the list:
 
 ```swift
 await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: try configuration.servicePassword, database: configuration.database))
 await migrations.add(CreateInternalRole(role: configuration.internalUser, password: try configuration.internalPassword, database: configuration.database))
-for migration in UsersMigrations.migrations(internalRole: configuration.internalUser) { await migrations.add(migration) }
-for migration in CatalogMigrations.migrations(internalRole: configuration.internalUser) { await migrations.add(migration) }
+await migrations.add(CreateUsersTable())
+await migrations.add(CreateUsersRLSPolicy(internalRole: configuration.internalUser))
+await migrations.add(CreateItemsTable())
+await migrations.add(CreateItemsRLSPolicy(internalRole: configuration.internalUser))
 try await migrations.apply(client: client, logger: logger, dryRun: false)
 ```
 
-A service has one module, so its list is the roles and one module's migrations. The library refuses a reordered list, so a module that gains a migration appends it to its own list and never reorders another's; a new module appends its whole list after the existing ones. The long-lived clients the `ServiceGroup` owns are built from `postgres.service` and `postgres.internalService` and never hold owner credentials; the owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
+A service has one module, so its list is the roles and that module's migrations. The library refuses a reordered list, so a new migration is appended at the end, after every migration already applied, and nothing is ever reordered or removed; this one file is where the order lives. The long-lived clients the `ServiceGroup` owns are built from `postgres.service` and `postgres.internalService` and never hold owner credentials; the owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
 
 The flag is the default because it needs no platform support: one container, one command, and the schema is current before the port opens. The alternative is a `migrate` subcommand running the same `Migrations.run()` and exiting, deployed as a one-shot job before the rollout, for a platform that orders jobs (an init container, a pre-deploy hook) or starts several replicas at once, where N containers racing the same list at boot is what the library's ordering check would refuse. Either way the rule holds: nothing serves an unmigrated schema, and only the migration client ever connects as the owner.
 

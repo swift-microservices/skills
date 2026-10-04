@@ -201,7 +201,7 @@ package struct ReservationActivities {
 }
 ```
 
-Nest Activity input and output values under the container, as *Payloads* describes. Use `Id`, not `ID`, and noun-based date names, as everywhere else.
+Nest Activity input and output values under the container, as *Payloads* describes. Spell identifiers `ID` in type names and `Id` in values (`registrationId`), and noun-based date names, as everywhere else.
 
 Assume every Activity can be retried after its side effect succeeds but before Temporal receives the result. Make each write retry-safe at the system that owns the side effect: unique constraints for creates, compare-and-swap updates for transitions, provider idempotency keys for email, payments, or messaging. Do not rely on Workflow fields, Activity memory, or Temporal history as the downstream idempotency mechanism.
 

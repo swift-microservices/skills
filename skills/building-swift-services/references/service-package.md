@@ -148,7 +148,7 @@ Sources/
       Postgres<Module>InternalScope.swift             # only a module with tenant tables
       Postgres<Module>WorkerScope.swift               # only with Temporal
     Migrations/
-      <Module>Migrations.swift                        # the module's ordered list
+      <Table>/                                        # one create migration per table, then its policies
       Role/                                           # only a service: a monolith's roles live at the executable
         CreateServiceRole.swift
         CreateInternalRole.swift                      # only with tenant tables
@@ -228,7 +228,7 @@ Sources/
       EdDSA.PublicKey+ConfigReader.swift
       EdDSA.PrivateKey+ConfigReader.swift             # the monolith issues tokens, so it holds the private key
     Database/
-      Migrations.swift                                # roles first, then every module's list in order
+      Migrations.swift                                # every migration, roles first, in applied order
       Role/
         CreateServiceRole.swift
         CreateInternalRole.swift                      # only when any module has tenant tables
