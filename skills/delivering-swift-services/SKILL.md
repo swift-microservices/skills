@@ -5,7 +5,9 @@ description: Defines standard CI profiles for Swift server libraries and deploya
 
 # Delivering Swift services
 
-How a service gets from a merged commit to a process that answers, and how the whole stack runs on one host: the pipeline that publishes and deploys, and the environment the deployed system runs in. Preserve every convention unless the user explicitly changes it; where the repository already has an established convention that differs, the repository wins for unrelated code.
+How a service gets from a merged commit to a process that answers, and how the whole stack runs on one host: the pipeline that publishes and deploys, and the environment the deployed system runs in.
+
+Read applicable `AGENTS.md` files first: their project profile, styles, and recorded exceptions override these general conventions. Preserve unrelated established code.
 
 For every reusable library used in Swift server development, read [library-ci.md](references/library-ci.md)
 and enforce its standard pipeline, formatter, headers, and dependency policy. This includes
@@ -15,7 +17,7 @@ For executable services, read [services-ci.md](references/services-ci.md) for de
 checks, locked resolution and image validation. Repository `AGENTS.md` profiles supply explicit
 compiler, platform, formatting and coverage exceptions; deployment rules remain below.
 
-Designing the shape, building the modules, services, and HTTP surface, and running workflows are separate skills; this one publishes and runs what they produce.
+Designing the shape, building services, HTTP surfaces, and libraries, and running workflows are separate skills; this one publishes and runs what they produce, and owns the CI of both libraries and services.
 
 Rules in this skill are conventions the packages and the shared code shape depend on; keep them unless the user changes the vocabulary. Where a rule says *default* and names an alternative, that is a project choice: take the default unless the project's decision record says otherwise, and never switch it per file.
 

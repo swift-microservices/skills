@@ -20,7 +20,7 @@ let package = Package(
     products: [.executable(name: "notes", targets: ["Notes"])],
     dependencies: [
         .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
-        .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
+        .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.1"),
         .package(url: "https://github.com/acme/acme-core.git", from: "0.1.0"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.1"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),

@@ -9,11 +9,9 @@
 - Source tree of a module
 - Source tree of a monolith
 - Source tree of a service
-- Source tree of a gateway
 - Manifest of a module's targets
 - Manifest of a monolith
 - Manifest of a service
-- Manifest of a gateway
 - Products
 
 ## Package initialization
@@ -28,48 +26,7 @@ Then reshape the generated package. A monolith is initialized once and gains a m
 
 ## Swift settings for packages and applications
 
-Use Swift tools 6.3 and `swiftLanguageModes: [.v6]`. Tools version selects manifest APIs and the minimum toolchain; language mode selects language semantics and enables Swift 6 strict concurrency checking. An upcoming feature opts a target into an implemented future language behavior; it is not an experimental feature and is not implied merely by tools version 6.3 or language mode 6.
-
-Define one stored `let` immediately after `import PackageDescription`, then pass `swiftSettings: swiftSettings` to every owned Swift `.target`, `.executableTarget`, and `.testTarget`. This includes application composition roots, workers, gateways, shared libraries, and targets compiling generated Swift. Settings do not propagate from a library to its consumers, between targets, or into dependency packages. Keep C, binary, and plugin targets out of this list.
-
-```swift
-// swift-tools-version: 6.3
-import PackageDescription
-
-let swiftSettings: [SwiftSetting] = [
-    // SE-0335: spell protocol existential types with `any`.
-    .enableUpcomingFeature("ExistentialAny"),
-    // SE-0444: member lookup respects the imports visible in this file.
-    .enableUpcomingFeature("MemberImportVisibility"),
-    // SE-0409: an unqualified import has internal access.
-    .enableUpcomingFeature("InternalImportsByDefault"),
-    // SE-0461: nonisolated async functions inherit the caller's actor.
-    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
-]
-
-let package = Package(
-    name: "Example",
-    products: [
-        .library(name: "ExampleCore", targets: ["ExampleCore"]),
-        .executable(name: "example", targets: ["Example"]),
-    ],
-    targets: [
-        .target(name: "ExampleCore", swiftSettings: swiftSettings),
-        .executableTarget(name: "Example", dependencies: ["ExampleCore"], swiftSettings: swiftSettings),
-        .testTarget(name: "ExampleCoreTests", dependencies: ["ExampleCore"], swiftSettings: swiftSettings),
-    ],
-    swiftLanguageModes: [.v6]
-)
-```
-
-| Setting | Meaning |
-| --- | --- |
-| [`ExistentialAny` (SE-0335)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0335-existential-any.md) | Use `any Repository` for an existential value. Generic constraints and conformances stay `T: Repository` and `struct Store: Repository`. |
-| [`MemberImportVisibility` (SE-0444)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0444-member-import-visibility.md) | Members, including extensions, must come from a module visible in the current file. Import the module that supplies a member and declare its direct target dependency; another file's ordinary import is insufficient. |
-| [`InternalImportsByDefault` (SE-0409)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md) | Plain `import` is internal. Use `package import` when imported types appear in package API, and `public import` when they appear in public API; keep implementation-only imports internal. `public import` does not re-export the module's names. Check conformances and inlinable code too. |
-| [`NonisolatedNonsendingByDefault` (SE-0461)](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md) | Nonisolated async functions and async function types without explicit isolation, `@Sendable` or not, use caller isolation by default (`nonisolated(nonsending)`). This avoids an implicit actor hop; it neither makes shared state safe nor prevents reentrancy at `await`. Use `@concurrent` only when an async function intentionally leaves the caller's actor, with safe values crossing that boundary, or to match a requirement of a dependency built without this feature (for example GRPCCore interceptors, Hummingbird `RouterMiddleware`, OpenAPI `ClientMiddleware`). |
-
-Default actor isolation is a separate setting: server packages and applications keep nonisolated default isolation and set no `.defaultIsolation(MainActor.self)`. Diagnostics are resolved, never silenced with unsafe flags, `@preconcurrency`, or `@unchecked Sendable`.
+Use Swift tools 6.3, `swiftLanguageModes: [.v6]`, and one stored `swiftSettings` array enabling `ExistentialAny`, `MemberImportVisibility`, `InternalImportsByDefault`, and `NonisolatedNonsendingByDefault`, passed to every owned Swift target: library, executable, and test, the composition root and worker included. Server packages keep nonisolated default isolation. The settings, what each means, and the settled concurrency rules are the writing-swift-server-code skill's [swift-settings.md](../../writing-swift-server-code/references/swift-settings.md); the manifests below apply them.
 
 ## Dependency baseline
 
@@ -94,20 +51,20 @@ These are the packages the architecture is built on, with their version floors. 
 | `hummingbird-auth` | `2.5.0` | `HummingbirdAuth` for `AuthRequestContext` and `IsAuthenticatedMiddleware`; `HummingbirdBcrypt` only in a `<Module>Bcrypt` adapter target |
 | `swift-openapi-generator` | `1.13.0` | The `OpenAPIGenerator` plugin on every HTTP target that owns a document |
 | `swift-openapi-runtime` | `1.12.1` | `OpenAPIRuntime` beside the generated types; disable `FullFoundation` |
-| `swift-openapi-hummingbird` | current | `OpenAPIHummingbird`, only with generated server stubs (the alternative in *http.md*); not linked by the types-only default |
+| `swift-openapi-hummingbird` | current | `OpenAPIHummingbird`, only with generated server stubs (the alternative in the building-swift-http-surfaces skill); not linked by the types-only default |
 | `swift-openapi-vapor` | current | `OpenAPIVapor`, the same for a Vapor surface |
 | `vapor` | `4.122.0` | `Vapor`, only when the HTTP surface is on Vapor instead of Hummingbird; `VaporTesting` for its tests |
 | `swift-temporal-sdk` | `1.0.0` | `Temporal`, only with durable orchestration |
 | `jwt-kit` | `5.7.1` | `JWTKit`: the executable, for the EdDSA key types |
 | `swift-service-context` | `1.3.0` | `ServiceContextModule`, wherever `ServiceContext.current` is read: the transport targets and the executable |
 | `swift-persistence` | `0.2.0` | `Persistence`: `Database<Scope>`, linked by every Core |
-| `swift-persistence-postgres` | `0.2.0` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
-| `swift-authentication` | `0.2.0` | `Authentication`: the `Authenticator` protocol an HTTP target names to take any verifier |
-| `swift-authentication-jwt` | `0.2.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module |
+| `swift-persistence-postgres` | `0.2.1` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
+| `swift-authentication` | `0.3.0` | `Authentication`: the `Authenticator` protocol a target names to take any verifier; authenticators return an identity or throw |
+| `swift-authentication-jwt` | `0.3.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module; both take a `JWTKeyCollection`, and `<Project>Authentication` adds the EdDSA `init(publicKey:)` and `init(privateKey:)` conveniences |
 | `swift-nio-extras` | `1.35.1` | `NIOCertificateReloading` for `TimedCertificateReloader`, linked directly by the executable |
-| `swift-authentication-grpc` | `0.3.0` | `AuthenticationGRPC` for user bearer authentication and propagation |
-| `swift-authentication-hummingbird` | `0.2.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
-| `swift-authentication-vapor` | `0.2.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
+| `swift-authentication-grpc` | `0.4.0` | `AuthenticationGRPC`: `BearerAuthenticationInterceptor`, `BearerPropagationInterceptor`, and `Metadata.bearer`; processes are proved by transport mTLS, not by an interceptor |
+| `swift-authentication-hummingbird` | `0.3.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
+| `swift-authentication-vapor` | `0.3.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
 | `<project>-core` | first compatible tag | `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` |
 | `<project>-protos` | first compatible tag | `<Module>Protos`, one product per module with a gRPC contract |
 | `swift-container-plugin` | `1.3.0` | `build-container-image` command plugin |
@@ -137,11 +94,11 @@ dependencies: [
     .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.7.1"),
     .package(url: "https://github.com/apple/swift-service-context.git", from: "1.3.0"),
     .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
-    .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
-    .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.2.0"),          // with HTTP
-    .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.2.0"),
-    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.3.0"),     // with gRPC
-    .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.2.0"), // with HTTP
+    .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.1"),
+    .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.3.0"),          // with HTTP
+    .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.3.0"),
+    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.4.0"),     // with gRPC
+    .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.3.0"), // with HTTP
     .package(url: "https://github.com/<organization>/<project>-core.git", from: "0.1.0"),
     .package(url: "https://github.com/<organization>/<project>-protos.git", from: "0.1.0"),   // with gRPC
     .package(url: "https://github.com/apple/swift-container-plugin.git", from: "1.3.0"),
@@ -156,24 +113,7 @@ After renaming a target, delete `.build` in that package and every consumer, or 
 
 ## Foundation dependencies and traits
 
-Use FoundationEssentials when Foundation types are needed and the standard library is insufficient. Our code uses the modern APIs in [swift-style.md](swift-style.md), even where an upstream library links full Foundation.
-
-Some libraries have a `FullFoundation` trait, which may be enabled by default: [Hummingbird 2.27.0](https://github.com/hummingbird-project/hummingbird/blob/2.27.0/Package.swift) and [swift-openapi-runtime 1.12.1](https://github.com/apple/swift-openapi-runtime/blob/1.12.1/Package.swift) are examples. Inspect the manifest of the version being resolved; neither the trait's presence, its name, nor its default is universal. For these versions, disable default traits with `traits: []` when no optional feature is needed:
-
-```swift
-.package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: []),
-.package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []),
-```
-
-Always opt out of default traits when declaring `apple/swift-configuration`: use `.package(url: "https://github.com/apple/swift-configuration.git", from: "1.2.0", traits: [])` for the environment-based configuration used here. Its [1.2.0 manifest](https://github.com/apple/swift-configuration/blob/1.2.0/Package.swift) enables `JSON` by default; the [JSON provider](https://github.com/apple/swift-configuration/blob/1.2.0/Sources/Configuration/Providers/Files/JSONSnapshot.swift) uses `JSONSerialization` and imports full Foundation. The trait is named `JSON`, not `FullFoundation`. Environment-variable configuration does not need it, and decoding an HTTP JSON body is unrelated to parsing JSON configuration files. If a configuration provider genuinely requires an optional trait, select only that trait explicitly and document its linking cost; do not silently drop required provider functionality or restore all defaults. Inspect transitive edges too: another dependency can re-enable `JSON`, so this direct opt-out alone does not prove that the final binary avoids full Foundation.
-
-When other traits are required, list only those traits explicitly. The package-level example above uses Hummingbird's `traits: ["ConfigurationSupport"]` because the composition examples use its configuration integration; this also leaves `FullFoundation` disabled. Never enable the full default set just to recover one feature. [SwiftPM combines traits across the resolved graph](https://docs.swift.org/swiftpm/documentation/packagemanagerdocs/addingdependencies/): another dependency can enable `FullFoundation` again. Inspect transitive manifests and `swift package show-dependencies`, then verify the result with a Linux linking check; a direct `traits: []` declaration alone is not proof.
-
-Use SwiftNIO's `NIOFoundationEssentialsCompat` product and import for ByteBuffer/Data and Codable helpers ([SwiftNIO 2.99.0](https://github.com/apple/swift-nio/releases/tag/2.99.0) and later), not `NIOFoundationCompat`, which links full Foundation. [LoggingLoki 2.0.1](https://github.com/lovetodream/swift-log-loki/blob/v2.0.1/Package.swift) declares it itself, so an executable linking LoggingLoki needs no NIO product for it. Add an explicit NIO dependency and product only when our target imports it directly.
-
-Some required server libraries link full Foundation: [Vapor 4.122.2](https://github.com/vapor/vapor/blob/4.122.2/Package.swift) and [PostgresNIO 1.33.1](https://github.com/vapor/postgres-nio/blob/1.33.1/Package.swift) pull in full Foundation and its internationalization/ICU libraries, and so do their consumers, including our Vapor and Postgres adapters. Check the resolved releases rather than assuming either way; a required library stays even when it links full Foundation, and our own code stays on Essentials APIs.
-
-The delivery skill describes [library consumer linking](../../delivering-swift-services/references/library-ci.md#capability-exceptions) and [service executable inspection](../../delivering-swift-services/references/services-ci.md#release-image-and-foundation) separately. Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation.
+Declare `swift-configuration` with `traits: []`, `hummingbird` with only the traits it uses (`["ConfigurationSupport"]` with its configuration integration, otherwise `[]`), and `swift-openapi-runtime` with `traits: []`; take ByteBuffer helpers from `NIOFoundationEssentialsCompat`. PostgresNIO and Vapor 4 link full Foundation upstream: a documented constraint, not a reason to drop them. Why, how traits combine across the graph, and how linkage is proved are in the writing-swift-server-code skill's [foundation.md](../../writing-swift-server-code/references/foundation.md#dependency-traits-that-pull-in-foundation).
 
 ## Source tree of a module
 
@@ -262,7 +202,7 @@ Tests/
 
 Use plural feature folders such as `Items`, then group repository and use-case artifacts within that feature. Do not create top-level `Entities`, `UseCases`, or `Repositories` buckets in Core. In Postgres, group by technical responsibility and then entity because those files implement infrastructure mechanics.
 
-In GRPC, keep the generated-service conformances at the feature root, one file per proto service. Put every request/input and entity/message conversion in that feature's single `Protobuf/` directory, shared by the three. Do not split it further. In HTTP, keep one controller per resource and the conversions in `Schemas/`, matching the gateway's layout so a controller reads the same whether it calls a use case or a stub. The contents of the HTTP target are in [http.md](http.md).
+In GRPC, keep the generated-service conformances at the feature root, one file per proto service. Put every request/input and entity/message conversion in that feature's single `Protobuf/` directory, shared by the three. Do not split it further. In HTTP, keep one controller per resource and the conversions in `Schemas/`, matching the gateway's layout so a controller reads the same whether it calls a use case or a stub. The contents of the HTTP target are the building-swift-http-surfaces skill's [surface reference](../../building-swift-http-surfaces/references/surface.md).
 
 The `Database` protocol comes from swift-persistence, `PostgresDatabase`, `PostgresScope`, and `PostgresClient.withClient` from swift-persistence-postgres, and the test double from `<Project>Testing`. The module writes scopes, statements, repositories, and migrations.
 
@@ -351,48 +291,6 @@ Tests/
 ```
 
 The service's `<Service>Postgres/Migrations/Role/` holds the role migrations, and `<Service>HTTP`, when it exists, holds its own `Contexts/` and `Middlewares/`.
-
-## Source tree of a gateway
-
-```text
-Sources/
-├── API/
-│   ├── openapi.yaml
-│   ├── openapi-generator-config.yaml
-│   ├── <Project>API.swift
-│   ├── Contexts/
-│   │   ├── IdentityRequestContext.swift
-│   │   └── AdminRequestContext.swift
-│   ├── Controllers/
-│   │   ├── AuthenticationController.swift
-│   │   ├── ItemController.swift
-│   │   └── ProfileController.swift
-│   ├── Middlewares/
-│   │   └── ErrorMiddleware/
-│   │       ├── ErrorMiddleware.swift
-│   │       └── Problem/
-│   │           ├── Problem.swift
-│   │           ├── HTTPProblemResponse.swift
-│   │           └── Conformances/
-│   │               ├── HTTPError+HTTPProblemResponse.swift
-│   │               └── RPCError+HTTPProblemResponse.swift
-│   └── Schemas/
-│       ├── Requests/
-│       │   └── CreateItemRequest+RPC.swift
-│       └── Responses/
-│           └── ItemResponse+RPC.swift
-└── <Project>/
-    ├── <Project>.swift
-    ├── Serve/
-    │   └── Serve.swift
-    └── Configuration/
-        ├── InMemoryProvider+ApplicationDefaults.swift
-        ├── TimedCertificateReloader.Configuration+ConfigReader.swift
-        ├── EdDSA.PublicKey+ConfigReader.swift
-        └── HTTP2ClientTransport.Posix.TransportSecurity+ConfigReader.swift
-```
-
-No `Database/`, no migrations, no `PostgresConfiguration`: a gateway owns no data.
 
 ## Manifest of a module's targets
 
@@ -591,67 +489,6 @@ The module blocks above, once, plus one executable:
 ```
 
 Include a direct product dependency in every target that imports its module. The executable, not the feature target, needs `GRPCNIOTransportHTTP2` because it constructs the transport, and `AuthenticationHummingbird` because it builds the middleware. Remove any dependency a target does not import.
-
-## Manifest of a gateway
-
-```swift
-.target(
-    name: "API",
-    dependencies: [
-        .product(name: "Hummingbird", package: "hummingbird"),
-        .product(name: "HummingbirdAuth", package: "hummingbird-auth"),
-        .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
-        .product(name: "Authentication", package: "swift-authentication"),           // names the Authenticator protocol
-        .product(name: "AuthenticationHummingbird", package: "swift-authentication-hummingbird"),
-        .product(name: "<Project>Authentication", package: "<project>-core"),
-        .product(name: "GRPCCore", package: "grpc-swift-2"),                         // RPCError, for the problem conformance
-        .product(name: "ServiceContextModule", package: "swift-service-context"),
-        .product(name: "<Upstream>Protos", package: "<project>-protos"),             // one per upstream
-        .product(name: "Logging", package: "swift-log"),
-    ],
-    swiftSettings: swiftSettings,
-    plugins: [
-        .plugin(name: "OpenAPIGenerator", package: "swift-openapi-generator")
-    ]
-),
-.executableTarget(
-    name: "<Project>",
-    dependencies: [
-        "API",
-        .product(name: "ArgumentParser", package: "swift-argument-parser"),
-        .product(name: "Configuration", package: "swift-configuration"),
-        .product(name: "Hummingbird", package: "hummingbird"),
-        .product(name: "AuthenticationJWT", package: "swift-authentication-jwt"),
-        .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),  // the propagating interceptor
-        .product(name: "<Project>Authentication", package: "<project>-core"),
-        .product(name: "JWTKit", package: "jwt-kit"),
-        .product(name: "GRPCCore", package: "grpc-swift-2"),
-        .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
-        .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),
-        .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),
-        .product(name: "<Upstream>Protos", package: "<project>-protos"),             // one per upstream
-        .product(name: "ServiceContextModule", package: "swift-service-context"),
-        .product(name: "Logging", package: "swift-log"),
-        .product(name: "LoggingLoki", package: "swift-log-loki"),
-        .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
-    ],
-    swiftSettings: swiftSettings
-),
-.testTarget(
-    name: "APITests",
-    dependencies: [
-        "API",
-        .product(name: "HummingbirdTesting", package: "hummingbird"),
-        .product(name: "AuthenticationJWT", package: "swift-authentication-jwt"),
-        .product(name: "JWTKit", package: "jwt-kit"),
-        .product(name: "<Project>Authentication", package: "<project>-core"),
-        .product(name: "<Upstream>Protos", package: "<project>-protos"),
-    ],
-    swiftSettings: swiftSettings
-),
-```
-
-No `postgres-nio`, no `postgres-migrations`, no `swift-persistence`: a gateway declares no persistence package at all.
 
 ## Products
 

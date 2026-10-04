@@ -215,46 +215,7 @@ The root, and only the root, imports every module. A module that imports another
 
 ## The HTTP sections
 
-Under **Router**, build one router on `BasicRequestContext` and register every module's controllers in the three tiers of [http.md](http.md). The tiers are the same for a module and for a gateway; what differs is that a module's tier 2 carries `UserSettingsMiddleware` after the bearer middleware wherever tenant tables exist, so the caller the middleware bound becomes the setting the policies read:
-
-```swift
-// MARK: - Router
-let router = Router(context: BasicRequestContext.self)
-router.add(middleware: ErrorMiddleware())
-router.add(middleware: LogRequestsMiddleware(.info))
-
-let v1 = router.group("v1")
-
-// Tier 1: no caller. Session-issuing routes and the health route.
-usersController.addPublicRoutes(to: v1.group("auth"))
-v1.get("health") { _, _ in HTTPResponse.Status.ok }
-
-// Tier 2: a caller if there is one. The settings middleware turns a bound user into the tenant setting.
-let identified = v1.group(context: IdentityRequestContext.self)
-    .add(middleware: BearerAuthenticationMiddleware<IdentityRequestContext>(authenticator: userAuthenticator))
-    .add(middleware: UserSettingsMiddleware())
-itemController.addIdentifiedRoutes(to: identified.group("items"))
-
-// Tier 3: a caller is required.
-let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
-itemController.addAuthenticatedRoutes(to: authenticated.group("items"))
-usersController.addAuthenticatedRoutes(to: authenticated.group("profile"))
-```
-
-`BearerAuthenticationMiddleware` comes from `AuthenticationHummingbird` and takes any `Authenticator<String, UserIdentity>`; `UserSettingsMiddleware` comes from `<Project>Persistence`, beside `UserSettingsInterceptor`, and reads what the bearer middleware bound, so it follows it and never precedes it. Keep the path prefix here and the routes in the controllers, so one file shows the whole surface and each controller stays movable. A monolith with a dozen modules has a dozen `add…Routes` lines per tier and nothing else.
-
-Under **Hummingbird**, build the application from the router and the listener read by `ApplicationConfiguration(reader:)` scoped to `http.server`:
-
-```swift
-// MARK: - Hummingbird
-let application = Application(
-    router: router,
-    configuration: ApplicationConfiguration(reader: config.scoped(to: "http.server")),
-    logger: logger
-)
-```
-
-The application publishes no host port of its own; the address comes from the ingress that proxies to it (the delivering-swift-services skill). On Vapor 4 the same sections build a `Vapor.Application`, register the tiers as route groups, and run under `ServiceContext.withValue(req.serviceContext)` where a route calls out, as [http.md](http.md) describes.
+With HTTP, the root adds **Router** and **Hummingbird** sections after Composition: one router on `BasicRequestContext` with every module's controllers in the three tiers, and the application read by `ApplicationConfiguration(reader:)` scoped to `http.server`, owned by the same `ServiceGroup`. Both are the building-swift-http-surfaces skill's, in its [surface reference](../../building-swift-http-surfaces/references/surface.md#composition).
 
 ## The gRPC section
 
@@ -313,43 +274,7 @@ A project may record borrowed SDK-managed HTTP singletons such as `HTTPClient.sh
 
 ## The gateway composition root
 
-A gateway is the HTTP transport of a system whose modules are services; its root follows the section order above with Router and Hummingbird and no gRPC section, and its Infrastructure holds no database. Under Infrastructure, build the authenticator, `JWTAuthenticator<UserIdentity>` over the public key by path through the EdDSA initializer `<Project>Authentication` adds, exactly as [identity-and-access.md](identity-and-access.md) describes, and one `GRPCClient` per upstream, each with a required host and port and the stack's mTLS client factory. Every upstream is one connection and two audiences, so the caller's token is resent only on the proto service that takes one, through one interceptor applied per descriptor:
-
-```swift
-// MARK: - Infrastructure
-let tlsConfig = config.scoped(to: "tls")
-let userAuthenticator = await JWTAuthenticator<UserIdentity>(publicKey: try EdDSA.PublicKey(config: config.scoped(to: "jwt")))
-let propagation = BearerPropagationInterceptor<UserIdentity>()
-
-let usersConfig = config.scoped(to: "grpc.users")
-let usersClient = GRPCClient(
-    transport: try .http2NIOPosix(
-        target: .dns(
-            host: try usersConfig.requiredString(forKey: "host"),
-            port: try usersConfig.requiredInt(forKey: "port")
-        ),
-        transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader),
-        serviceConfig: .defaults
-    ),
-    interceptorPipeline: [
-        .apply(propagation, to: .services([<Organization>_Users_V1_UserService.descriptor]))
-    ]
-)
-```
-
-Under Composition, wrap each client in one generated stub per proto service, `UserPublicService.Client(wrapping:)` and `UserService.Client(wrapping:)` over the same `GRPCClient`, and hand the pair to the controller. The public stub is dialled with nothing, which is what the session-issuing RPCs expect: they run before any caller exists, so there is no token to forward. The gateway exposes only intended public and user operations; its mTLS credential must not be treated as permission to publish internal routes.
-
-Under Router, the same three tiers as a module's, without `UserSettingsMiddleware`: a gateway has no database for the setting to reach, and the tenant is bound again, from the forwarded token, inside the service that owns the rows. Under Hummingbird, `ApplicationConfiguration(reader:)` scoped to `http.server`. Under Lifecycle, the application and every client in one `ServiceGroup`:
-
-```swift
-let serviceGroup = ServiceGroup(
-    services: [lokiProcessor, certificateReloader, authenticationClient, usersClient, application],
-    gracefulShutdownSignals: [.sigint, .sigterm],
-    logger: logger
-)
-```
-
-The gateway publishes no host port and needs no migration job; give it a health route in tier 1 so the platform can probe it without a token. Its tests are in [testing.md](testing.md).
+A gateway's root — the authenticator, one mTLS `GRPCClient` per upstream with bearer propagation on user descriptors, the router, and no database — is the building-swift-http-surfaces skill's, in its [gateway reference](../../building-swift-http-surfaces/references/gateway.md#composition-root). It uses the transport security factories below.
 
 ## Transport security factories
 

@@ -1,6 +1,6 @@
 # Testing
 
-How a module's behavior is verified: the test target, the mocks, and the line between what a use-case test covers and what the transport and the database already enforce. A service is a module in its own package, and its tests are the same. Tests here run with no infrastructure — no Postgres, no network, no interceptor — because the architecture puts those concerns where a unit test does not have to simulate them; the principal a use case decides on is a plain value the test builds.
+How a module's behavior is verified: the test target, the mocks, and the line between what a use-case test covers and what the transport and the database already enforce. A service is a module in its own package, and its tests are the same. A package that defines a caller-isolated callback API — a `Database`, a runner — also carries isolation contract tests; those are the building-swift-server-libraries skill's ([testing reference](../../building-swift-server-libraries/references/testing.md#isolation-contract-tests)). Tests here run with no infrastructure — no Postgres, no network, no interceptor — because the architecture puts those concerns where a unit test does not have to simulate them; the principal a use case decides on is a plain value the test builds.
 
 ## Contents
 
@@ -9,7 +9,6 @@ How a module's behavior is verified: the test target, the mocks, and the line be
 - The scoped database helper
 - What a use-case test covers
 - What a use-case test does not cover
-- Isolation contract tests
 - Transport tests
 
 ## The test target
@@ -31,7 +30,7 @@ Every module carries a test target, `<Module>CoreTests` (`<Service>CoreTests` wh
 
 `<Project>Testing` is the one product a test target links that a production target never may; nothing else in the packages is test-only.
 
-Tests are swift-testing — `@Suite`, `@Test`, `#expect`, `#require` — never XCTest. Because targets of one package use `package` access (see *Package, targets, and naming* in SKILL.md), the test target imports Core plainly, and in a monolith a module's tests import that module's Core alone — a test that needs two modules' Core targets is a sign the modules are not separate; `@testable` is never needed, and needing it is a sign a symbol has the wrong access level.
+Tests are swift-testing — `@Suite`, `@Test`, `#expect`, `#require` — never XCTest. Because targets of one package use `package` access (see *Shape, package, targets, and naming* in SKILL.md), the test target imports Core plainly, and in a monolith a module's tests import that module's Core alone — a test that needs two modules' Core targets is a sign the modules are not separate; `@testable` is never needed, and needing it is a sign a symbol has the wrong access level.
 
 Suites are named for the feature (`@Suite("Subscriber use cases")`), test functions for the behavior, and the display string states the expectation as a sentence: `@Test("duplicate repository errors become create use-case errors")`.
 
@@ -98,13 +97,9 @@ Keep a test when a plausible regression in code this package owns would fail it.
 
 The result is that `swift test` runs the whole target in milliseconds with no containers, which is what allows CI to run it on every pull request (the delivering-swift-services skill).
 
-## Isolation contract tests
-
-A package that owns an API taking a caller-isolated callback — a `Database`, a runner, a client's `with...` method — tests that contract directly, because a regression to an actor hop still compiles for most callers. Call it from a custom actor and from a `@MainActor` test, each with a closure that mutates a non-`Sendable` reference the caller owns. Suspend inside the closure (`await Task.yield()` is enough) and assert isolation on both sides of the suspension with `assertIsolated()`/`MainActor.assertIsolated()`: a closure that never suspends cannot detect a hop. Cover a thrown error propagating unchanged, and cancelling the caller's task mid-operation. A use case does not need these tests; the package that defines the boundary does.
-
 ## Transport tests
 
-A transport target is tested through the framework's own test harness, over mocks of what the controllers or handlers collaborate with — mocked use-case protocols in a module's surface, one mocked generated client protocol per proto service in a gateway — never over a database. On HTTP, compose the application in the test exactly as the composition root does, with a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key so the bearer middleware runs as shipped, and drive it with HummingbirdTesting's `.router` (or `VaporTesting`); cover the tier matrix — anonymous `401`, a token whose subject is not a user id `401`, the user and admin paths — and distinct error mappings (see *Tests* in [http.md](http.md)). On gRPC, a handler test binds the principal with the standard `ServiceContext.withValue`, or runs the interceptor with `MockUserAuthenticator(["admin-token": admin])` and sends `Bearer admin-token`, and asserts the status each use-case error maps to.
+A transport target is tested through the framework's own test harness, over mocks of what the controllers or handlers collaborate with — mocked use-case protocols in a module's surface, one mocked generated client protocol per proto service in a gateway — never over a database. On HTTP, compose the application in the test exactly as the composition root does, with a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key so the bearer middleware runs as shipped, and drive it with HummingbirdTesting's `.router` (or `VaporTesting`); the tier matrix and error mappings it covers are the building-swift-http-surfaces skill's (*Tests* in its [surface reference](../../building-swift-http-surfaces/references/surface.md#tests)). On gRPC, a handler test binds the principal with the standard `ServiceContext.withValue`, or runs the interceptor with `MockUserAuthenticator(["admin-token": admin])` and sends `Bearer admin-token`, and asserts the status each use-case error maps to.
 
 A transport test asserts routing, identification, conversion, and status. What the use case decides is the use-case test's, and a transport test that re-asserts a business rule through a mocked use case is testing its own mock.
 

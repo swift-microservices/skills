@@ -6,7 +6,7 @@ paths: "Sources/*Workflows/**/*.swift,Sources/*/Worker/**/*.swift"
 
 # Orchestrating Temporal workflows
 
-One way to add durable orchestration to a service built with the building-swift-services skill: where Temporal code lives, what a Workflow may and may not do, how an Activity stays retry-safe, and how the worker is composed, identified, and connected. Preserve every convention unless the user explicitly changes it; where the repository already has an established convention that differs, the repository wins for unrelated code.
+One way to add durable orchestration to a service built with the building-swift-services skill: where Temporal code lives, what a Workflow may and may not do, how an Activity stays retry-safe, and how the worker is composed, identified, and connected.
 
 Temporal is added from a stated requirement — durable waiting, timers, retries across an outage, a multi-step process that must finish — never speculatively. A synchronous capability call stays a gRPC call.
 
@@ -22,7 +22,7 @@ Rules in this skill are conventions the packages and the shared code shape depen
 
 The service package, its roles, and its composition root are the building-swift-services skill's; identity and the certificate a worker presents are described there too. Load that skill beside this one when the change touches Core, Postgres, or `serve`.
 
-Every Swift change also follows the building skill's [Foundation and modern API policy](../building-swift-services/references/swift-style.md#foundation-and-modern-apis): FoundationEssentials where needed, `FormatStyle` and `ParseStrategy` for formatting and parsing. When changing dependencies, check the latest compatible releases and their traits using its [dependency guidance](../building-swift-services/references/service-package.md#foundation-dependencies-and-traits). Modern Foundation API usage does not relax Workflow determinism or payload compatibility.
+Every Swift change also follows the writing-swift-server-code skill: its [Swift settings](../writing-swift-server-code/references/swift-settings.md) on the Workflows and WorkflowsTests targets, and its [Foundation policy](../writing-swift-server-code/references/foundation.md) — FoundationEssentials where needed, `FormatStyle` and `ParseStrategy` for formatting and parsing, current releases and their traits when changing dependencies. Modern Foundation API usage does not relax Workflow determinism or payload compatibility.
 
 ## Principles
 
@@ -95,7 +95,7 @@ Copy this checklist and check items off as you go:
 ```
 Add a workflow:
 - [ ] 1. Core: XWorkflowClient protocol, XWorkflowState and XWorkflowResult, XActivityServiceProtocol with typed errors, XActivityService over the worker's use cases
-- [ ] 2. Workflows target: <Feature>Workflow with nested Input, signals and queries, timers for expiring conditions; <Feature>Activities with one side effect each, idempotency from input, and nested Codable inputs and outputs; Temporal<Feature>WorkflowClient with deterministic IDs
+- [ ] 2. Workflows target: <Feature>Workflow with nested Input, signals and queries, timers for expiring conditions; <Feature>Activities with one side effect each (issuing a secret, delivering it, and deleting it are three Activities), idempotency from input, and nested Codable inputs and outputs; Temporal<Feature>WorkflowClient with deterministic IDs
 - [ ] 3. Postgres: CreateWorkerRole migration, Postgres<Service>WorkerScope conforming only to the worker use cases' scopes
 - [ ] 4. serve: one long-lived TemporalClient in ServiceGroup, the workflow-client adapter injected into the use cases, every start or signal after the transaction commits
 - [ ] 5. worker run: Worker group and Run composition root; worker-role PostgresClient and database; interceptor-free internal-service clients; TemporalWorker with explicit workflows and containers; one ServiceGroup

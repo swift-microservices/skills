@@ -1,6 +1,8 @@
 ---
 type: llm
+focus: { source: file, path: acme-catalog/Sources/Catalog/Serve/Serve.swift }
 ---
 
-PASS if the excerpts validate the initial pair by priming each TimedCertificateReloader before passing it to transport creation, retain full server verification and explicit CA trust, and list each used reloader directly once in its process's ServiceGroup alongside the clients/server/worker. Reloaders actually supply credentials to their corresponding transports.
-FAIL if Temporal uses the service pair, a reloader is optional or unstarted, the same reloader is run twice, or the transport still uses static credential files instead of the reloader. The code may share a service reloader among clients and server using that pair.
+PASS if Catalog's root creates two `TimedCertificateReloader`s before their transports — one from the `tls` scope for the gRPC server and clients and one from `temporal.tls` for the Temporal client — passes each to its transport, and adds each exactly once to the `ServiceGroup`.
+
+FAIL if Temporal uses the service reloader or pair, a reloader is never added to the `ServiceGroup`, or the root contains validation guards or inline certificate parsing.

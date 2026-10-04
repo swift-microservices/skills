@@ -1,6 +1,8 @@
 ---
 type: llm
+focus: { source: file, path: configuration-notes.md }
 ---
 
-PASS if Temporal configuration uses the native reader and preserves the SDK's own scoping/keys; Valkey tuning uses its native reader with explicit endpoint/TLS construction for the documented gap. The explanation also recognizes Hummingbird's native reader without adding an unused HTTP server. For library adoption, it keeps provider construction, environment selection, and deployment mount defaults in the application; a library accepts a scoped reader, documents relative keys and tuning defaults, and delegates to its typed initializer.
-FAIL if every library gets a hand-written duplicate adapter, native support is treated as configuring Valkey's endpoint/TLS when it does not, a library constructs EnvironmentVariablesProvider or bootstraps logging, or a new shared configuration framework is introduced for these small adapters. Do not require editing upstream libraries in this exercise.
+PASS if the notes say the executable owns provider construction, environment selection, and deployment mount defaults, while a library adopting `ConfigReader` accepts a scoped reader, documents its relative keys and tuning defaults, and delegates to its typed initializer; and that native readers (Hummingbird, Temporal, Valkey) remove the need for hand-written adapters except for what they do not cover, such as Valkey's endpoint and TLS.
+
+FAIL if the notes have a library construct `EnvironmentVariablesProvider` or bootstrap logging, claim Valkey's native reader configures endpoint or TLS, or propose a new shared configuration package.

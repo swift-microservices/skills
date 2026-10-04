@@ -3,5 +3,8 @@ type: llm
 focus: { source: file, path: acme-backend/Sources/NotebooksCore/Notebooks/UseCases/ListNotebooks/ListNotebooksUseCase.swift }
 ---
 
-PASS if the list use case takes subject: UserIdentity, lists the subject's own notebooks, and lets an administrator list every notebook by checking .admin in its own body (throwing its own .forbidden when a non-administrator asks for every notebook), reaching all rows through a scope only the internal-role database adopts; all I/O runs inside withTransaction.
-FAIL if the administrator decision is made in a controller, middleware, or context conversion with no check in the use case, if it receives a connection or request directly, or if the identity type is not UserIdentity.
+PASS if all of these hold:
+- The use case is generic over a `Database` whose scope adopts its use-case scope, takes `subject: UserIdentity`, and reads inside `database.withTransaction`.
+- If it also serves administrators listing every notebook, it checks `.admin` in its own body and throws its own `.forbidden`; serving administrators through a separate use case with its own check is equally acceptable.
+
+FAIL if it receives a connection or request directly, reads `ServiceContext`, or relies on a controller or middleware for an administrator decision it makes itself.

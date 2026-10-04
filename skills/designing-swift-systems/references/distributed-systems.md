@@ -138,7 +138,7 @@ This is the rule that makes microservices different from a monolith, where the t
 
 **The tenant reaches the policy in each service on its own.** Each service's `UserSettingsInterceptor` binds `PostgresSettings.user(_:)` from the caller it verified, so the tenant policy in each database sees the user that service verified, not one a caller claimed.
 
-The mechanics of signing, verifying, binding, and forwarding are the building-swift-services skill's (its identity-and-access and http references); this section fixes where they apply.
+The mechanics of signing, verifying, binding, and forwarding are the building-swift-services skill's (its identity-and-access reference) and the building-swift-http-surfaces skill's; this section fixes where they apply.
 
 ## Observability and operations
 
@@ -151,7 +151,7 @@ Establish consistent signals across services:
 - distributed traces across remote boundaries when the operating stack supports them;
 - deployment version and contract version visibility.
 
-Log domain events in use cases through the `swift-log` facade, and request, transport, and infrastructure events at the executable and transport boundaries. Keep error messages safe for clients while retaining diagnostic context in internal logs. Ship logs to one aggregator so a single query spans services: each process pushes in-process (no scraping agent), each line carries a `service` label and its logger label, with a request or correlation id as metadata, and the bound `user_id` or `service_name` from the metadata providers. The building-swift-services skill has the bootstrap; the delivering-swift-services skill has the aggregator.
+Log domain events in use cases through the `swift-log` facade, and request, transport, and infrastructure events at the executable and transport boundaries. Keep error messages safe for clients while retaining diagnostic context in internal logs. Ship logs to one aggregator so a single query spans services: each process pushes in-process (no scraping agent), each line carries a `service` label and its logger label, with a request or correlation id as metadata, and the bound `user_id` from the `.user` metadata provider; the local process is identified by its service label, never by an identity asserted in request metadata. The building-swift-services skill has the bootstrap; the delivering-swift-services skill has the aggregator.
 
 Use graceful shutdown signals and lifecycle management. Stop accepting work, allow bounded in-flight completion, close clients/servers, and make restart behavior safe. Migrations run before the server binds: in the serving container at boot behind `serve --migrate-database` by default, or as a `migrate` one-shot ahead of the rollout when the platform orders jobs.
 
@@ -163,7 +163,7 @@ Define alerts from user-impacting symptoms and service objectives, not every log
 2. Challenge every proposed remote boundary against the reasons in shapes.md; merge services that lack one into a module of another, or into a monolith.
 3. Define the first vertical user journey and the contracts it needs, split by audience.
 4. Create and release the shared proto package, `<project>-protos`, and the organization's core package, `<project>-core`, over the swift-microservices packages.
-5. Initialize each service package with `swift package init --type executable`, and the gateway package `<organization>-api` when browsers or REST clients are among the callers.
+5. Initialize each service package with `swift package init --type executable`, and the gateway package `<organization>-api` (the building-swift-http-surfaces skill) when browsers or REST clients are among the callers.
 6. Build the owning service from Core outward through Postgres, gRPC, composition, and environment, with the building-swift-services skill.
 7. Build consumers against their local use-case protocols and generated clients, verifying the token at each service and forwarding it on user-facing descriptors alone.
 8. Add dedicated databases, migration jobs, private networking, certificates, secrets, lifecycle, and observability.

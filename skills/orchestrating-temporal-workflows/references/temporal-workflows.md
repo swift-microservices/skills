@@ -352,7 +352,7 @@ Configure the client and worker with the SDK’s native readers over `temporal`,
 
 ## Testing workflows
 
-Use the same shared [Swift settings](../../building-swift-services/references/service-package.md#swift-settings-for-packages-and-applications) on Workflows and WorkflowsTests as on the application's other Swift targets.
+Use the same shared [Swift settings](../../writing-swift-server-code/references/swift-settings.md) on Workflows and WorkflowsTests as on the application's other Swift targets.
 
 A Workflow is tested by running it. `<Service>WorkflowsTests` sits beside `<Service>CoreTests` and depends on the Workflows target, Core, `swift-log`, and the SDK's `Temporal` and `TemporalTestKit` products:
 
@@ -470,4 +470,4 @@ Sources/<Service>Workflows/<Feature>/
   Temporal<Feature>WorkflowClient.swift
 ```
 
-Use `package` access across targets, `private` mutable Workflow fields, nested `Input` values, and nested Activity input and output values. Use FoundationEssentials where needed and preserve import ordering and any SDK compatibility fallback, following the building skill's [modern API policy](../../building-swift-services/references/swift-style.md#foundation-and-modern-apis). Name identifiers `xId`, Workflow types `XWorkflow`, Activity containers `XActivities`, Core ports `XWorkflowClient`, and Temporal implementations `TemporalXWorkflowClient`.
+Use `package` access across targets, `private` mutable Workflow fields, nested `Input` values, and nested Activity input and output values. Use FoundationEssentials where needed and preserve import ordering and any SDK compatibility fallback, following the writing-swift-server-code skill's [Foundation policy](../../writing-swift-server-code/references/foundation.md). Name identifiers `xId`, Workflow types `XWorkflow`, Activity containers `XActivities`, Core ports `XWorkflowClient`, and Temporal implementations `TemporalXWorkflowClient`.

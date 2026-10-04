@@ -1,6 +1,8 @@
 ---
 type: llm
+focus: { source: file, path: acme-catalog/Sources/Catalog/Configuration/InMemoryProvider+ApplicationDefaults.swift }
 ---
 
-PASS if each executable constructs environment-first providers followed by its own InMemoryProvider defaults; all specified mount paths appear in those application defaults and can be overridden independently. A single relative-key TimedCertificateReloader.Configuration init(config:) works unchanged with tls and temporal.tls, requiring certificatePath/privateKeyPath from the selected reader. Transport factories similarly read trustRootsPath relative to that scope. Catalog has separate required service and Temporal reloaders; Mailer constructs only its Temporal reloader and does not eagerly read absent serving/migration credentials.
-FAIL if paths are embedded in reusable adapters, the reader initializer also takes defaultPath/certificateDirectory/defaultSomething arguments, a boolean selects shared Temporal credentials, the reader ignores overrides, or Mailer needs unused scopes just to initialize configuration. Database/role names, task queues, and application URLs also have one application default owner; ordinary library tuning may remain in readers. When policy configuration is present, defaults derive from Core's standard values and malformed security overrides fail. Honor explicit project exceptions. Do not require identical application default values between executables.
+PASS if Catalog's application defaults are an `InMemoryProvider` extension that holds the service credential paths under a `tls` scope (`/run/catalog-peer/...`) and the Temporal credential paths under a separate `temporal.tls` scope (`/run/catalog-temporal/...`), as relative keys such as `certificatePath`, `privateKeyPath`, and `trustRootsPath`.
+
+FAIL if both pairs share one scope, the paths are missing, or a boolean selects which pair Temporal uses.

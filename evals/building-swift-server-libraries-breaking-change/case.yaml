@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: building-swift-server-libraries-breaking-change
+tags: [libraries, semver]
+context:
+  scaffold_script: scaffold.sh
