@@ -19,11 +19,11 @@ let package = Package(
     products: [.executable(name: "notes", targets: ["Notes"])],
     dependencies: [
         .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
-        .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.0"),
-        .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.2.0"),
-        .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.2.0"),
+        .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.1"),
+        .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.3.0"),
+        .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.4.0"),
         .package(url: "https://github.com/acme/acme-core.git", from: "0.1.0"),
-        .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.0"),
+        .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.1"),
         .package(url: "https://github.com/hummingbird-project/postgres-migrations.git", from: "1.2.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
     ],
@@ -128,7 +128,11 @@ package import PostgresMigrations
 package import PostgresNIO
 
 package struct CreateNotesRLSPolicy: DatabaseMigration {
-    package init() {}
+    private let internalRole: String
+
+    package init(internalRole: String) {
+        self.internalRole = internalRole
+    }
 
     package func apply(connection: PostgresConnection, logger: Logger) async throws {
         try await connection.query("ALTER TABLE notes ENABLE ROW LEVEL SECURITY", logger: logger)
@@ -141,7 +145,7 @@ package struct CreateNotesRLSPolicy: DatabaseMigration {
             logger: logger
         )
         try await connection.query(
-            "CREATE POLICY notes_internal ON notes TO \"notes_internal\" USING (true) WITH CHECK (true)",
+            PostgresQuery(unsafeSQL: "CREATE POLICY notes_internal ON notes TO \"\(internalRole)\" USING (true) WITH CHECK (true)"),
             logger: logger
         )
     }
@@ -149,6 +153,7 @@ package struct CreateNotesRLSPolicy: DatabaseMigration {
     package func revert(connection: PostgresConnection, logger: Logger) async throws {
         try await connection.query("DROP POLICY IF EXISTS notes_internal ON notes", logger: logger)
         try await connection.query("DROP POLICY IF EXISTS notes_tenant ON notes", logger: logger)
+        try await connection.query("ALTER TABLE notes DISABLE ROW LEVEL SECURITY", logger: logger)
     }
 }
 SWIFT

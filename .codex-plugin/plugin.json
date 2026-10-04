@@ -15,6 +15,7 @@
     "microservices",
     "grpc",
     "http",
+    "libraries",
     "hummingbird",
     "vapor",
     "postgres",

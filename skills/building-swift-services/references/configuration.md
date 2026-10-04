@@ -98,7 +98,7 @@ Document the configuration contract in examples and deployment declarations, inc
 
 ## Library adoption
 
-A reusable library can expose a convenience initializer accepting `ConfigReader`, read documented relative keys, and delegate to its existing typed initializer. The application chooses providers, scopes, and deployment defaults. Libraries must not construct `EnvironmentVariablesProvider`, hard-code the application's mount paths, or bootstrap logging.
+A reusable library may expose a convenience initializer accepting `ConfigReader` that reads documented relative keys and delegates to its typed initializer; the application chooses providers, scopes, and deployment defaults. What a library may and may not do with configuration is the building-swift-server-libraries skill's ([API reference](../../building-swift-server-libraries/references/api.md#logging-configuration-and-lifecycle)).
 
 When adopting a native reader, remove only the adapter logic it replaces. Keep endpoint construction and runtime dependencies where necessary. Do not create a new shared configuration package just to eliminate a few small executable-local extensions.
 

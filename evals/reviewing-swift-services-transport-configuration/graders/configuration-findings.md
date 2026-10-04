@@ -2,5 +2,9 @@
 type: llm
 ---
 
-PASS if the report identifies application defaults preceding environment overrides, the client's defaultTrustRootsPath parameter alongside ConfigReader, and the refresh-interval validation guard in Serve. It recommends environment-first precedence, application-owned mount defaults consumed via relative keys, and keeping necessary validation at configuration/library boundaries without duplicating arbitrary guards. Each finding includes file-and-line evidence.
-FAIL if it says later providers win, moves mount defaults into the generic transport extension, or recommends additional root validation instead of simplifying the root.
+PASS if the report includes, each with a file reference, all three findings:
+- application defaults are listed before environment variables, so environment overrides never apply;
+- `defaultTrustRootsPath` (or a default path) is passed beside the `ConfigReader`;
+- the refresh interval is validated with a guard in Serve.
+
+FAIL if it says later providers win, or recommends adding more validation to the composition root.

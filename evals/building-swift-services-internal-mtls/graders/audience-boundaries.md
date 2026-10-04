@@ -1,6 +1,8 @@
 ---
 type: llm
+focus: { source: file, path: acme-accounts/Sources/AccountsGRPC/Accounts/AccountInternalService.swift }
 ---
 
-PASS if the billing call uses a long-lived internal-service client without a bearer token or authentication interceptor; the receiving internal handler passes business input directly to its use case, with no process subject and no Core ServiceContext access. AccountService continues to verify user JWTs and passes the verified user explicitly to its user use cases. Any user/account identifier in the internal request is business data, not a caller assertion.
-FAIL if internal work needs a fabricated user, process token, certificate-to-principal conversion, per-service application role, or an authenticated user context; or if removing bearer authentication from the internal service also removes it from the user service. Business invariants and transaction boundaries still apply to internal operations.
+PASS if the internal handler converts the request to business input and calls an input-only use case (`callAsFunction(input:)` or similar), with no user subject, no process identity, and no read of `ServiceContext` to find a caller. A user or account id in the request is passed as business data.
+
+FAIL if the handler requires a bound user, fabricates a caller, maps the client certificate to an application principal, or checks a per-service application role.

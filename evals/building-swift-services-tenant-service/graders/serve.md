@@ -3,5 +3,9 @@ type: llm
 focus: { source: file, path: acme-documents/Sources/Documents/Serve/Serve.swift }
 ---
 
-PASS if the composition root builds a PostgresDatabase (from swift-persistence-postgres) per role scope, one JWTAuthenticator<UserIdentity> from the public key, and one GRPCServer that applies BearerAuthenticationInterceptor followed by UserSettingsInterceptor to the user-facing service by descriptor and nothing to a public service.
-FAIL if the interceptors are applied to a public service or per method, UserSettingsInterceptor is missing or precedes authentication, or the database is not a PostgresDatabase from swift-persistence-postgres.
+PASS if all of these hold in Serve:
+- It builds `PostgresDatabase` values from swift-persistence-postgres over the role clients.
+- It builds one `JWTAuthenticator<UserIdentity>` from the public key.
+- One `GRPCServer` applies `BearerAuthenticationInterceptor` and then `UserSettingsInterceptor` to the user-facing service's descriptor only.
+
+FAIL if an interceptor is applied to a public service or per method, `UserSettingsInterceptor` is missing or comes first, or the package declares its own database type.

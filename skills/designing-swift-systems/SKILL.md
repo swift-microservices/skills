@@ -7,9 +7,9 @@ description: Designs a Swift server system the swift-microservices way, or resha
 
 One way to decide what a system is, how its modules are cut, and how they talk, before any of it is built. It encodes shape, boundary, ownership, and consistency rules learned from running such systems on the [swift-microservices](https://github.com/swift-microservices) packages and an organization layer, `<project>-core`. Read applicable `AGENTS.md` files first: their project profile, styles, and recorded exceptions override these general conventions. Preserve unrelated established code.
 
-Building a module or service, the HTTP surface, and the gateway a design calls for, orchestrating Temporal workflows, and delivering images are separate skills; this one produces the design.
+Building a module or service (building-swift-services), the HTTP surface or gateway a design calls for (building-swift-http-surfaces), the shared libraries and `<project>-core` (building-swift-server-libraries), orchestrating Temporal workflows, and delivering images are separate skills; this one produces the design.
 
-When choosing frameworks and dependencies, follow the building skill's [Foundation dependency guidance](../building-swift-services/references/service-package.md#foundation-dependencies-and-traits): prefer current compatible releases supporting FoundationEssentials and modern APIs, verify trait defaults, and record unavoidable full-Foundation requirements from upstream libraries. Do not promise an Essentials-only application from the framework name alone. Implementation follows its [modern API policy](../building-swift-services/references/swift-style.md#foundation-and-modern-apis).
+When choosing frameworks and dependencies, follow the writing-swift-server-code skill's [Foundation dependency guidance](../writing-swift-server-code/references/foundation.md#dependency-traits-that-pull-in-foundation): prefer current compatible releases supporting FoundationEssentials and modern APIs, verify trait defaults, and record unavoidable full-Foundation requirements from upstream libraries. Do not promise an Essentials-only application from the framework name alone.
 
 Rules in this skill are conventions the packages and the shared code shape depend on; keep them unless the user changes the vocabulary. Where a rule says *default* and names an alternative, that is a project choice: take the default unless the project's decision record says otherwise, and never switch it per file.
 
@@ -100,7 +100,7 @@ Design a system:
 - [ ] 5. Define versioned contracts by audience, with failure semantics and idempotency, before producers or consumers (protos only where a process boundary exists)
 - [ ] 6. Write the consistency record for every cross-module or cross-service read or write
 - [ ] 7. State where identity is verified: once at the transport, or at the gateway and every service
-- [ ] 8. Create and tag <project>-core (and <project>-protos in microservices); then build each module or service vertically with the building-swift-services skill
+- [ ] 8. Create and tag <project>-core (and <project>-protos in microservices) with the building-swift-server-libraries skill; then build each module or service vertically with the building-swift-services skill, and its HTTP surface or gateway with building-swift-http-surfaces
 - [ ] 9. Add deadlines, retries, observability, health, and security in proportion to the requirements
 ```
 

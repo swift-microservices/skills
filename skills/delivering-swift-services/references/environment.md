@@ -63,7 +63,7 @@ Consumers reach producers by service name: `GRPC_<SERVICE>_HOST=<service>`, `GRP
 
 ## Postgres and migrations
 
-One Postgres instance **per service** — `<service>-postgres`, `postgres:18`, its own volume mounted at `/var/lib/postgresql` (PostgreSQL 18 changed the image's volume layout; do not set a custom `PGDATA`), a health check, and no `ports:`. The instance is provisioned with its database and owner through the image's own variables, so there is no init job and nothing ever creates a database. Per-service instances keep the local suite honest and disposable; a deployment environment may instead consolidate to one shared instance with a database per service — the ownership rule survives either shape (see *One instance or many* in the building-swift-services skill's persistence reference).
+One Postgres instance **per service** — `<service>-postgres`, `postgres:18`, its own volume mounted at `/var/lib/postgresql` (PostgreSQL 18 changed the image's volume layout; do not set a custom `PGDATA`), a health check, and no `ports:`. The instance is provisioned with its database and owner through the image's own variables, so there is no init job and nothing ever creates a database. Per-service instances keep the local suite honest and disposable; a deployment environment may instead consolidate to one shared instance with a database per service — the ownership rule survives either shape (see *Where a service's data lives* in the building-swift-services skill's persistence reference).
 
 Per service:
 

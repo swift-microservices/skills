@@ -1,6 +1,12 @@
 ---
 type: llm
+focus: { source: file, path: acme-accounts/Sources/Accounts/Serve/Serve.swift }
 ---
 
-PASS if the internal listener requires client certificates against explicit CA roots, outgoing clients verify server chain and hostname, and both processes prime TimedCertificateReloader via makeReloaderValidatingSources before transport construction and run it once in ServiceGroup. The transport factories use the passed reloader and read relative trust keys; the reloader configuration adapter accepts a reader without a logger argument. dependencies.md names NIOCertificateReloading from swift-nio-extras and the gRPC lifecycle integration used. A process can share one reloader across transports using the same suitable credential pair.
-FAIL if credentials are only loaded at startup, a constructed reloader is never run, the client disables hostname verification, the listener offers plaintext or unauthenticated TLS, or factories accept but ignore the reloader. Judge concrete code, not only the summary. Server-side noHostnameVerification still verifies the client chain and is acceptable.
+PASS if all of these hold in the accounts root:
+- A `TimedCertificateReloader` is created (for example with `makeReloaderValidatingSources`) before the server transport.
+- The `GRPCServer` transport uses mTLS given that reloader, so client certificates are required against explicit trust roots.
+- The reloader is in the `ServiceGroup`.
+- The bearer interceptor is applied to the user-facing `AccountService` descriptor and not to `AccountsInternalService`.
+
+FAIL if the listener offers plaintext or optional client certificates, the reloader is never run, or the internal service gets a bearer interceptor. Server-side `.noHostnameVerification` still verifies the client chain and is acceptable.

@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: building-swift-http-surfaces-gateway-admin-delete
+tags: [http, gateway]
+context:
+  scaffold_script: scaffold.sh

@@ -5,10 +5,15 @@ Agent skills for building Swift systems the [swift-microservices](https://github
 | Skill | Use it when |
 | --- | --- |
 | `designing-swift-systems` | choosing the shape (a modular monolith or microservices) and the transport (HTTP, gRPC, or both), cutting modules, communication, events and projections, consistency, and when a module becomes a service |
-| `building-swift-services` | creating or changing a module or a service: Core, Postgres with row-level security, the HTTP or gRPC transport, the executable, a gateway in front of services, and the tests |
+| `building-swift-services` | creating or changing a monolith, a module, or a service: Core, Postgres with row-level security, gRPC contracts and adapters, identity, configuration, the composition root, and the tests |
+| `building-swift-http-surfaces` | putting HTTP on a module or service, or a gateway in front of services: the OpenAPI document, contexts, router tiers, controllers, problem details, Vapor 4 |
+| `building-swift-server-libraries` | creating or changing a reusable library: a swift-microservices package, a driver or binding, or an organization's `<project>-core` |
+| `writing-swift-server-code` | the Swift inside any of them: Swift 6 settings, concurrency, FoundationEssentials and modern formatting, dependency traits, style and formatting |
 | `orchestrating-temporal-workflows` | workflows, Activities, signals, queries, and workers |
 | `delivering-swift-services` | standard library/service CI, images, Compose, secrets, certificates, service CI, per-commit publishing, migrations in the pipeline |
-| `reviewing-swift-services` | auditing an existing service against the rules, read-only, on request |
+| `reviewing-swift-services` | auditing an existing service, monolith, or gateway against the rules, read-only, on request |
+
+A task often loads more than one: building a module's HTTP routes uses `building-swift-services` and `building-swift-http-surfaces`, and every code change follows `writing-swift-server-code`. Each topic still has exactly one home; skills link to each other's references rather than restating them.
 
 ## Install in Claude Code
 
@@ -62,7 +67,7 @@ claude plugin eval .               # run every eval case with and without the pl
 
 Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`. Cases with a `scaffold.sh` need `--scaffold`, and cases that edit or build need `--allow-tools Bash Write Edit`; add `--keep-temp` to keep each run's workspace. The eval loader rejects any symbolic link under `evals/`, so keep SwiftPM `.build` directories out of `evals/results/`.
 
-`claude plugin eval` has no script grader. After a `building-swift-services-swift-settings` run, check its kept workspace with `python3 evals/building-swift-services-swift-settings/checks/verify.py <workspace>`: it asserts every target's settings, compiles independent actor and MainActor contract tests against the migrated API, and runs the executable.
+`claude plugin eval` has no script grader. After a `writing-swift-server-code-swift-settings` run, check its kept workspace with `python3 evals/writing-swift-server-code-swift-settings/checks/verify.py <workspace>`: it asserts every target's settings, compiles independent actor and MainActor contract tests against the migrated API, and runs the executable.
 
 Library CI evals cover an ordinary tested library, a real PostgreSQL provider, and a generated
 SDK with optional transport traits. Run the corresponding `delivering-swift-services-library-ci*`

@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: building-swift-server-libraries-org-core-middleware
+tags: [libraries, organization-layer]
+context:
+  scaffold_script: scaffold.sh

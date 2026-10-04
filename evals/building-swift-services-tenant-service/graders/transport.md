@@ -1,6 +1,12 @@
 ---
 type: llm
+focus: { source: file, path: acme-documents/Sources/Documents/Serve/Serve.swift }
 ---
 
-PASS if the private service listener requires mTLS with explicit CA roots, primes TimedCertificateReloader from NIOCertificateReloading before constructing the transport, supplies that reloader to the listener, and owns it once in ServiceGroup. Trust and certificate-verification configuration are implemented in a focused scoped-reader factory rather than inline in Serve. User JWT and tenant-setting interceptors still apply only to user descriptors.
-FAIL if the listener has a plaintext fallback, client certificates are optional or unverified, leaf credentials are loaded only once with no managed reload loop, or a certificate-derived application identity/interceptor is added. Server-side noHostnameVerification is valid for verifying client certificates against the configured CA; do not confuse it with disabling certificate verification.
+PASS if all of these hold in Serve:
+- A `TimedCertificateReloader` is created (for example with `makeReloaderValidatingSources`) before the server transport.
+- The `GRPCServer` transport uses mTLS transport security given that reloader (directly or through a factory such as `.mTLS(config:certificateReloader:)`).
+- The reloader is in the `ServiceGroup`.
+- `BearerAuthenticationInterceptor` and `UserSettingsInterceptor` are applied only to the user service's descriptor.
+
+FAIL if the listener has a plaintext option, the reloader is never added to the `ServiceGroup`, or an interceptor derives an application identity from the client certificate. Trust configuration inside a factory defined in another file is expected.

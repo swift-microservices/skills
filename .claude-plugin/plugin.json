@@ -1,6 +1,6 @@
 {
   "name": "swift-microservices",
-  "description": "Design, build, orchestrate, deliver, and review Swift systems on the swift-microservices packages: modular monoliths or microservices, over HTTP, gRPC, or both, with Postgres row-level security.",
+  "description": "Design, build, orchestrate, deliver, and review Swift systems on the swift-microservices packages: modular monoliths or microservices, over HTTP, gRPC, or both, with Postgres row-level security, and the reusable libraries they share.",
   "version": "0.5.0",
   "author": {
     "name": "Zaid Rahhawi"
@@ -15,6 +15,7 @@
     "microservices",
     "grpc",
     "http",
+    "libraries",
     "hummingbird",
     "vapor",
     "postgres",

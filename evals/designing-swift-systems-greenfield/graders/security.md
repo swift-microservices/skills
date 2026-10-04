@@ -3,5 +3,6 @@ type: llm
 focus: { source: file, path: design.md }
 ---
 
-PASS if the design separates user authentication and authorization from transport admission: user operations verify JWTs and pass the verified user to the owning use case for permission decisions; any service-to-service or worker-to-service calls use mTLS with explicit private CA trust, and internal operations accept business input without an application process principal. For separate processes, the design keeps internal listeners private and recognizes that every peer admitted by their trust policy can reach their internal APIs. For a monolith with only in-process module calls, do not require certificates between modules or invent a CA service without a network use case.
-FAIL if shared API keys or process bearer tokens authenticate internal calls, certificates are mapped into application subjects or per-service permission roles, internal operations are exposed through the public gateway, or user permission decisions exist only in a gateway, interceptor, or database policy.
+PASS if user operations verify the user's JWT and pass the verified user to the owning use case, which decides permissions, and any connection between separate processes uses mTLS. A monolith with only in-process module calls needs no certificates between modules.
+
+FAIL if internal calls are authenticated with shared API keys or process bearer tokens, certificates are mapped to application users or permission roles, internal operations are exposed through the public HTTP surface, or user permissions are decided only in a gateway, middleware, or database policy.

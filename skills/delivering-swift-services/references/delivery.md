@@ -79,7 +79,7 @@ An organization `ci` repository of composite actions remains the right home for 
 
 ## Platform configuration and its traps
 
-One application per process — `<service>`, and `<service>-worker` running the same image with `worker run` as its command — plus Postgres as either a per-service instance or one shared instance with a database per service (see *One instance or many* in the building-swift-services skill's persistence reference), Docker-image sourced. Key files arrive as file mounts at the same paths the Compose environment used, so the service's configuration does not know which environment it is in.
+One application per process — `<service>`, and `<service>-worker` running the same image with `worker run` as its command — plus Postgres as either a per-service instance or one shared instance with a database per service (see *Where a service's data lives* in the building-swift-services skill's persistence reference), Docker-image sourced. Key files arrive as file mounts at the same paths the Compose environment used, so the service's configuration does not know which environment it is in.
 
 **One project, one environment per deployment tier.** Keep the services and their supporting applications in one Dokploy project, with separate staging and production environments. Shared values live in each environment and are referenced explicitly as `${{environment.KEY}}`. Use application-local values for role secrets and task queues. Do not mix this with project-scope references for tier-specific values. Each tier has separate database state, JWT keys, and certificate trust. References resolve on deployment; redeploy affected consumers after changing them.
 

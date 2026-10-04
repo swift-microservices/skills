@@ -24,10 +24,11 @@ Use mTLS to admit service connections and user JWTs to authorize user operations
 | --- | --- |
 | swift-authentication | Generic `Authenticator`, `CredentialIssuer`, `Principal`, and `PrincipalKey` |
 | swift-authentication-jwt | Issue and verify user JWTs through jwt-kit |
-| swift-authentication-grpc | Bind user bearer principals and forward their original credentials |
+| swift-authentication-grpc | Bind user bearer principals and forward their original credentials; it has no certificate interceptor, because transport mTLS admits processes |
 | swift-authentication-hummingbird / swift-authentication-vapor | Bind user principals in HTTP request contexts |
 | grpc-swift-nio-transport | TLS handshakes, explicit CA trust, and peer certificate verification |
 | swift-nio-extras, product `NIOCertificateReloading` | `TimedCertificateReloader` for updated certificate/key files |
+| swift-openapi-token-authentication | Client side only: an OpenAPI `ClientMiddleware` and token session that attach and refresh a user's access token, for apps and SDKs calling an HTTP surface; never linked by a server |
 
 The organization module `<Project>Authentication` owns `UserIdentity`, `UserRole`, user context accessors, and the `.user` logging metadata provider. It may add JWT key conveniences. It does not map transport certificates into application principals. Keep configuration adapters in the executable unless the underlying library already offers a native reader.
 
