@@ -219,7 +219,7 @@ With HTTP, the root adds **Router** and **Hummingbird** sections after Compositi
 
 ## The gRPC section
 
-Construct one server with every proto service the process serves, every module's in a monolith, and apply each interceptor to the service whose audience it identifies:
+Construct one server with every proto service the process serves, every module's in a monolith, and apply each interceptor to the services whose callers it identifies:
 
 ```swift
 // MARK: - gRPC
@@ -232,12 +232,13 @@ let server = GRPCServer(
         ),
         transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader)
     ),
-    services: [itemPublicService, itemService, itemInternalService, userPublicService, userService],
+    services: [itemPublicService, itemService, itemAdminService, itemInternalService, userPublicService, userService],
     interceptorPipeline: [
         .apply(
             BearerAuthenticationInterceptor(authenticator: userAuthenticator),
             to: .services([
                 <Organization>_Catalog_V1_ItemService.descriptor,
+                <Organization>_Catalog_V1_ItemAdminService.descriptor,
                 <Organization>_Users_V1_UserService.descriptor,
             ])
         ),

@@ -165,8 +165,8 @@ What stays per package is the wiring: configuration readers, transport-security 
 - Entity: `Item`.
 - Use case: `CreateItemUseCase`; port `CreateItemUseCaseProtocol`; input and typed failure `CreateItemUseCaseInput`, `CreateItemUseCaseError`; narrow scope `CreateItemUseCaseScope`.
 - Repository: `ItemRepository`, `ItemRepositoryError`; write intent `CreateItemCommand`.
-- Postgres implementation: `PostgresItemRepository`; prepared statement `CreateItemStatement`; scopes `PostgresCatalogScope`, `PostgresCatalogInternalScope`, `PostgresCatalogWorkerScope`; the module's migration list `CatalogMigrations`.
-- gRPC service implementations, one per proto service: `ItemPublicService`, `ItemService`, `ItemInternalService`.
+- Postgres implementation: `PostgresItemRepository`; prepared statement `CreateItemStatement`; scopes `PostgresCatalogScope`, `PostgresCatalogInternalScope`, `PostgresCatalogWorkerScope`; migrations such as `CreateItemsTable`, which the executable's `Migrations.swift` lists.
+- gRPC service implementations, one per proto service: `ItemPublicService`, `ItemService`, `ItemAdminService`, `ItemInternalService`.
 - HTTP controller, one per resource: `ItemController`; contexts `IdentityRequestContext`, `AdminRequestContext`; conversions `ItemResponse+Schema.swift` in a module, `ItemResponse+RPC.swift` in a gateway.
 - Cross-module port in a consumer's Core: the producer's `XUseCaseProtocol`, or a narrow `<Entity>Client` port such as `AccountClient`; its gRPC implementation `GRPCAccountClient` in the consumer's GRPC target.
 - Identity: `UserIdentity` as `subject:` on user operations; internal operations accept business input directly after transport mTLS admission.

@@ -10,7 +10,7 @@ Use mTLS to admit service connections and user JWTs to authorize user operations
 - Identifying a caller versus requiring one
 - Where the caller lives
 - Authorization lives in the use case
-- One RPC service per audience
+- One RPC service per kind of caller
 - Propagating the caller
 - Validation at every process boundary
 - Processes: the certificate is the credential
@@ -61,7 +61,8 @@ On tenant operations, the user settings interceptor or middleware follows bearer
 | Audience | Use-case signature | Access boundary |
 | --- | --- | --- |
 | Public | `callAsFunction(input:)` | Operation-specific credentials or proofs |
-| User / administrator | `callAsFunction(subject: UserIdentity, input:)` (omit empty input) | Verified user; owning use case checks role and resource access |
+| User (`…Service`) | `callAsFunction(subject: UserIdentity, input:)` (omit empty input) | Verified user; the tenant policy confines rows, and the input names no user |
+| Administrator (`…AdminService`) | `callAsFunction(subject: UserIdentity, input:)` | Verified user; owning use case requires the administrator role before any I/O |
 | Internal service / worker | `callAsFunction(input:)` | Peer admitted by transport mTLS; owning use case checks business invariants |
 
 Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep backend listeners private and gateway routes limited to public and user operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
@@ -72,15 +73,15 @@ A self-only operation derives its user ID from `subject`, never a business input
 
 When two audiences share business work, expose a user overload and an input-only internal overload with a private common implementation. Do not let the user overload skip its permission check.
 
-## One RPC service per audience
+## One RPC service per kind of caller
 
-Split protobuf descriptors into `<Entity>PublicService`, `<Entity>Service`, and `<Entity>InternalService`, omitting unused audiences. Apply bearer authentication and then tenant settings only to user descriptors:
+Split protobuf descriptors into `<Entity>PublicService`, `<Entity>Service`, `<Entity>AdminService`, and `<Entity>InternalService`, omitting unused ones (the table in [grpc-and-protos.md](grpc-and-protos.md#contract-design) says what each holds). Apply bearer authentication to the self and admin descriptors, and tenant settings to the self descriptors only — an admin RPC runs on the internal role, which no tenant setting narrows:
 
 ```swift
 interceptorPipeline: [
     .apply(
         BearerAuthenticationInterceptor(authenticator: userAuthenticator),
-        to: .services([UserService.descriptor])
+        to: .services([UserService.descriptor, UserAdminService.descriptor])
     ),
     .apply(
         UserSettingsInterceptor(),
@@ -93,7 +94,7 @@ Internal descriptors have no application authentication interceptor. Their liste
 
 ## Propagating the caller
 
-Apply `BearerPropagationInterceptor<UserIdentity>()` only to upstream user descriptors. It sends the original credential from the bound principal. The receiver verifies that JWT independently. It is not applied to public or internal descriptors, and a worker carries no user token.
+Apply `BearerPropagationInterceptor<UserIdentity>()` only to upstream self and admin descriptors. It sends the original credential from the bound principal. The receiver verifies that JWT independently. It is not applied to public or internal descriptors, and a worker carries no user token.
 
 Bearer parsing takes the first authorization entry, matches the scheme case-insensitively, and replaces existing authorization metadata when forwarding a bound credential. Use the packages' parsers rather than duplicating them.
 

@@ -225,8 +225,8 @@ Migrations run as the owner — the instance's own `POSTGRES_USER` / `POSTGRES_P
 
 | Role | Created by | Policy on a tenant table | Connects |
 | --- | --- | --- | --- |
-| `<service>_service` (`<project>_service` in a monolith) | `CreateServiceRole`, the **first** migration | the tenant predicate | `serve`, for public and user use cases |
-| `<service>_internal` | `CreateInternalRole` | `USING (true)` | `serve`, for admin use cases and the internal use cases another process calls |
+| `<service>_service` (`<project>_service` in a monolith) | `CreateServiceRole`, the **first** migration | the tenant predicate | `serve`, for `…PublicService` and `…Service` RPCs |
+| `<service>_internal` | `CreateInternalRole` | `USING (true)` | `serve`, for `…AdminService` and `…InternalService` RPCs |
 | `<service>_worker` | `CreateWorkerRole` | `USING (true)` | the worker, on its own service's database |
 
 A process with no tenant tables has the service role alone. One with tenant tables has the internal role too; one with a Temporal worker has the worker role too. Each has its own secret — `POSTGRES_SERVICE_*`, `POSTGRES_INTERNAL_*`, `POSTGRES_WORKER_*` — so the wider view is a credential held only by the connection that needs it, and a leaked service-role password still sees one tenant.
@@ -276,15 +276,15 @@ The composition root builds two databases and hands each to the use cases that b
 
 | Database | Role and policy | Tenant setting | Scope | Use cases |
 | --- | --- | --- | --- | --- |
-| Tenant-scoped | the service role, the tenant predicate | bound by `UserSettingsInterceptor` on the user service, or `UserSettingsMiddleware` on the identifying tier | `Postgres<Module>Scope` | public and user |
-| Unscoped | the internal role, `USING (true)` | none reaches it: the internal service has no bearer interceptor | `Postgres<Module>InternalScope` | admin, and internal ones another process calls |
+| Tenant-scoped | the service role, the tenant predicate | bound by `UserSettingsInterceptor` on `…Service`, or `UserSettingsMiddleware` on the identifying tier | `Postgres<Module>Scope` | `…PublicService` and `…Service` |
+| Unscoped | the internal role, `USING (true)` | none: neither `…AdminService` nor `…InternalService` binds one | `Postgres<Module>InternalScope` | `…AdminService` and `…InternalService` |
 
 ```swift
 let database = PostgresDatabase<PostgresBillingScope>(client: serviceClient, logger: logger)
 let internalDatabase = PostgresDatabase<PostgresBillingInternalScope>(client: internalClient, logger: logger)
 ```
 
-The two databases are built the same way; what differs is the role each client connects as and which RPC services or route tiers reach each. The unscoped database sees every row, so every query on it names the user it means in its own `WHERE` clause, and the use case logs every use of it for a named user. An administrator's call arrives with a user bound and a tenant setting applied, and the internal role's `USING (true)` policy ignores it. A use case whose scope protocol is adopted only by the internal scope cannot be built over the tenant-scoped database, and the reverse; that refusal is the compiler's, not a code review's. A self-only read is its own use case on the tenant-scoped database and takes no id, even where the tenant is the row itself: a person's own record is `GetProfile`, served as the service role under the tenant policy, and an administrator's read of any record by id is a separate use case on the unscoped database. One RPC never serves both.
+The two databases are built the same way; what differs is the role each client connects as and which RPC services or route tiers reach each. The unscoped database sees every row, so every query on it names the user it means in its own `WHERE` clause, and the use case logs every use of it for a named user. An administrator's call arrives on `…AdminService` with a user bound and no tenant setting, and the internal role's `USING (true)` policy would ignore one anyway. A use case whose scope protocol is adopted only by the internal scope cannot be built over the tenant-scoped database, and the reverse; that refusal is the compiler's, not a code review's. A self-only read is its own use case on the tenant-scoped database and takes no id, even where the tenant is the row itself: a person's own record is `GetProfile` on `…Service`, served as the service role under the tenant policy, and an administrator's read of any record by id is `GetUserByID` on `…AdminService`, a separate use case on the unscoped database. One RPC never serves both.
 
 **A worker connects to its own service's database directly**, as the worker role, with the same `USING (true)` policy and its own secret, and builds the unscoped kind of database over `Postgres<Service>WorkerScope` in its own composition root (see *Worker composition* in the orchestrating-temporal-workflows skill). An Activity is inside the service's boundary and its input is durable workflow state rather than a caller's request, so nothing is gained by putting a network hop between it and the tables it owns. A worker never opens another service's database; it calls that service's internal RPC, which runs the use case over that service's unscoped database.
 

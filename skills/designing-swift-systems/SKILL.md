@@ -62,7 +62,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 12. Choose the least complex mechanism per interaction: a direct use-case call inside one module, a use-case protocol across modules in a monolith, gRPC for an immediate typed result across processes, an event for a fact many consumers react to, a durable workflow for a multi-step process with retries, timers, or waits, a projection for a read model that spans services.
 13. Do not turn a local function graph into a chain of RPCs; expose capability-level operations that return what the caller's step needs.
 14. Design contracts before implementations: name RPCs for capabilities, define validation, response meaning, stable status mapping, deadlines, and idempotency, and give canonical protos one home, evolving `v1` additively. Default in microservices: the tagged `<project>-protos` package, because two or more packages consume them. Alternative in a gRPC monolith: in the package itself, until a second package consumes them.
-15. Split every contract by audience — `<Entity>PublicService`, `<Entity>Service`, `<Entity>InternalService` — so identification applies per service, never per method. A monolith rarely has an internal audience; a microservice that another process calls always does.
+15. Split every contract by caller — `<Entity>PublicService` (anyone), `<Entity>Service` (a signed-in person about themselves, naming no user), `<Entity>AdminService` (an administrator about anyone), `<Entity>InternalService` (another process) — so identification and the database role apply per service, never per method. A monolith rarely has an internal audience; a microservice that another process calls always does.
 16. An event is the mechanism for a fact that more than one consumer reacts to and that the producer needs no answer to. The owner publishes it through a transactional outbox written in the same transaction as the mutation; a consumer is idempotent by event id; no broker exists before a second consumer does. In a monolith the default publisher is in-process, still through the outbox when the consumer's effect must survive a crash (events-and-projections.md).
 17. A projection is a consumer-owned read model kept by idempotent upsert and rebuildable from the owner. It never becomes a source of truth, never replaces a synchronous ask when the answer must be current, and is added from a measured read the owner cannot serve at the needed latency.
 
@@ -84,7 +84,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 ### Turning a module into a service
 
 27. Do it only for a reason from shapes.md that has become concrete, and say which. A separate concept is not a reason; the module boundary already gives that.
-28. Release the contract in `<project>-protos` first, split by audience; give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are; in each consumer keep the use-case protocol and swap the injected implementation for a gRPC client adapter built in the consumer's composition root over mTLS, with bearer propagation only for user descriptors.
+28. Release the contract in `<project>-protos` first, split by caller; give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are; in each consumer keep the use-case protocol and swap the injected implementation for a gRPC client adapter built in the consumer's composition root over mTLS, with bearer propagation only for user descriptors.
 29. Never infer permission to move or drop rows, discard data, or delete a migration; finish the non-destructive work and surface the decision.
 
 ## Workflow
@@ -97,7 +97,7 @@ Design a system:
 - [ ] 2. Decide the shape and the transport; write the decision record from shapes.md, naming any split candidate and its concrete reason
 - [ ] 3. Define the modules and data ownership; produce the module (or service) map; reject cycles
 - [ ] 4. Choose the mechanism per interaction; in microservices, document why each remote boundary exists
-- [ ] 5. Define versioned contracts by audience, with failure semantics and idempotency, before producers or consumers (protos only where a process boundary exists)
+- [ ] 5. Define versioned contracts by caller, with failure semantics and idempotency, before producers or consumers (protos only where a process boundary exists)
 - [ ] 6. Write the consistency record for every cross-module or cross-service read or write
 - [ ] 7. State where identity is verified: once at the transport, or at the gateway and every service
 - [ ] 8. Create and tag <project>-core (and <project>-protos in microservices) with the building-swift-server-libraries skill; then build each module or service vertically with the building-swift-services skill, and its HTTP surface or gateway with building-swift-http-surfaces

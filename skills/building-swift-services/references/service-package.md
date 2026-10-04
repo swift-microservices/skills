@@ -181,6 +181,7 @@ Sources/
     <Features>/
       <Entity>PublicService.swift
       <Entity>Service.swift
+      <Entity>AdminService.swift
       <Entity>InternalService.swift                   # one conformance per proto service the contract has
       Protobuf/
         <Entity>+Protobuf.swift
