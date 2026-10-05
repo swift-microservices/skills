@@ -124,11 +124,6 @@ The surface is for people, and every token is a person's: a process proves who i
 package func requireUser() throws -> UserIdentity {
     try requireIdentity()
 }
-
-extension UserIdentity {
-    /// The user id as the contracts spell it: lowercased, the way Postgres prints one.
-    package var subject: String { userId.uuidString.lowercased() }
-}
 ```
 
 `AdminRequestContext` adds a security gate using verified JWT role claims without database lookups. Apply it to individual verbs or a whole administrative route collection. The owning use case still enforces the role, resource, and business permissions required by its own contract and tests them there; an optional API collection restriction supplements those checks.
@@ -244,7 +239,7 @@ A create may take an idempotency key (see *Idempotent writes* in the building sk
 
 Answer every failure as RFC 9457 problem details with `application/problem+json`.
 
-In a module's surface, map the use case's typed errors the way the gRPC producer adapter does, in the handler, explicitly: invalid input `400`, not found `404`, a duplicate `409`, the use case's `.forbidden` `403`, an absent caller `401` from the context, and `.unknown` `500` logged with its cause. A handler translates one use-case error enum; it never sees `PSQLError` or a repository error, which persistence and Core already classified.
+In a module's surface, map the use case's typed errors the way the gRPC producer adapter does, in the handler, explicitly: invalid input `400`, an idempotency key reused with different input `400` (as the gateway answers `failedPrecondition`), not found `404`, a duplicate `409`, the use case's `.forbidden` `403`, an absent caller `401` from the context, and `.unknown` `500` logged with its cause. A handler translates one use-case error enum; it never sees `PSQLError` or a repository error, which persistence and Core already classified.
 
 In a gateway, map `RPCError` by code rather than collapsing it:
 
@@ -312,7 +307,7 @@ With Temporal, the serving process also builds one long-lived `TemporalClient` a
 
 ## One surface or two
 
-Default to one target, one document, and one application. The context conversion already keeps administrative routes out of ordinary hands, with the use case deciding behind it, and a second surface doubles the generated type set.
+Default to one application and one router, over the documents the surface already has (one per `<Module>HTTP` in a monolith, one in a service or gateway), with the administrative routes in the same router. The context conversion already keeps administrative routes out of ordinary hands, with the use case deciding behind it, and a second surface doubles the generated type set.
 
 Split into two Hummingbird applications — two routers, two ports, one `ServiceGroup` — only when the administrative routes must not be publicly routable at all. That buys something a role check cannot: the routes are absent from the public router's tree, so no ordering mistake can expose them, and the port is simply never published.
 

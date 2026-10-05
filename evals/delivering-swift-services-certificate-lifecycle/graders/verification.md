@@ -1,6 +1,6 @@
 ---
 type: llm
-focus: { source: file, path: deployment.md }
+focus: { source: file, path: verification.md }
 ---
 
 PASS if the plan specifies how to check trusted admission, missing/untrusted/expired credentials, wrong server hostname, leaf replacement on a fresh connection, failed-reload retention and recovery, and CA trust rotation. Verification includes observed peer certificate serial/fingerprint or equivalent evidence that the new leaf was presented; it distinguishes the application's live handshake from merely inspecting renewed files. It labels these checks as planned and includes monitoring for renewal failure/remaining lifetime.

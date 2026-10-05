@@ -67,7 +67,7 @@ claude plugin eval .               # run every eval case with and without the pl
 
 Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`. Cases with a `scaffold.sh` need `--scaffold`, and cases that edit or build need `--allow-tools Bash Write Edit`; add `--keep-temp` to keep each run's workspace. The eval loader rejects any symbolic link under `evals/`, so keep SwiftPM `.build` directories out of `evals/results/`.
 
-`claude plugin eval` has no script grader. After a `writing-swift-server-code-swift-settings` run, check its kept workspace with `python3 evals/writing-swift-server-code-swift-settings/checks/verify.py <workspace>`: it asserts every target's settings, compiles independent actor and MainActor contract tests against the migrated API, and runs the executable.
+`claude plugin eval` has no script grader. After a `writing-swift-server-code-swift-settings` run, check its kept workspace with `python3 evals/writing-swift-server-code-swift-settings/checks/verify.py <workspace>`: it asserts the tools version, the platform floor, and every target's settings, compiles independent actor and MainActor contract tests against the requested API, and runs the executable.
 
 Library CI evals cover an ordinary tested library, a real PostgreSQL provider, and a generated
 SDK with optional transport traits. Run the corresponding `delivering-swift-services-library-ci*`

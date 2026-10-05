@@ -1,7 +1,7 @@
 ---
 name: orchestrating-temporal-workflows
 description: Adds durable orchestration to a Swift service with the Swift Temporal SDK the swift-microservices way: deterministic Workflows in a <Service>Workflows target, one retry-safe Activity per side effect with idempotency derived from immutable input, Core-owned workflow-client and Activity-service ports, signals as commands and queries for observation, timers for expiring conditions, and a worker that is `worker run` on the service executable with its own composition root, its own database role, and no token. Use when a capability needs durable waiting, timers, retries, a saga or multi-step process across services, a long-running background job, a Temporal worker, or when editing Workflows, Activities, signals, queries, or workflow clients.
-paths: "Sources/*Workflows/**/*.swift,Sources/*/Worker/**/*.swift"
+paths: "Sources/*Workflows/**/*.swift,Sources/*/Worker/**/*.swift,Tests/*WorkflowsTests/**/*.swift"
 ---
 
 # Orchestrating Temporal workflows
@@ -82,7 +82,7 @@ Every Swift change also follows the writing-swift-server-code skill: its [Swift 
 ### The worker
 
 27. The worker is `worker run` on the service executable: `Worker` a command group in `<Service>/Worker/`, `Run` its composition root in the same section order as `serve`. It opens no server, reads no verifying key, and is deployed from the service's image with `worker run` as its command, at the same tag.
-28. It connects to its own service's database directly, as `<service>_worker` with its own secret and a `USING (true)` policy, over `PostgresDatabase<Postgres<Service>WorkerScope>(client:logger:)` that only its composition root builds. The use cases it runs take `input:` alone, and the worker scope is the only scope conforming to their scope protocols, so `serve` cannot build them.
+28. It connects to its own service's database directly, as `<service>_worker` (`<project>_worker` in a monolith) with its own secret and a `USING (true)` policy, over `PostgresDatabase<Postgres<Service>WorkerScope>(client:logger:)` that only its composition root builds. The use cases it runs take `input:` alone, and the worker scope is the only scope conforming to their scope protocols, so `serve` cannot build them.
 29. A worker calls another service through its internal descriptor over mTLS, without a user token or application authentication interceptor. The receiver accepts business input and enforces invariants; the user ID is resource data.
 30. The user a workflow acts for is a `UUID` in the workflow input, passed as data, never a `subject:` and never a token.
 31. Use the SDK’s native `TemporalClient.Configuration(configReader:)` and `TemporalWorker.Configuration(configReader:)` with the `temporal` scope, preserving its key names and units. Temporal uses dedicated `temporal.tls` credentials, explicit trust, full server verification, and a separately primed `TimedCertificateReloader` in the worker/client lifecycle.
@@ -96,7 +96,7 @@ Copy this checklist and check items off as you go:
 Add a workflow:
 - [ ] 1. Core: XWorkflowClient protocol, XWorkflowState and XWorkflowResult, XActivityServiceProtocol with typed errors, XActivityService over the worker's use cases
 - [ ] 2. Workflows target: <Feature>Workflow with nested Input, signals and queries, timers for expiring conditions; <Feature>Activities with one side effect each (issuing a secret, delivering it, and deleting it are three Activities), idempotency from input, and nested Codable inputs and outputs; Temporal<Feature>WorkflowClient with deterministic IDs
-- [ ] 3. Postgres: CreateWorkerRole migration, Postgres<Service>WorkerScope conforming only to the worker use cases' scopes
+- [ ] 3. Postgres: CreateWorkerRole migration for `<name>_worker` (in <Service>Postgres, or the executable's Database/Role/ in a monolith), appended at the end of Database/Migrations.swift; Postgres<Service>WorkerScope conforming only to the worker use cases' scopes
 - [ ] 4. serve: one long-lived TemporalClient in ServiceGroup, the workflow-client adapter injected into the use cases, every start or signal after the transaction commits
 - [ ] 5. worker run: Worker group and Run composition root; worker-role PostgresClient and database; interceptor-free internal-service clients; TemporalWorker with explicit workflows and containers; one ServiceGroup
 - [ ] 6. Environment: the SDK's required worker keys, the worker application running the service image with `worker run`

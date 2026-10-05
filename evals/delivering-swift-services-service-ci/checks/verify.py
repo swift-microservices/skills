@@ -96,7 +96,8 @@ def verify(root, worker=False):
     standard = Path(__file__).resolve().parents[3] / 'skills/delivering-swift-services/assets/sample.swift-format'
     if not (format_file.exists() and format_file.read_bytes() == standard.read_bytes()):
         need('formatter' in agent.lower(), 'Formatter differs from the sample and is not recorded')
-    if 'Xcode' not in agent:
+    header_exception = 'Xcode' in agent
+    if not header_exception:
         need((root / '.license_header_template').exists(), 'Default compact header template missing')
     need(bool(agent), 'Repository profile missing')
     need((root / 'Package.resolved').exists(), 'Application lockfile missing')
@@ -123,7 +124,7 @@ def verify(root, worker=False):
         for j in soundness:
             inputs = j.get('with', {})
             need(inputs.get('api_breakage_check_enabled') is False and inputs.get('docs_check_enabled') is False, f'{event}: executable API/DocC checks enabled')
-            need(inputs.get('license_header_check_enabled') is (not exception), f'{event}: header profile mismatch')
+            need(inputs.get('license_header_check_enabled') is (not header_exception), f'{event}: header profile mismatch')
             need(inputs.get('format_check_container_image') == 'swift:6.3-noble', f'{event}: formatter toolchain mismatch')
         tests = [j for j in jobs if '/swift_package_test.yml@' in j.get('uses', '')]
         need(len(tests) == 1, f'{event}: missing package tests')

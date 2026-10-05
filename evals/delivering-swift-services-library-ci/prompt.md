@@ -10,5 +10,5 @@ The existing RetryBudget tests are intentional behavior coverage. Keep its MIT l
 Apply our standard formatter, headers, dependency resolution, and workflow policies and record
 the repository profile in AGENTS.md.
 
-Do not commit, push, publish, or change repository settings. Validate what is available locally
+Put the workflows where the skill's layout puts them. Do not commit, push, publish, or change repository settings. Validate what is available locally
 and distinguish local results from checks requiring GitHub/Linux/provider access.

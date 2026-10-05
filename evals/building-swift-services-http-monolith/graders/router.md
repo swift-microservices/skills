@@ -8,4 +8,4 @@ PASS if all of these hold:
 - A requiring tier adds `IsAuthenticatedMiddleware` on top of it, and the notebooks routes are mounted there.
 - Any session-issuing routes (sign-up, sign-in, refresh) and the health route are mounted outside the bearer middleware.
 
-FAIL if `UserSettingsMiddleware` is missing or added before the bearer middleware, a session-issuing route sits behind the bearer middleware, or the package declares its own `Database` type instead of using `PostgresDatabase`.
+FAIL if `UserSettingsMiddleware` is missing or added before the bearer middleware, a session-issuing route sits behind the bearer middleware, or Serve.swift declares its own `Database` type instead of using `PostgresDatabase`.

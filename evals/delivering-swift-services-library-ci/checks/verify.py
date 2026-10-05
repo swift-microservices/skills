@@ -142,9 +142,11 @@ def verify(root, provider=None, no_tests=False, traits=False, foundation_excepti
         config = job.get('with', {})
         need(config.get('api_breakage_check_enabled') is False and config.get('license_header_check_enabled') is True, 'Soundness API/header settings')
         need(bool(config.get('docs_check_targets')), 'DocC targets missing')
+        need(config.get('format_check_container_image') == 'swift:6.3-noble', 'Formatter toolchain mismatch')
         need(not any(v is False for k, v in config.items() if k.endswith('_enabled') and k != 'api_breakage_check_enabled'), 'Soundness check silently disabled')
     labels = [w for w in workflows.values() if {'labeled', 'unlabeled', 'opened', 'reopened', 'synchronize'} <= set((w.get('on', {}).get('pull_request') or {}).get('types', []))]
     need(any(s.get('uses') == 'apple/swift-nio/.github/actions/pull_request_semver_label_checker@main' for w in labels for j in w.get('jobs', {}).values() for s in j.get('steps', [])), 'SemVer label gate missing')
+    need(all((w.get('permissions') or {}).get('pull-requests') == 'read' for w in labels) and bool(labels), 'SemVer label workflow cannot read pull requests')
     dep_path = root / '.github/dependabot.yml'
     dep = read_yaml(dep_path) if dep_path.exists() else {}
     need(any(u.get('package-ecosystem') == 'github-actions' and u.get('directory') == '/' and u.get('schedule', {}).get('interval') == 'weekly' and u.get('target-branch', 'main') == 'main' and 'semver/none' in u.get('labels', []) for u in dep.get('updates', [])), 'Weekly Actions Dependabot/label policy missing')

@@ -20,6 +20,7 @@ let package = Package(
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: ["ConfigurationSupport"]),
         .package(url: "https://github.com/hummingbird-project/hummingbird-auth.git", from: "2.5.0"),
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),
+        .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.3.0"),
         .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.3.0"),
         .package(url: "https://github.com/acme/acme-core.git", from: "0.1.0"),
         .package(url: "https://github.com/acme/acme-protos.git", from: "0.1.0"),
@@ -30,6 +31,8 @@ let package = Package(
             dependencies: [
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "HummingbirdAuth", package: "hummingbird-auth"),
+                .product(name: "Authentication", package: "swift-authentication"),
+                .product(name: "AuthenticationHummingbird", package: "swift-authentication-hummingbird"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "AcmeAuthentication", package: "acme-core"),
                 .product(name: "CatalogProtos", package: "acme-protos"),
@@ -101,8 +104,8 @@ package struct ItemController: Sendable {
 }
 SWIFT
 cat > acme-api/Sources/API/AcmeAPI.swift <<'SWIFT'
-package import Authentication
 package import AcmeAuthentication
+package import Authentication
 import AuthenticationHummingbird
 package import Hummingbird
 import HummingbirdAuth

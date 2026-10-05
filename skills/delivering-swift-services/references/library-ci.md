@@ -39,9 +39,17 @@ images, deployment credentials, or deployment branches. Dependabot's weekly upda
 separate from CI scheduling. PR code gates use `opened`, `reopened`, `synchronize`; the label gate
 also uses `labeled`, `unlabeled`. Main means `push.branches: [main]`.
 
-Copy [the PR template](../assets/library-pull-request.yml),
-[main template](../assets/library-main.yml), [label workflow](../assets/library-pr-label.yml),
-and [Dependabot configuration](../assets/library-dependabot.yml). Replace the DocC target name.
+Copy the templates into these destinations and replace the DocC target name:
+
+- [the PR template](../assets/library-pull-request.yml) → `.github/workflows/pull_request.yml`
+- [the main template](../assets/library-main.yml) → `.github/workflows/main.yml`
+- [the label workflow](../assets/library-pr-label.yml) → `.github/workflows/pull_request_label.yml`
+- [the Dependabot configuration](../assets/library-dependabot.yml) → `.github/dependabot.yml`
+- where a capability exception replaces the unit-test matrix (below), the reusable
+  [PostgreSQL test template](../assets/library-postgres-tests.yml) → `.github/workflows/tests.yml`
+  or [build template](../assets/library-builds.yml) → `.github/workflows/builds.yml`, called from
+  both `pull_request.yml` and `main.yml` (`uses: ./.github/workflows/tests.yml`) in place of the
+  `unit-tests` job
 Keep independent gates independent: do not add `needs: static-sdk` or cancellation wrappers
 around unrelated checks. Required merge checks should cover stable toolchains and applicable
 quality/integration gates. Snapshots remain visible and advisory unless explicitly required.
@@ -106,7 +114,7 @@ sample. The sample derives from an Apple library formatter captured at commit
 asset is the sample, so later upstream changes require a deliberate update. Public documentation
 remains required even though the formatter does not enforce documentation on every declaration.
 Format and strictly lint all tracked Swift, including manifests and CI consumers, with the CI
-formatter toolchain (currently 6.3). Generated build output is not tracked or hand-formatted.
+formatter toolchain (currently 6.3, `format_check_container_image: swift:6.3-noble`). Generated build output is not tracked or hand-formatted.
 
 Enable compact license-header checking and preserve the repository's license/owner. MIT packages
 in this organization use:
@@ -142,7 +150,8 @@ rule. Moving refs include upstream changes and are not immutable; inspect curren
 Dependabot checks `github-actions` weekly at `/`, targets main, and labels update PRs `semver/none`.
 
 Every PR has exactly one impact label: `⚠️ semver/major`, `🆕 semver/minor`, `🔨 semver/patch`,
-or `semver/none`. Preserve the repository's release mechanism: a manual label-based Auto Release
+or `semver/none`. The label workflow grants `pull-requests: read` beside `contents: read`; a
+private repository's default token cannot read the labels without it. Preserve the repository's release mechanism: a manual label-based Auto Release
 may reuse the shared workflow at `@main`; a contract/SDK package can keep bare version tags.
 Adding CI does not publish a release. A bare-tag exception changes release machinery, not the
 SemVer PR gate.

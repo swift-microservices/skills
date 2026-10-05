@@ -66,7 +66,7 @@ public static func withClient<T: Sendable>(
 
 Document what the isolation does not do: other work on an actor may run while the closure is suspended, a rollback does not undo in-memory mutations, and the scope and anything built on it are valid only during the closure; `Sendable` does not extend a transaction's lifetime. Prove the contract with the [isolation contract tests](testing.md#isolation-contract-tests).
 
-Where a framework protocol requires `@concurrent` on a continuation (`next` in a GRPCCore interceptor or a Hummingbird `RouterMiddleware`, an OpenAPI `ClientMiddleware`), match the requirement exactly; that is the one place `@concurrent` appears.
+Where a framework protocol requires `@concurrent` on a continuation (`next` in a GRPCCore interceptor or a Hummingbird `RouterMiddleware`, an OpenAPI `ClientMiddleware`), match the requirement exactly; that is the one place `@concurrent` appears in a library's public API.
 
 ## ServiceContext keys
 

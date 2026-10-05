@@ -25,7 +25,7 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 
 ## Principles
 
-1. **A package is one concept and one dependency set.** A consumer that imports it acquires exactly the technology its name promises. A type that needs a new dependency belongs in another package.
+1. **A package is one concept and one dependency set.** A consumer that imports it acquires exactly the technology its name promises. A type that needs a new dependency belongs in another package; the organization layer's two recorded exceptions are in [organization-layer.md](references/organization-layer.md).
 2. **Generic machinery knows nothing of an organization.** Claims, roles, setting names, contracts, and authorization belong to the organization layer and the owning services.
 3. **The public API is a contract.** Small, `Sendable`, documented on every declaration, proven by a test per guarantee, and changed only with the SemVer label the change needs.
 4. **Preserve the caller.** A scoped callback runs on the caller's isolation, an error reaches the caller unchanged, and a library never takes over logging, configuration, or lifecycle from the application that composes it.
@@ -35,7 +35,7 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 
 ### Package
 
-1. Name the repository `swift-<concept>` for an abstraction and `swift-<concept>-<technology>` for its driver or binding; the product and module are `<Concept>` or `<Concept><Technology>`, with no organization prefix.
+1. Name the repository `swift-<concept>` for an abstraction and `swift-<concept>-<technology>` for its driver or binding; the product and module are `<Concept>` or `<Concept><Technology>`, with no organization prefix; an organization-layer product carries `<Project>`.
 2. Expose one library product unless a second dependency set must be avoidable by consumers. A driver or binding depends on its abstraction by tagged URL, never `.package(path:)` or a branch.
 3. Use Swift tools 6.3, the compact license header after the tools-version line, one shared settings array with the four upcoming features attached to every target and test target, `swiftLanguageModes: [.v6]`, and `.macOS(.v15)`; a package meant for apps too declares their platforms. No unsafe flags, `@preconcurrency`, or default MainActor isolation.
 4. Set each `from:` to the oldest release the library relies on and raise it deliberately, saying why; never add a ceiling. Declare traits explicitly where defaults pull in full Foundation, and record an unavoidable upstream full-Foundation product as a profile exception.
@@ -71,7 +71,7 @@ Create a library:
 - [ ] 3. API: protocols with primary associated types, Sendable types, caller-isolated callbacks, ServiceContext keys, Logger last, documentation on every declaration
 - [ ] 4. Tests: one per guarantee; isolation contract tests for scoped callbacks; real-provider tests and scripts/test.sh for a driver
 - [ ] 5. Repository: README, AGENTS.md profile, DocC catalog, .spi.yml, .swift-format, header template, .licenseignore, .gitignore with Package.resolved
-- [ ] 6. CI from the library profile; then swift build, swift test (or scripts/test.sh), and swift-format lint --strict
+- [ ] 6. CI from the library profile; then swift build, swift test (or scripts/test.sh), and git ls-files -z '*.swift' | xargs -0 swift-format lint --strict
 - [ ] 7. Release: one SemVer label, the repository's release mechanism (Auto Release or a hand-cut tag), then raise consumers' floors
 ```
 

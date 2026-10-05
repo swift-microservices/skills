@@ -348,7 +348,7 @@ The worker composition root owns:
 - one `TemporalWorker` with explicit workflow definitions and Activity containers;
 - one `ServiceGroup` containing the worker, the Postgres client, and every other long-lived dependency.
 
-Configure the client and worker with the SDK’s native readers over `temporal`, preserving the pinned SDK’s required keys and units. Construct separate `temporal.tls` credentials and a primed `TimedCertificateReloader`; never fall back to the service credential pair. Use explicit destination trust and full hostname verification. Run both service and Temporal reloaders alongside the worker and its clients in `ServiceGroup`. Set the SDK’s worker heartbeat interval when liveness reporting is required. See the building skill’s [composition reference](../../building-swift-services/references/composition.md).
+Configure the client and worker with the SDK’s native readers over `temporal`, preserving the pinned SDK’s required keys and units. Construct separate `temporal.tls` credentials and a primed `TimedCertificateReloader`; never fall back to the service credential pair. Use explicit destination trust and full hostname verification. Run the Temporal reloader, and the service reloader when its Activities call another service, alongside the worker and its clients in `ServiceGroup`. Set the SDK’s worker heartbeat interval when liveness reporting is required. See the building skill’s [composition reference](../../building-swift-services/references/composition.md).
 
 ## Testing workflows
 

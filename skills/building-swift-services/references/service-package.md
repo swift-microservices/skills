@@ -43,7 +43,7 @@ These are the packages the architecture is built on, with their version floors. 
 | `postgres-migrations` | `1.2.0` | `PostgresMigrations` |
 | `postgres-nio` | `1.33.1` | `PostgresNIO`, `PostgresClient`, prepared statements, transactions |
 | `grpc-swift-2` | `2.4.0` | `GRPCCore`, `GRPCClient`, `GRPCServer`: with gRPC |
-| `grpc-swift-nio-transport` | `2.10.0` | `GRPCNIOTransportHTTP2`: with gRPC |
+| `grpc-swift-nio-transport` | `2.10.0` | `GRPCNIOTransportHTTP2`: with gRPC, and with Temporal for the mTLS transport factory |
 | `grpc-swift-extras` | `2.2.0` | `GRPCServiceLifecycle` adapters: with gRPC |
 | `grpc-swift-protobuf` | `2.4.0` | `GRPCProtobuf` and `GRPCProtobufGenerator`: with gRPC |
 | `swift-protobuf` | `1.32.0` | `SwiftProtobuf` messages and well-known types: with gRPC |
@@ -78,10 +78,11 @@ dependencies: [
     .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.11.0"),
     .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
     .package(url: "https://github.com/lovetodream/swift-log-loki.git", from: "2.0.1"),
+    .package(url: "https://github.com/apple/swift-nio.git", from: "2.103.0"),                 // only when a target imports NIOCore or NIOFoundationEssentialsCompat directly
     .package(url: "https://github.com/hummingbird-project/postgres-migrations.git", from: "1.2.0"),
     .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.1"),
     .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),                 // with gRPC
-    .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.10.0"),     // with gRPC
+    .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.10.0"),     // with gRPC or Temporal
     .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.1"),
     .package(url: "https://github.com/grpc/grpc-swift-extras.git", from: "2.2.0"),            // with gRPC
     .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),          // with gRPC
@@ -107,7 +108,7 @@ dependencies: [
 
 Do not add every product to every target. Declare only the direct products imported by that target, and declare a package only when some target links one of its products, or when it is a command plugin the project's build uses; Xcode warns on a package no target uses. An HTTP-only package declares no grpc-swift, protobuf, or protos package; a gRPC-only package declares no Hummingbird or OpenAPI package. The container plugin, when the project's image tool is the plugin, is invoked from the package command line and is not attached to a source target.
 
-Depend on organization packages by tagged URL, never by `.package(path:)`. A path dependency builds only where the sibling repository happens to be checked out, so CI and container builds fail on a package that resolves locally, and a package can silently build against uncommitted contract changes. Publish and tag first, then pin `from:` the release containing what the package imports. Contract additions are additive: tag them as a minor release so consumers on the same major range pick them up without a manifest edit. A library package never commits `Package.resolved`; an executable package does, and re-resolves it when a dependency's tag moves.
+Depend on organization packages by tagged URL, never by `.package(path:)`. A path dependency builds only where the sibling repository happens to be checked out, so CI and container builds fail on a package that resolves locally, and a package can silently build against uncommitted contract changes. Publish and tag first, then pin `from:` the release containing what the package imports. Contract additions are additive: tag them with the compatible-addition release the library labels require (`🔨 semver/patch` in 0.x, `🆕 semver/minor` after 1.0.0) so consumers pick them up without a manifest edit. A library package never commits `Package.resolved`; an executable package does. A published tag never moves; if an upstream tag was moved anyway, delete the stale fingerprint and re-resolve.
 
 After renaming a target, delete `.build` in that package and every consumer, or the stale `.swiftmodule` keeps the old module name and the compiler insists a module both exists and does not.
 
@@ -196,6 +197,7 @@ Sources/
     Resend<Feature>EmailService.swift
 Tests/
   <Module>CoreTests/
+  <Module>WorkflowsTests/                             # only with Temporal
 ```
 
 Use plural feature folders such as `Items`, then group repository and use-case artifacts within that feature. Do not create top-level `Entities`, `UseCases`, or `Repositories` buckets in Core. In Postgres, group by technical responsibility and then entity because those files implement infrastructure mechanics.
@@ -221,7 +223,7 @@ Sources/
       InMemoryProvider+ApplicationDefaults.swift
       TimedCertificateReloader.Configuration+ConfigReader.swift
       HTTP2ServerTransport.Posix.TransportSecurity+ConfigReader.swift
-      HTTP2ClientTransport.Posix.TransportSecurity+ConfigReader.swift            # with gRPC
+      HTTP2ClientTransport.Posix.TransportSecurity+ConfigReader.swift            # with gRPC or Temporal
       LokiLogProcessorConfiguration+ConfigReader.swift
       EdDSA.PublicKey+ConfigReader.swift
       EdDSA.PrivateKey+ConfigReader.swift             # the monolith issues tokens, so it holds the private key
@@ -253,6 +255,7 @@ Sources/
 Tests/
   CatalogCoreTests/
   UsersCoreTests/
+  CatalogWorkflowsTests/                              # only with Temporal, per module with workflows
 ```
 
 The role migrations live at the executable because roles belong to the process and no module owns them. `<Project>HTTP` holds only what every `<Module>HTTP` shares; it never holds a controller.
@@ -286,6 +289,7 @@ Sources/
   <Service>Core/ <Service>Postgres/ <Service>GRPC/    # the module, as above; <Service>HTTP with HTTP
 Tests/
   <Service>CoreTests/
+  <Service>WorkflowsTests/                            # only with Temporal
 ```
 
 The service's `<Service>Postgres/Migrations/Role/` holds the role migrations, and `<Service>HTTP`, when it exists, holds its own `Contexts/` and `Middlewares/`.
@@ -371,6 +375,7 @@ The same block in every shape; the executable that links them differs.
     ],
     swiftSettings: swiftSettings
 ),
+// .testTarget(name: "<Module>WorkflowsTests", …)          // only with Temporal: see the orchestrating-temporal-workflows skill
 ```
 
 A `<Module>GRPC` that consumes another service adds that service's `<Producer>Protos` product for its client adapter and nothing else; a `<Module>Core` never adds a protos product.
@@ -422,9 +427,9 @@ The module blocks above, once per module, plus the shared HTTP target and one ex
         .product(name: "HummingbirdAuth", package: "hummingbird-auth"),              // with HTTP
         .product(name: "AuthenticationHummingbird", package: "swift-authentication-hummingbird"), // with HTTP
         .product(name: "GRPCCore", package: "grpc-swift-2"),                         // with gRPC
-        .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"), // with gRPC
+        .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"), // with gRPC or Temporal
         .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),
-        .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),        // with gRPC
+        .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),        // with gRPC or Temporal
         .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),  // with gRPC
         .product(name: "AuthenticationJWT", package: "swift-authentication-jwt"),
         .product(name: "PersistencePostgres", package: "swift-persistence-postgres"),
@@ -461,9 +466,9 @@ The module blocks above, once, plus one executable:
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Configuration", package: "swift-configuration"),
         .product(name: "GRPCCore", package: "grpc-swift-2"),                         // with gRPC
-        .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"), // with gRPC
+        .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"), // with gRPC or Temporal
         .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),
-        .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),        // with gRPC
+        .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),        // with gRPC or Temporal
         .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),  // with gRPC
         .product(name: "Hummingbird", package: "hummingbird"),                       // with HTTP
         .product(name: "HummingbirdAuth", package: "hummingbird-auth"),              // with HTTP

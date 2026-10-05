@@ -165,13 +165,13 @@ What stays per package is the wiring: configuration readers, transport-security 
 - Entity: `Item`.
 - Use case: `CreateItemUseCase`; port `CreateItemUseCaseProtocol`; input and typed failure `CreateItemUseCaseInput`, `CreateItemUseCaseError`; narrow scope `CreateItemUseCaseScope`.
 - Repository: `ItemRepository`, `ItemRepositoryError`; write intent `CreateItemCommand`.
-- Postgres implementation: `PostgresItemRepository`; prepared statement `CreateItemStatement`; scopes `PostgresCatalogScope`, `PostgresCatalogInternalScope`, `PostgresCatalogWorkerScope`; migrations such as `CreateItemsTable`, which the executable's `Migrations.swift` lists.
+- Postgres implementation: `PostgresItemRepository`; prepared statement `CreateItemStatement`; scopes `Postgres<Module>Scope` such as `PostgresCatalogScope`, plus `Postgres<Module>InternalScope` with tenant tables and `Postgres<Module>WorkerScope` with a worker; migrations such as `CreateItemsTable`, which the executable's `Migrations.swift` lists.
 - gRPC service implementations, one per proto service: `ItemService`, `ItemInternalService`.
 - HTTP controller, one per resource: `ItemController`; contexts `IdentityRequestContext`, `AdminRequestContext`; conversions `ItemResponse+Schema.swift` in a module, `ItemResponse+RPC.swift` in a gateway.
 - Cross-module port in a consumer's Core: the producer's `XUseCaseProtocol`, or a narrow `<Entity>Client` port such as `AccountClient`; its gRPC implementation `GRPCAccountClient` in the consumer's GRPC target.
 - Identity: `UserIdentity` as `subject:` on user operations; internal operations accept business input directly after transport mTLS admission.
 - Temporal workflow, Activities, and client adapter: `ReservationWorkflow`, `ReservationActivities`, `TemporalReservationWorkflowClient`.
-- Identifier properties: `xId`, never `xID`. Strict camel case keeps `registrationId` aligned with SQL `registration_id` and proto `registration_id` with no acronym special-casing.
+- Identifiers: values — properties, parameters, variables, and enum cases — spell `xId`, never `xID`, so `registrationId` stays aligned with SQL `registration_id` and proto `registration_id`; type names spell `ID`, as Apple's APIs do: `GetUserByIDUseCase`.
 
 When a dependency already owns a default module name, use a collision-safe transport/executable name such as `AuthenticationRPC` / `AuthenticationServer` and record it in `AGENTS.md`.
 

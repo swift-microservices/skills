@@ -97,7 +97,7 @@ cat > Sources/NotesCore/Notes/UseCases/CreateNote/CreateNoteUseCase.swift <<'SWI
 package import AcmeAuthentication
 package import Logging
 package import Persistence
-package struct CreateNoteUseCase<DatabaseType>: CreateNoteUseCaseProtocol where DatabaseType: Database, DatabaseType.Scope: CreateNoteUseCaseScope {
+package struct CreateNoteUseCase<DatabaseType: Database>: CreateNoteUseCaseProtocol where DatabaseType.Scope: CreateNoteUseCaseScope {
     private let database: DatabaseType
     private let logger: Logger
 
@@ -116,7 +116,7 @@ package struct CreateNoteUseCase<DatabaseType>: CreateNoteUseCaseProtocol where 
             logger.info("Note created", metadata: ["noteId": "\(note.id)"])
             return note
         } catch {
-            logger.warning("Note create failed: unknown error", metadata: ["error": "\(String(reflecting: error))"])
+            logger.error("Note create failed: unknown error", metadata: ["error": "\(String(reflecting: error))"])
             throw .unknown
         }
     }

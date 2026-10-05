@@ -162,7 +162,7 @@ Rows in terminal states fall out of the index, so the value frees automatically 
 | --- | --- | --- | --- |
 | **An instance per service** | Complete: its own failure domain, version, maintenance window, backups, point-in-time recovery, and quotas | N clusters to tune, patch, back up, and pay for; per-instance connection limits | Independent scaling or availability targets, a compliance boundary, a team that runs its own database, a managed-database-per-service platform |
 | **One instance, a database per service, distinct owners and roles** | Logical: Postgres allows no cross-database query without an FDW, so a service cannot join into a sibling's data; each database has its own owner | One failure domain and one maintenance window for all; point-in-time recovery is cluster-wide, so restoring one service's data to a moment means a logical restore; role names are cluster-wide; a noisy neighbour shares buffers and I/O | A small or mid-size workload, a single staging box, a managed cluster that bills per instance |
-| **One database, a schema per service, grants per role** | Weak: a join across schemas is one `GRANT` away, and reviewers must hold the line | Cheapest to run; one owner for everything; foreign keys across schemas become possible and must be refused by review | A platform that provisions databases slowly; move up a row when the first cross-schema join is proposed |
+| **One database, a schema per service, grants per role** | Weak: a join across schemas is one `GRANT` away, and reviewers must hold the line | Cheapest to run; one database owner, and a schema owner per service that migrates with `search_path` set to its schema; foreign keys across schemas become possible and must be refused by review | A platform that provisions databases slowly; move up a row when the first cross-schema join is proposed |
 | **Shared tables** | None | Every service couples to every migration | Never; this is the rule the other three exist to keep |
 
 The environment contract makes the choice invisible to code: `POSTGRES_HOST/PORT/DB/USER/PASSWORD` describes *a database*, not an instance, so moving between the first two rows is an environment edit and a `pg_dump --no-owner | psql`. On a shared instance the administrator pair is the cluster's; role names (`<service>_service`) are cluster-wide, so two services on one instance cannot share a role name, and two environments on one instance need distinct prefixes. A service's database exists before the service first deploys: no service ever creates a database. On a per-service instance the image's own variables provision it; on a shared instance an administrator creates `<project>_<service>` once, as part of provisioning the application.
@@ -189,9 +189,9 @@ How it maps onto the grammar:
 - **Tenant isolation is per store.** Row-level security is Postgres's; a tenant-scoped store elsewhere isolates by a key prefix, a partition, or a per-tenant collection, chosen once and named in the store's adapter, and the use case's authorization guard is the same either way.
 - **No cross-store transaction.** A write that must reach two stores is a saga: the owner writes, publishes, and the consumer applies idempotently, with compensation where the second write can fail for good.
 
-A service owns the whole database. Use unqualified names such as `items`, not `<service>.items`, and do not create a service-named schema.
+A service owns the whole database. Use unqualified names such as `items`, not `<service>.items`, and do not create a schema per module or table group. Under the schema-per-service placement the service's schema is its own namespace: its roles' `search_path` points at it, names stay unqualified, and grants target that schema instead of `public`.
 
-Name migrations for their result, such as `CreateItemsTable`. Do not prefix a migration with the service name; it already lives inside the service-owned Postgres module. Give each table its own create migration; keep that table's indexes and constraints with it rather than combining several tables into one migration. Keep migrations under `Migrations/<Entity>` and register them explicitly in dependency order in the executable's migration list, parents before children. The list is applied before the process serves: by default `serve --migrate-database` at boot, or a `migrate` one-shot before the rollout (see *Migrations at boot* in composition.md).
+Name migrations for their result, such as `CreateItemsTable`. Do not prefix a migration with the service name; it already lives inside the service-owned Postgres module. Give each table its own create migration; keep that table's indexes and constraints with it rather than combining several tables into one migration. Keep migrations under `Migrations/<Entity>` and register them explicitly in dependency order in the executable's migration list, parents before children. The list is applied before the process serves: by default `serve --migrate-database` at boot, or a `migrate` one-shot before the rollout, or, where recorded, an apply serialized by a Postgres advisory lock (see *Migrations at boot* in composition.md).
 
 Write single-column uniqueness inline, such as `email TEXT NOT NULL UNIQUE`; use table-level `UNIQUE (...)` only for multi-column uniqueness. Do not add `CHECK (... IN (...))` constraints unless the user explicitly requests them.
 
@@ -203,7 +203,7 @@ Dropping a table, deleting a migration, or moving data is a destructive product 
 
 A monolith has one database, owned by its executable, and every module owns its own tables inside it. The ownership rules between modules are the ones between services, enforced by review rather than by a network: a module creates and migrates its tables, generates its service-owned identifiers, and reads and writes them through its own repositories; no other module queries them, joins to them, or declares a foreign key onto them. A relationship across modules is a stored identifier plus a call through the other module's use-case protocol, exactly as it would be a stored identifier plus an RPC between services. Table names stay unqualified and there is no schema per module: the boundary is the target graph, not a namespace, and a module that later becomes a service takes its tables to its own database with a `pg_dump` of those tables and no renames.
 
-Roles are per process, not per module. A monolith therefore has one set — `<project>_service`, `<project>_internal`, `<project>_worker` — created by the same three migrations, and one `PostgresClient` per role in its composition root; a module's tenant-scoped scope and its internal scope are built over the shared clients. Each module's Postgres target declares its migration types; the composition root's `Migrations.swift` adds every one of them by hand, the role migrations first and then each module's tables and policies in module dependency order:
+Roles are per process, not per module. A monolith therefore has one set — `<project>_service`, `<project>_internal`, `<project>_worker` — created by the same three migrations, and one `PostgresClient` per role in its composition root; a module's tenant-scoped scope and its internal scope are built over the shared clients. Each module's Postgres target declares its migration types; the composition root's `Migrations.swift` adds every one of them by hand, usually the role migrations first and then each module's tables and policies in module dependency order:
 
 ```swift
 // Sources/Backend/Database/Migrations.swift
@@ -211,8 +211,7 @@ await migrations.add(CreateServiceRole(...))
 await migrations.add(CreateInternalRole(...))
 await migrations.add(CreateUsersTable())
 await migrations.add(CreateUsersRLSPolicy(internalRole: internalRole))
-await migrations.add(CreateItemsTable())
-await migrations.add(CreateItemsRLSPolicy(internalRole: internalRole))
+await migrations.add(CreateItemsTable())                 // catalogue items are not tenant rows: no policy
 ```
 
 The list is append-only across modules as much as within one: adding a module appends its migrations after every existing module's, so an existing database applies them in place. Row-level security is unchanged — the tenant predicate on each tenant table, the internal role's `USING (true)` policy, the setting bound per request — and a module that owns no tenant table simply has no policies; the roles exist once for the process regardless.
@@ -221,17 +220,17 @@ A service is the one-module case of all of this, with its own database and its o
 
 ## The roles
 
-Migrations run as the owner — the instance's own `POSTGRES_USER` / `POSTGRES_PASSWORD`, verbatim — and the owner owns every table. Nothing that serves data ever connects as the owner: Postgres applies no policy to a table's owner, so a service that ran as it could not add row-level security later without changing what it connects as. Every other connection is a role a migration creates, one per way of seeing the data:
+Migrations run as the database's owner — on an instance per service the instance's own `POSTGRES_USER` / `POSTGRES_PASSWORD`, verbatim; on a shared instance the per-service owner created at provisioning, which needs `CREATEROLE` for the role migrations; under a schema per service the owner of that schema, its `search_path` set to it — and the owner owns every table. Nothing that serves data ever connects as the owner: Postgres applies no policy to a table's owner, so a service that ran as it could not add row-level security later without changing what it connects as. Every other connection is a role a migration creates, one per way of seeing the data:
 
 | Role | Created by | Policy on a tenant table | Connects |
 | --- | --- | --- | --- |
-| `<service>_service` (`<project>_service` in a monolith) | `CreateServiceRole`, the **first** migration | the tenant predicate | `serve`, for public RPCs and the caller's own |
-| `<service>_internal` | `CreateInternalRole` | `USING (true)` | `serve`, for administrators' RPCs and `…InternalService` |
+| `<service>_service` (`<project>_service` in a monolith) | `CreateServiceRole`, usually the first migration | the tenant predicate | `serve`, for public RPCs and the caller's own |
+| `<service>_internal` | `CreateInternalRole` | `USING (true)` | `serve`, for administrators' RPCs on tenant tables and `…InternalService` |
 | `<service>_worker` | `CreateWorkerRole` | `USING (true)` | the worker, on its own service's database |
 
 A process with no tenant tables has the service role alone. One with tenant tables has the internal role too; one with a Temporal worker has the worker role too. Each has its own secret — `POSTGRES_SERVICE_*`, `POSTGRES_INTERNAL_*`, `POSTGRES_WORKER_*` — so the wider view is a credential held only by the connection that needs it, and a leaked service-role password still sees one tenant.
 
-The rule here is the separation: the owner migrates and never serves, no role bypasses row-level security, and a tenant-scoped role and an unscoped one are distinct roles with distinct secrets. The names and the three-migration shape are the default. A project that already names its roles differently, or provisions them outside the migration list, keeps its naming provided the roles exist before the tables and the migration client is the only owner connection.
+The rule here is the separation: the owner migrates and never serves, no role bypasses row-level security, and a tenant-scoped role and an unscoped one are distinct roles with distinct secrets. The names and the three-migration shape are the default. A project that already names its roles differently, or provisions them outside the migration list, keeps its naming provided each role exists before any policy that names it and the migration client is the only owner connection.
 
 ```swift
 let migrations = DatabaseMigrations()
@@ -240,7 +239,7 @@ await migrations.add(CreateInternalRole(role: configuration.internalUser, passwo
 await migrations.add(CreateItemsTable())
 ```
 
-The migration is plain: `CREATE ROLE "<role>" LOGIN PASSWORD '…'`, `GRANT CONNECT` on the database, `GRANT USAGE` on `public`, DML on all tables and usage on all sequences, and the same two as `ALTER DEFAULT PRIVILEGES` so every table a later migration creates is the role's from the moment it exists. `revert` is `DROP ROLE IF EXISTS`. Keep it that simple — no existence checks, no quoting helpers; the values are the deployment's own configuration. The three role migrations are one shape with three names; each writes its statements out as sequential `connection.query` calls, with no base class and no loop over a shared statement list. Roles are cluster-wide, so a database dropped and re-migrated in a cluster that still has the role fails on `CREATE ROLE`; drop the role with the database.
+The migration is plain: `CREATE ROLE "<role>" LOGIN PASSWORD '…'`, `GRANT CONNECT` on the database, `GRANT USAGE` on the service's schema (`public` unless the placement is a schema per service), DML on all tables and usage on all sequences, and the same two as `ALTER DEFAULT PRIVILEGES` so every table a later migration creates is the role's from the moment it exists. `revert` is `DROP ROLE IF EXISTS`. Keep it that simple — no existence checks, no quoting helpers; the values are the deployment's own configuration. The three role migrations are one shape with three names; each writes its statements out as sequential `connection.query` calls, with no base class and no loop over a shared statement list. Roles are cluster-wide, so a database dropped and re-migrated in a cluster that still has the role fails on `CREATE ROLE`; drop the role with the database.
 
 Never `BYPASSRLS`, and never the owner as a runtime role. The wider view is granted `TO` the role through a policy of its own (below), so it is a fact visible in the schema and in `pg_policies` rather than an attribute on a role or a consequence of ownership.
 
@@ -255,10 +254,13 @@ When a service's rows belong to users — a user's documents, a user's devices, 
 **Row-level security's main concern is tenant isolation.** The tenant is the user, so the policy on a tenant table is one predicate on one setting, in both `USING` and `WITH CHECK`, so a caller can neither read nor write another tenant's rows:
 
 ```sql
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY
 CREATE POLICY user_isolation ON documents
     USING (user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid)
     WITH CHECK (user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid)
 ```
+
+The policy migration enables row-level security on the table and creates its policies; its `revert` drops the policies and disables it. A policy on a table without row-level security enabled is never applied.
 
 Whether a caller is an administrator, and what they may do, is the use case's decision in Swift, against the `subject:` it was handed (see *Authorization lives in the use case* in [identity-and-access.md](identity-and-access.md)). A policy that restated such a decision would be authorization written twice, once in a use case and once in SQL, with the SQL copy invisible to the use case's tests; keep the policy to the tenant and let the use case decide.
 
@@ -288,7 +290,7 @@ The two databases are built the same way; what differs is the role each client c
 
 **A worker connects to its own service's database directly**, as the worker role, with the same `USING (true)` policy and its own secret, and builds the unscoped kind of database over `Postgres<Service>WorkerScope` in its own composition root (see *Worker composition* in the orchestrating-temporal-workflows skill). An Activity is inside the service's boundary and its input is durable workflow state rather than a caller's request, so nothing is gained by putting a network hop between it and the tables it owns. A worker never opens another service's database; it calls that service's internal RPC, which runs the use case over that service's unscoped database.
 
-**Which services.** A service whose rows belong to users. Not a table with no owner — a sign-up list is anyone's to add to and an administrator's to read, which is the use case's `.forbidden` guard, not a policy. Not the authenticating service, whose rows are credential material looked up *by secret* on anonymous paths (a refresh token by digest, a registration by email): a `user_id` policy there breaks refresh for everyone. Not a public catalogue.
+**Which services.** A service whose rows belong to users. Not a table with no owner — a sign-up list is anyone's to add to and an administrator's to read, which is the use case's `.forbidden` guard, not a policy. Not credential material looked up *by secret* on anonymous paths (a refresh token by digest, a registration by email), even in the module that serves the person's profile: a `user_id` policy on those tables breaks refresh for everyone. That module's profile rows may still be tenant-scoped, read by `GetProfile` under the tenant policy; the anonymous sign-up that creates such a row has no user bound, so the tenant `WITH CHECK` refuses it, and it needs a `FOR INSERT` policy of its own for the service role, with no `RETURNING` (below). Not a public catalogue.
 
 **`RETURNING` is a read.** Postgres applies the `SELECT` policy to the row an `INSERT … RETURNING` hands back, and a caller the policy excludes gets `new row violates row-level security policy`, not the row. An insert made by a caller who may not read — the anonymous sign-up — must not `RETURNING`, and the RPC then answers with acceptance rather than the record. Change the contract to say so rather than stamping the record's dates in the service.
 

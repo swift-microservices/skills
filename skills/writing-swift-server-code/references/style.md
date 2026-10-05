@@ -50,6 +50,7 @@ Import no Foundation module when the standard library suffices; where Foundation
 - No trailing whitespace and no whitespace-only lines.
 - Keep lines readable, but do not mechanically wrap a generic `where` clause if the established code keeps the signature on one line.
 - Prefer explicit, descriptive local names: `database`, `postgresClient`, `itemService`, `serverConfig`.
+- Spell an identifier `ID` in a type name, as Apple's APIs do (`GetUserByIDUseCase`), and `Id` in variables, parameters, properties, and cases (`userId`).
 - `logger` is always the last parameter — of an initializer, and of any function that takes one — and the last stored dependency, at every call site in the same position. The one parameter that follows it is a trailing operation closure, as in `PostgresClient.withClient(configuration:logger:operation:)`.
 
 Use generic constraints in this form:
@@ -60,7 +61,7 @@ func withTransaction<T: Sendable>(
 ) async throws -> T
 ```
 
-Do not use `T : Sendable` or move the constraint to a trailing `where` unless the compiler requires it.
+Do not use `T : Sendable` or move the constraint to a trailing `where` unless the compiler requires it. A constraint on an associated type needs the `where` clause; keep the parameter's own constraint inline beside it: `<DatabaseType: Database> … where DatabaseType.Scope: CreateItemUseCaseScope`.
 
 ## Access and concurrency
 
@@ -118,4 +119,4 @@ A repository without one copies the [sample formatter](../../delivering-swift-se
 
 A repository profile in `AGENTS.md` may record another style, such as its own formatter or Xcode author headers; keep that style for every file in the repository, including new ones, and never mass-reformat it to the sample.
 
-Lint changed Swift with `swift format lint --strict` where the toolchain supports it. Do not introduce a different formatting tool.
+Lint all tracked Swift, manifests included, with `git ls-files -z '*.swift' | xargs -0 swift-format lint --strict` (the toolchain's `swift format` is the same tool). Do not introduce a different formatting tool.

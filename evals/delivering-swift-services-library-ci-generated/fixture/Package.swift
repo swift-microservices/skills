@@ -6,7 +6,7 @@ let package = Package(
     products: [.library(name: "ExampleSDK", targets: ["ExampleSDK"])],
     traits: [.trait(name: "URLSessionTransport"), .default(enabledTraits: ["URLSessionTransport"])],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-openapi-generator", from: "1.13.1"),
+        .package(url: "https://github.com/apple/swift-openapi-generator", from: "1.13.0"),
         .package(url: "https://github.com/apple/swift-openapi-runtime", from: "1.12.1"),
         .package(url: "https://github.com/apple/swift-openapi-urlsession", from: "1.0.0")
     ],
