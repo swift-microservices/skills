@@ -84,7 +84,7 @@ No `Database/`, no migrations, no `PostgresConfiguration`: a gateway owns no dat
         .product(name: "AuthenticationHummingbird", package: "swift-authentication-hummingbird"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "GRPCCore", package: "grpc-swift-2"),                         // RPCError, for the problem conformance
-        .product(name: "ServiceContextModule", package: "swift-service-context"),
+        .product(name: "ServiceContextModule", package: "swift-service-context"),   // only when the target reads ServiceContext
         .product(name: "<Upstream>Protos", package: "<project>-protos"),             // one per upstream
         .product(name: "Logging", package: "swift-log"),
     ],
@@ -109,7 +109,7 @@ No `Database/`, no migrations, no `PostgresConfiguration`: a gateway owns no dat
         .product(name: "GRPCServiceLifecycle", package: "grpc-swift-extras"),
         .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),
         .product(name: "<Upstream>Protos", package: "<project>-protos"),             // one per upstream
-        .product(name: "ServiceContextModule", package: "swift-service-context"),
+        .product(name: "ServiceContextModule", package: "swift-service-context"),   // only when the target reads ServiceContext
         .product(name: "Logging", package: "swift-log"),
         .product(name: "LoggingLoki", package: "swift-log-loki"),
         .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),

@@ -149,7 +149,7 @@ def verify(root, provider=None, no_tests=False, traits=False, foundation_excepti
     dep = read_yaml(dep_path) if dep_path.exists() else {}
     need(any(u.get('package-ecosystem') == 'github-actions' and u.get('directory') == '/' and u.get('schedule', {}).get('interval') == 'weekly' and u.get('target-branch', 'main') == 'main' and 'semver/none' in u.get('labels', []) for u in dep.get('updates', [])), 'Weekly Actions Dependabot/label policy missing')
     fmt = root / '.swift-format'
-    need(fmt.exists() and fmt.read_bytes() == (ASSETS / 'library.swift-format').read_bytes(), 'Exact formatter asset required')
+    need(fmt.exists() and fmt.read_bytes() == (ASSETS / 'sample.swift-format').read_bytes(), 'Sample formatter required')
     template = root / '.license_header_template'
     need(template.exists(), 'Compact license template missing')
     if template.exists():

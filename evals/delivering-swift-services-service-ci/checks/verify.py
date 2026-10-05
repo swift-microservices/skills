@@ -93,13 +93,10 @@ def verify(root, worker=False):
     agent = (root / 'AGENTS.md').read_text() if (root / 'AGENTS.md').exists() else ''
     format_file = root / '.swift-format'
     need(format_file.exists(), 'Missing formatter')
-    style = json.loads(format_file.read_text()) if format_file.exists() else {}
-    exception = style.get('lineLength') == 400
-    if exception:
-        need('400' in agent and 'Xcode' in agent, 'Style exception not recorded')
-    else:
-        standard = Path(__file__).resolve().parents[3] / 'skills/delivering-swift-services/assets/library.swift-format'
-        need(format_file.exists() and format_file.read_bytes() == standard.read_bytes(), 'Default formatter differs from shared asset')
+    standard = Path(__file__).resolve().parents[3] / 'skills/delivering-swift-services/assets/sample.swift-format'
+    if not (format_file.exists() and format_file.read_bytes() == standard.read_bytes()):
+        need('formatter' in agent.lower(), 'Formatter differs from the sample and is not recorded')
+    if 'Xcode' not in agent:
         need((root / '.license_header_template').exists(), 'Default compact header template missing')
     need(bool(agent), 'Repository profile missing')
     need((root / 'Package.resolved').exists(), 'Application lockfile missing')

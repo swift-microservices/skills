@@ -34,14 +34,17 @@ Registry cleanup is separate operational housekeeping; its existing schedule is 
 test sweep. Keep its retention and deployment policy in delivery.md.
 
 Use one released toolchain, one Linux distribution and the native deployment architecture,
-matching the Containerfile. The templates use Swift 6.3 / Ubuntu Noble / ARM64. Update tests,
+matching the image build. The templates use Swift 6.3 / Ubuntu Noble / ARM64. Update tests,
 static SDK, formatter and images together when the repository changes its deployed toolchain;
 do not silently switch an application to the latest library matrix.
 
 ## Workflow layout and references
 
-Copy the service assets into these destinations and fill in the product, registry and optional
-Containerfile target/worker inputs:
+The image tool is the project's choice (see *The release image* in [delivery.md](delivery.md)).
+The service assets are the worked example for a Containerfile built with Buildx; a project on
+Apple's `container`, a static SDK base image or `swift-container-plugin` replaces the image
+workflow's build step and keeps its gates. Copy the assets into these destinations and fill in
+the product, registry and optional Containerfile target/worker inputs:
 
 - `service-checks.yml` → `.github/workflows/checks.yml` (reusable source/tests/static checks).
 - `service-image.yml` → `.github/workflows/image.yml` (reusable native image build/validation).
@@ -64,15 +67,14 @@ do not assume opening a PR configures protection.
 ## Source quality and headers
 
 Run strict swift-format on tracked Swift sources, tests and manifests, plus YAML, shell and
-workflow checks. Copy `assets/library.swift-format` to `.swift-format` and follow the compact
-header conventions in [library-ci.md](library-ci.md#formatting-and-headers), including the
-matching template and narrow exclusions. Preserve the actual license and owner; headers do not
-relicense it.
+workflow checks. Prefer the [sample formatter](library-ci.md#formatting-and-headers)
+(`assets/sample.swift-format`, four spaces, 400 columns) and the compact header conventions,
+including the matching template and narrow exclusions. Preserve the actual license and owner;
+headers do not relicense it.
 
-An explicit application profile may override formatting and headers. For example, EmberFilm
-services retain four spaces, a 400-column `.swift-format`, and varying Xcode author headers.
-Do not mass-reformat them to 150 columns or replace their headers while adding CI. Record that
-the uniform license-template check is disabled for this style exception; formatter lint remains
+A repository profile may record its own formatter or headers, such as varying Xcode author
+headers. Keep them while adding CI; never mass-reformat files or replace headers. With
+non-uniform headers, record that the license-template check is disabled; formatter lint remains
 required. A uniform compact-header project enables that check and provides its matching template.
 
 Disable API-breakage and public DocC checks for executables. Documentation owned by a reusable
@@ -84,14 +86,15 @@ profile; broad warning suppression is not a solution.
 ## Locked dependency resolution
 
 A deployable application tracks its validated `Package.resolved`, including dependency-update
-PRs. Every test, release build, static SDK build and Containerfile resolve/build must use it.
+PRs. Every test, release build, static SDK build and image build must use it.
 Use `--disable-automatic-resolution` (also named `--force-resolved-versions`) to reject a stale
 manifest/lockfile pair rather than updating the graph in CI. Fetching the locked graph is allowed.
 Dependencies use released remote requirements; no local paths or moving branches in shipped
 manifests. Library repositories still do not track their resolved files.
 
 Cache layers/build state by manifest, lockfile and toolchain; caching never replaces lockfile
-validation. In a Containerfile, copy `Package.*` before source and use:
+validation. Every image tool builds with these flags; in the worked Containerfile, copy `Package.*`
+before source and use:
 
 ```dockerfile
 RUN swift package --disable-automatic-resolution resolve
@@ -119,7 +122,7 @@ Do not skip an existing required suite merely to make a generic workflow green.
 
 ## Static SDK compatibility
 
-If the service supports a static-musl build, require one released SDK build matching its
+If the project's image path, local or published, uses the static Linux SDK, require one released SDK build matching its
 supported toolchain and deployment architecture on PRs and develop/main pushes. This is a
 compatibility build, not a live service test or an image publication.
 
@@ -128,12 +131,12 @@ The package-test workflow can run native tests and a static SDK build together: 
 restrict `linux_host_archs`, and build the actual executable with release optimization and locked
 resolution. Its released setup script selects the host's musl target, including ARM64. No main
 snapshot SDK, unrelated architecture or additional SDK sweep is required for applications.
-A service with no supported musl path records the omission instead of claiming static support.
+A project whose image path does not use the static SDK needs no such build and claims no static support.
 
 ## Release image and Foundation
 
-Build the actual Containerfile natively for the deployment architecture; do not substitute a
-host `swift build`, emulation or library-consumer build. Use the same release configuration and
+Build the actual release image with the project's image tool, natively for the deployment
+architecture; do not substitute a host `swift build`, emulation or library-consumer build. Use the same release configuration and
 lockfile for PR validation and publishing. Preserve one image for serve/worker processes.
 
 The final image runs as an unprivileged user and contains the executable, backtracer, all SwiftPM

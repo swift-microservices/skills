@@ -67,7 +67,7 @@ These are the packages the architecture is built on, with their version floors. 
 | `swift-authentication-vapor` | `0.3.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
 | `<project>-core` | first compatible tag | `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` |
 | `<project>-protos` | first compatible tag | `<Module>Protos`, one product per module with a gRPC contract |
-| `swift-container-plugin` | `1.3.0` | `build-container-image` command plugin |
+| `swift-container-plugin` | `1.3.0` | `build-container-image` command plugin, only when the project builds images with it |
 
 Declare them at package level:
 
@@ -101,11 +101,11 @@ dependencies: [
     .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.3.0"), // with HTTP
     .package(url: "https://github.com/<organization>/<project>-core.git", from: "0.1.0"),
     .package(url: "https://github.com/<organization>/<project>-protos.git", from: "0.1.0"),   // with gRPC
-    .package(url: "https://github.com/apple/swift-container-plugin.git", from: "1.3.0"),
+    .package(url: "https://github.com/apple/swift-container-plugin.git", from: "1.3.0"),    // when images are built with the plugin
 ]
 ```
 
-Do not add every product to every target. Declare only the direct products imported by that target, and declare a package only when some target links one of its products; Xcode warns on a package no target uses. An HTTP-only package declares no grpc-swift, protobuf, or protos package; a gRPC-only package declares no Hummingbird or OpenAPI package. The container plugin is invoked from the package command line and is not attached to a source target.
+Do not add every product to every target. Declare only the direct products imported by that target, and declare a package only when some target links one of its products, or when it is a command plugin the project's build uses; Xcode warns on a package no target uses. An HTTP-only package declares no grpc-swift, protobuf, or protos package; a gRPC-only package declares no Hummingbird or OpenAPI package. The container plugin, when the project's image tool is the plugin, is invoked from the package command line and is not attached to a source target.
 
 Depend on organization packages by tagged URL, never by `.package(path:)`. A path dependency builds only where the sibling repository happens to be checked out, so CI and container builds fail on a package that resolves locally, and a package can silently build against uncommitted contract changes. Publish and tag first, then pin `from:` the release containing what the package imports. Contract additions are additive: tag them as a minor release so consumers on the same major range pick them up without a manifest edit. A library package never commits `Package.resolved`; an executable package does, and re-resolves it when a dependency's tag moves.
 
@@ -226,7 +226,7 @@ Sources/
       EdDSA.PublicKey+ConfigReader.swift
       EdDSA.PrivateKey+ConfigReader.swift             # the monolith issues tokens, so it holds the private key
     Database/
-      Migrations.swift                                # every migration, roles first, in applied order
+      Migrations.swift                                # every migration in applied order, usually roles first
       Role/
         CreateServiceRole.swift
         CreateInternalRole.swift                      # only when any module has tenant tables
@@ -338,11 +338,10 @@ The same block in every shape; the executable that links them differs.
     dependencies: [
         "<Module>Core",
         .product(name: "GRPCCore", package: "grpc-swift-2"),
-        .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
         .product(name: "SwiftProtobuf", package: "swift-protobuf"),
         .product(name: "ServiceContextModule", package: "swift-service-context"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
-        .product(name: "<Module>Protos", package: "<project>-protos"),
+        .product(name: "<Module>Protos", package: "<project>-protos"),       // the generated code links GRPCProtobuf itself
     ],
     swiftSettings: swiftSettings
 ),
@@ -432,7 +431,7 @@ The module blocks above, once per module, plus the shared HTTP target and one ex
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Project>Persistence", package: "<project>-core"),           // only when any module has tenant tables
         .product(name: "JWTKit", package: "jwt-kit"),
-        .product(name: "ServiceContextModule", package: "swift-service-context"),
+        .product(name: "ServiceContextModule", package: "swift-service-context"),   // only when the executable itself reads ServiceContext
         .product(name: "Logging", package: "swift-log"),
         .product(name: "LoggingLoki", package: "swift-log-loki"),
         .product(name: "PostgresMigrations", package: "postgres-migrations"),
@@ -474,7 +473,7 @@ The module blocks above, once, plus one executable:
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Project>Persistence", package: "<project>-core"),           // only a module with tenant tables
         .product(name: "JWTKit", package: "jwt-kit"),
-        .product(name: "ServiceContextModule", package: "swift-service-context"),
+        .product(name: "ServiceContextModule", package: "swift-service-context"),   // only when the executable itself reads ServiceContext
         .product(name: "Logging", package: "swift-log"),
         .product(name: "LoggingLoki", package: "swift-log-loki"),
         .product(name: "PostgresMigrations", package: "postgres-migrations"),

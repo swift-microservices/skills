@@ -19,10 +19,10 @@ This file is the worked default: a Compose suite, a `step`-issued CA, Loki. Ever
 
 ## Container build
 
-The images the environment runs come from the delivery pipeline — a `Containerfile` built and pushed per commit (see [delivery.md](delivery.md)); nothing here builds what production pulls. For a local build on a workstation, and as the fallback when the pipeline cannot run, every service carries the same `Makefile`, producing a static Linux image through the container plugin with no Docker daemon involved:
+The images the environment runs come from the delivery pipeline, built per commit with the project's recorded image tool (see *The release image* in [delivery.md](delivery.md)); nothing here builds what production pulls. For a local build on a workstation, and as the fallback when the pipeline cannot run, every service carries the same `Makefile` wrapping the project's local build. This example uses `swift-container-plugin` with the static Linux SDK, with no Docker daemon involved; a project on Docker or Apple's `container` wraps that command instead:
 
 ```make
-TAG ?= latest
+TAG ?= $(shell git rev-parse --short HEAD)
 SWIFT_SDK ?= aarch64-swift-linux-musl     # or x86_64-swift-linux-musl for the target host
 
 build:
@@ -36,11 +36,11 @@ build:
 .PHONY: build
 ```
 
-Replace only service, product, and repository names. One image per service, whether or not it has a Temporal worker: the worker runs the same image with `worker run` as its command. The image's creation dates are the epoch, so image age says nothing about freshness; probe a feature (`--help` listing a subcommand) instead.
+Replace only service, product, and repository names. One image per service, whether or not it has a Temporal worker: the worker runs the same image with `worker run` as its command. A container-plugin image's creation date is the epoch, so image age says nothing about freshness; probe a feature (`--help` listing a subcommand) instead.
 
 ## The suite Compose file
 
-One `compose.yml` at the workspace root runs the whole system from published images and never builds them: `${REGISTRY:-ghcr.io/<organization>}/<image>:${IMAGE_TAG:-latest}` with `pull_policy: ${PULL_POLICY:-always}`. Beside it, a `.env.example` names every variable with the required ones left empty, copied to a git-ignored `.env`; a required secret is declared as `${VAR:?message}` so Compose refuses to start with an actionable error rather than a guessable default. Each service package also carries a standalone `compose.yaml` for running that service alone.
+One `compose.yml` at the workspace root runs the whole system from published images and never builds them: `${REGISTRY:-ghcr.io/<organization>}/<image>:${IMAGE_TAG:?set a published branch or SHA tag}` with `pull_policy: ${PULL_POLICY:-always}`. Beside it, a `.env.example` names every variable with the required ones left empty, copied to a git-ignored `.env`; a required secret is declared as `${VAR:?message}` so Compose refuses to start with an actionable error rather than a guessable default. Each service package also carries a standalone `compose.yaml` for running that service alone.
 
 Shared configuration is declared once as anchors and merged into every service that needs it:
 
@@ -63,11 +63,11 @@ Consumers reach producers by service name: `GRPC_<SERVICE>_HOST=<service>`, `GRP
 
 ## Postgres and migrations
 
-One Postgres instance **per service** — `<service>-postgres`, `postgres:18`, its own volume mounted at `/var/lib/postgresql` (PostgreSQL 18 changed the image's volume layout; do not set a custom `PGDATA`), a health check, and no `ports:`. The instance is provisioned with its database and owner through the image's own variables, so there is no init job and nothing ever creates a database. Per-service instances keep the local suite honest and disposable; a deployment environment may instead consolidate to one shared instance with a database per service — the ownership rule survives either shape (see *Where a service's data lives* in the building-swift-services skill's persistence reference).
+Where Postgres runs is the project's choice (see *Where a service's data lives* in the building-swift-services skill's persistence reference); this worked example runs one instance per service — `<service>-postgres`, `postgres:18`, its own volume mounted at `/var/lib/postgresql` (PostgreSQL 18 changed the image's volume layout; do not set a custom `PGDATA`), a health check, and no `ports:`. The instance is provisioned with its database and owner through the image's own variables, so there is no init job and nothing ever creates a database. A project that runs one shared instance with a database per service instead creates each `<project>_<service>` database and owner once while provisioning; the ownership rule survives either shape.
 
 Per service:
 
-- `<service>`: `command: ["serve", "--migrate-database"]`, gated on its instance's health check. Migrations run in-process as the owner before the server binds; serving connects as the service role the first migration creates. There is no migrate one-shot.
+- `<service>`: `command: ["serve", "--migrate-database"]`, gated on its instance's health check. Migrations run in-process as the owner before the server binds; serving connects as the service role its migrations create. This example uses no migrate one-shot.
 - `<service>-worker`: the service's image with `command: ["worker", "run"]`, at the same tag, when the service uses Temporal — with the internal-service clients and Temporal configuration its Activities need, and the Postgres connection to its own service's database as the worker role: `POSTGRES_WORKER_USER` / `POSTGRES_WORKER_PASSWORD` and never the owner pair. No `*jwt-verification`, because it verifies no token.
 
 ```yaml
@@ -95,7 +95,7 @@ Per service:
     POSTGRES_INTERNAL_PASSWORD: ${<SERVICE>_INTERNAL_PASSWORD:?set the internal role password}
 
 <service>-worker:
-  image: ${REGISTRY:-ghcr.io/<organization>}/<organization>-<service>:${IMAGE_TAG:-latest}
+  image: ${REGISTRY:-ghcr.io/<organization>}/<organization>-<service>:${IMAGE_TAG:?set a published branch or SHA tag}
   command: ["worker", "run"]
   environment:
     <<: [*tls, *observability]
@@ -107,7 +107,7 @@ Per service:
 
 The service's Postgres block repeats the instance's `POSTGRES_*` values because the app reads them as the owner connection; the `SERVICE_*` pair names the tenant-scoped role serving uses and the `INTERNAL_*` pair the one that sees every row. The worker gets its own role's pair and no owner pair at all. The owner pair sits in the serving container's environment — the accepted price of in-process migration; the serving *process* never connects with it.
 
-The migration library refuses a migration list whose order differs from what a database has already applied — it throws, it does not revert. A change that inserts a migration before applied ones (adopting the service-role-first standard on an existing database, say) therefore means `docker compose down -v` and a fresh start, not an in-place `up`. Appending a migration applies in place.
+The migration library refuses a migration list whose order differs from what a database has already applied — it throws, it does not revert. A change that inserts a migration before applied ones therefore means `docker compose down -v` and a fresh start, not an in-place `up`. Appending a migration, a role added later included, applies in place.
 
 ## Ports
 
@@ -127,7 +127,7 @@ secrets:
 services:
   authentication:
     environment:
-      <<: [*postgres-connection, *jwt-verification, *tls, *observability]
+      <<: [*jwt-verification, *tls, *observability]
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt-private
     secrets:
       - jwt-public

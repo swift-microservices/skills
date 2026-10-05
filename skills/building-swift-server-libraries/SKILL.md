@@ -40,7 +40,7 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 3. Use Swift tools 6.3, the compact license header after the tools-version line, one shared settings array with the four upcoming features attached to every target and test target, `swiftLanguageModes: [.v6]`, and `.macOS(.v15)`; a package meant for apps too declares their platforms. No unsafe flags, `@preconcurrency`, or default MainActor isolation.
 4. Set each `from:` to the oldest release the library relies on and raise it deliberately, saying why; never add a ceiling. Declare traits explicitly where defaults pull in full Foundation, and record an unavoidable upstream full-Foundation product as a profile exception.
 5. Never commit `Package.resolved`.
-6. Label every pull request with exactly one SemVer impact. Before 1.0.0, a breaking change is `🆕 semver/minor` and a compatible addition, a floor raise, or a fix to doc comments or the DocC catalog `🔨 semver/patch`; README, `AGENTS.md`, tests, CI, and formatting are `semver/none`. Release with the repository's Auto Release workflow; never move a published tag.
+6. Label every pull request with exactly one SemVer impact. Before 1.0.0, a breaking change is `🆕 semver/minor` and a compatible addition, a floor raise, or a fix to doc comments or the DocC catalog `🔨 semver/patch`; README, `AGENTS.md`, tests, CI, and formatting are `semver/none`. Release with the repository's recorded mechanism, a label-based Auto Release workflow or bare version tags cut by hand; never move a published tag.
 
 ### API
 
@@ -58,7 +58,7 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 15. A package that owns a caller-isolated callback API tests it from a custom actor and from `@MainActor`, suspending inside the closure and checking isolation on both sides, plus thrown-error propagation and cancellation.
 16. A driver proves commit, rollback, and its settings against the real provider, configured from `POSTGRES_*` environment variables with a `scripts/test.sh` that starts an ephemeral server; CI provides the database and fails without it.
 17. Keep README, `AGENTS.md`, DocC, and `.spi.yml` true to the released API: install snippets at the current floor, the family table complete, every profile exception stated with its replacement coverage.
-18. Apply the delivering skill's library CI profile as written; copy the library formatter asset byte-for-byte and lint all tracked Swift.
+18. Apply the delivering skill's library CI profile as written; start `.swift-format` from its sample formatter unless the profile records another, and lint all tracked Swift, manifests included.
 
 ## Workflow
 
@@ -72,7 +72,7 @@ Create a library:
 - [ ] 4. Tests: one per guarantee; isolation contract tests for scoped callbacks; real-provider tests and scripts/test.sh for a driver
 - [ ] 5. Repository: README, AGENTS.md profile, DocC catalog, .spi.yml, .swift-format, header template, .licenseignore, .gitignore with Package.resolved
 - [ ] 6. CI from the library profile; then swift build, swift test (or scripts/test.sh), and swift-format lint --strict
-- [ ] 7. Release: one SemVer label, Auto Release on main, then raise consumers' floors
+- [ ] 7. Release: one SemVer label, the repository's release mechanism (Auto Release or a hand-cut tag), then raise consumers' floors
 ```
 
 ```

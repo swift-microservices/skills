@@ -66,7 +66,7 @@ A declared array that is never attached is insufficient, and so is attaching it 
 
 Default actor isolation is a separate setting: server packages and applications keep nonisolated default isolation and set no `.defaultIsolation(MainActor.self)`. A server holds one process open for every caller at once; blanket MainActor isolation would serialize it.
 
-Diagnostics are resolved, never silenced with unsafe flags, `@preconcurrency`, or `@unchecked Sendable`. CI may add stricter compiler flags (warnings as errors, explicit target-dependency import checks, required explicit `Sendable`); those belong to the delivering skill's CI profiles, not to the manifest.
+Diagnostics are resolved, never silenced with unsafe flags, `@preconcurrency`, or an uncommented `@unchecked Sendable`. CI may add stricter compiler flags (warnings as errors, explicit target-dependency import checks, required explicit `Sendable`); those belong to the delivering skill's CI profiles, not to the manifest.
 
 ## Concurrency rules that are settled here
 

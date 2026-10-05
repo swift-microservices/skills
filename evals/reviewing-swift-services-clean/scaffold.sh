@@ -1,7 +1,7 @@
 #!/bin/bash
 # Lays down a tiny "notes" service in the working directory for the reviewer to audit.
 set -euo pipefail
-mkdir -p Sources/NotesCore/Notes/UseCases/CreateNote Sources/NotesPostgres/Migrations/Note Sources/NotesPostgres/Scopes Sources/Notes/Serve Tests/NotesCoreTests
+mkdir -p Sources/NotesCore/Notes/UseCases/CreateNote Sources/NotesPostgres/Migrations/Note Sources/NotesPostgres/Scopes Sources/Notes/Serve Sources/Notes/Database Tests/NotesCoreTests
 cat > Package.swift <<'PKG'
 // swift-tools-version: 6.3
 import PackageDescription
@@ -170,6 +170,15 @@ package struct PostgresNotesScope: PostgresScope, CreateNoteUseCaseScope {
         self.noteRepository = PostgresNoteRepository(connection: connection, logger: logger)
     }
 }
+SWIFT
+cat > Sources/Notes/Database/Migrations.swift <<'SWIFT'
+// Migration list, abridged for the fixture. The package started without tenant tables;
+// the internal role was added later and appended, followed by the policy that names it.
+// await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: try configuration.servicePassword, database: configuration.database))
+// await migrations.add(CreateNotesTable())
+// await migrations.add(CreateInternalRole(role: configuration.internalUser, password: try configuration.internalPassword, database: configuration.database))
+// await migrations.add(CreateNotesRLSPolicy(internalRole: configuration.internalUser))
+// try await migrations.apply(client: client, logger: logger, dryRun: false)
 SWIFT
 cat > Sources/Notes/Serve/Serve.swift <<'SWIFT'
 // Composition root, abridged for the fixture.

@@ -17,7 +17,7 @@ swift-<concept>[-<technology>]/
   AGENTS.md
   LICENSE
   .gitignore                     # .build, .swiftpm, Package.resolved, Xcode state
-  .swift-format                  # the library formatter asset, byte-for-byte
+  .swift-format                  # the sample formatter, unless AGENTS.md records another
   .license_header_template
   .licenseignore                 # Package.swift and LICENSE only
   .spi.yml
@@ -52,7 +52,7 @@ The README is what a consumer reads before adding the dependency. In order:
 4. The concept, with code that compiles against the current API, using a neutral example payload (`AppToken`, `CreatePostUseCase`), never an organization's types.
 5. The family: a table of the sibling packages (drivers, bindings) and what each adds.
 6. Requirements: Swift 6.3, macOS 15 or Linux, the minimum versions of the upstreams that matter.
-7. Development (`swift test`, or `scripts/test.sh` for a driver; `swift-format lint --strict --recursive Sources Tests`), Contributing, License.
+7. Development (`swift test`, or `scripts/test.sh` for a driver; `git ls-files -z '*.swift' | xargs -0 swift-format lint --strict`), Contributing, License.
 
 Keep the snippet and the requirements in step with each release; a stale floor is the most common README defect.
 
@@ -84,4 +84,4 @@ A README that links a documentation badge needs both the catalog and `.spi.yml`;
 
 ## Headers, formatting, and CI
 
-Every tracked Swift file, script, and workflow carries the compact license header matched by `.license_header_template`; `Package.swift` keeps the tools-version line first, then the header. Copy the library formatter asset byte-for-byte to `.swift-format` and lint all tracked Swift, manifests included. The workflows, the gates, Dependabot, the release workflow, and every exception are the delivering skill's [library CI profile](../../delivering-swift-services/references/library-ci.md); apply it as written and record exceptions in `AGENTS.md`.
+Every tracked Swift file, script, and workflow carries the compact license header matched by `.license_header_template`; `Package.swift` keeps the tools-version line first, then the header. Start `.swift-format` from the sample formatter (four spaces, 400 columns) unless `AGENTS.md` records another, and lint all tracked Swift, manifests included. The workflows, the gates, Dependabot, the release workflow, and every exception are the delivering skill's [library CI profile](../../delivering-swift-services/references/library-ci.md); apply it as written and record exceptions in `AGENTS.md`.

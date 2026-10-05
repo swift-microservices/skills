@@ -39,7 +39,7 @@ Read applicable `AGENTS.md` files first: their project profile, styles, and reco
 9. Convert one type into another with an initializer on the destination, in an extension beside the adapter that needs it; a throwing conversion is a visible `init(...) throws`.
 10. `logger` is the last parameter of every initializer and function that takes one; only a trailing operation closure follows it. Log through the `swift-log` facade; only a composition root bootstraps the logging system.
 11. Never declare a constant and assign it in a following block; produce the value where it is declared.
-12. Keep the repository's header and formatter. Without one, copy the library formatter asset and use the compact SPDX header with the repository's license and owner.
+12. Keep the repository's header and formatter. Without one, copy the sample formatter (four spaces, 400 columns) and use the compact SPDX header with the repository's license and owner.
 
 ## Completion gates
 
