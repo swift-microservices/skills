@@ -71,7 +71,7 @@ An HTTP route collection or verb may additionally be protected by `AdminRequestC
 
 A self-only operation derives its user ID from `subject`, never a business input. Explicit permission predicates are checked before side effects and throw the use case's own `.forbidden`; deriving a self-only ID from the subject needs no redundant equality guard. The producer translates that to `permissionDenied` (HTTP 403). Internal input still requires valid relationships, legal state transitions, consistency, and idempotency. A user ID in internal input identifies a resource; it is not a verified user principal.
 
-When two audiences share business work, expose a user overload and an input-only internal overload with a private common implementation. Do not let the user overload skip its permission check.
+A use-case protocol declares exactly one `callAsFunction`, so one use case serves one kind of caller. When an administrator and another process perform the same operation, they are two use cases, each with its own input, typed error, and single entry point, named for the business capability: billing's worker grants and revokes an entitlement (`GrantEntitlementUseCase(input:)`, `RevokeEntitlementUseCase(input:)`, behind `GrantEntitlement` and `RevokeEntitlement` on the internal service) where an administrator upserts and deletes one (`UpsertEntitlementUseCase(subject:input:)`, `DeleteEntitlementUseCase(subject:input:)`, which check the role). They share the repository and its command, not an implementation. A use case neither the gateway exposes nor a process calls is deleted, with its RPC.
 
 ## Two RPC services
 
