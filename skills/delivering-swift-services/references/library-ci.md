@@ -97,15 +97,16 @@ manifest flags that prevent downstream consumption.
 
 ## Formatting and headers
 
-Copy [the library formatter](../assets/library.swift-format) **byte-for-byte** to `.swift-format`:
-four-space indentation, 150-column lines, ordered imports, and every included rule unchanged.
-Do this for existing libraries when applying this standard too. The source is an Apple library
-formatter captured at commit `508797b5468dbc532f77c317bf9df0cb3231f5c1`; the checked-in asset is
-the profile, so later upstream changes require a deliberate update. Public documentation remains
-required even though the formatter does not enforce documentation on every declaration.
+[The sample formatter](../assets/sample.swift-format) is the starting point for a library's
+`.swift-format`, and preferably a deployable service's too: four-space indentation, 400-column
+lines, ordered imports, and its rule set. A repository without a formatter copies it as-is; a
+repository whose `AGENTS.md` records its own formatter keeps it and never mass-reformats to the
+sample. The sample derives from an Apple library formatter captured at commit
+`508797b5468dbc532f77c317bf9df0cb3231f5c1`, with the line length raised to 400; the checked-in
+asset is the sample, so later upstream changes require a deliberate update. Public documentation
+remains required even though the formatter does not enforce documentation on every declaration.
 Format and strictly lint all tracked Swift, including manifests and CI consumers, with the CI
 formatter toolchain (currently 6.3). Generated build output is not tracked or hand-formatted.
-The service profile's 400-column formatter does not apply to libraries.
 
 Enable compact license-header checking and preserve the repository's license/owner. MIT packages
 in this organization use:

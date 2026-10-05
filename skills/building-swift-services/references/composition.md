@@ -417,7 +417,7 @@ if migrateDatabase {
 }
 ```
 
-`PostgresClient.withClient` comes from `PersistencePostgres`: it starts the client in a task group and cancels it when the operation returns or throws. `Migrations.run()` in `Database/Migrations.swift` adds every migration explicitly, one call each, in the order databases apply them: the role migrations first, `CreateServiceRole` before the others, reading each role's password from the configuration, then each module's tables and policies in module dependency order, and applies the list:
+`PostgresClient.withClient` comes from `PersistencePostgres`: it starts the client in a task group and cancels it when the operation returns or throws. `Migrations.run()` in `Database/Migrations.swift` adds every migration explicitly, one call each, in the order databases apply them: in a new package the role migrations first, `CreateServiceRole` before the others, reading each role's password from the configuration, then each module's tables and policies in module dependency order, and applies the list:
 
 ```swift
 await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: try configuration.servicePassword, database: configuration.database))
@@ -429,9 +429,9 @@ await migrations.add(CreateItemsRLSPolicy(internalRole: configuration.internalUs
 try await migrations.apply(client: client, logger: logger, dryRun: false)
 ```
 
-A service has one module, so its list is the roles and that module's migrations. The library refuses a reordered list, so a new migration is appended at the end, after every migration already applied, and nothing is ever reordered or removed; this one file is where the order lives. The long-lived clients the `ServiceGroup` owns are built from `postgres.service` and `postgres.internalService` and never hold owner credentials; the owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
+A service has one module, so its list is the roles and that module's migrations. The library refuses a reordered list, so a new migration is appended at the end, after every migration already applied, and nothing is ever reordered or removed; a role the developer adds later is appended the same way, before the policies that name it. This one file is where the order lives. The long-lived clients the `ServiceGroup` owns are built from `postgres.service` and `postgres.internalService` and never hold owner credentials; the owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
 
-The flag is the default because it needs no platform support: one container, one command, and the schema is current before the port opens. The alternative is a `migrate` subcommand running the same `Migrations.run()` and exiting, deployed as a one-shot job before the rollout, for a platform that orders jobs (an init container, a pre-deploy hook) or starts several replicas at once, where N containers racing the same list at boot is what the library's ordering check would refuse. Either way the rule holds: nothing serves an unmigrated schema, and only the migration client ever connects as the owner.
+The flag is the default because it needs no platform support: one container, one command, and the schema is current before the port opens. The alternative is a `migrate` subcommand running the same `Migrations.run()` and exiting, deployed as a one-shot job before the rollout, for a platform that orders jobs (an init container, a pre-deploy hook) or starts several replicas at once. Replicas that migrate at boot instead serialize the apply with a Postgres advisory lock taken around the list; which of the two a project uses is its choice, recorded once. Either way the rule holds: nothing serves an unmigrated schema, and only the migration client ever connects as the owner.
 
 ## Operator commands
 

@@ -156,12 +156,12 @@ Rows in terminal states fall out of the index, so the value frees automatically 
 
 ### Where a service's data lives
 
-"Database per service" is an ownership rule, not a hardware rule: a service creates, migrates, reads, and writes its own tables, and nothing else touches them. Where those tables physically live is a deployment choice, made once for an environment and recorded in the decision record, and it is one of the debated ones. The four shapes, from the most isolated down:
+"Database per service" is an ownership rule, not a hardware rule: a service creates, migrates, reads, and writes its own tables, and nothing else touches them. Where those tables physically live is the project's choice, made once for an environment and recorded in the decision record; the skills set no default, because it is one of the debated ones. The four shapes, from the most isolated down:
 
 | Shape | Isolation | What it costs | When |
 | --- | --- | --- | --- |
 | **An instance per service** | Complete: its own failure domain, version, maintenance window, backups, point-in-time recovery, and quotas | N clusters to tune, patch, back up, and pay for; per-instance connection limits | Independent scaling or availability targets, a compliance boundary, a team that runs its own database, a managed-database-per-service platform |
-| **One instance, a database per service, distinct owners and roles** (the worked default) | Logical: Postgres allows no cross-database query without an FDW, so a service cannot join into a sibling's data; each database has its own owner | One failure domain and one maintenance window for all; point-in-time recovery is cluster-wide, so restoring one service's data to a moment means a logical restore; role names are cluster-wide; a noisy neighbour shares buffers and I/O | A small or mid-size workload, a single staging box, a managed cluster that bills per instance |
+| **One instance, a database per service, distinct owners and roles** | Logical: Postgres allows no cross-database query without an FDW, so a service cannot join into a sibling's data; each database has its own owner | One failure domain and one maintenance window for all; point-in-time recovery is cluster-wide, so restoring one service's data to a moment means a logical restore; role names are cluster-wide; a noisy neighbour shares buffers and I/O | A small or mid-size workload, a single staging box, a managed cluster that bills per instance |
 | **One database, a schema per service, grants per role** | Weak: a join across schemas is one `GRANT` away, and reviewers must hold the line | Cheapest to run; one owner for everything; foreign keys across schemas become possible and must be refused by review | A platform that provisions databases slowly; move up a row when the first cross-schema join is proposed |
 | **Shared tables** | None | Every service couples to every migration | Never; this is the rule the other three exist to keep |
 
@@ -244,7 +244,7 @@ The migration is plain: `CREATE ROLE "<role>" LOGIN PASSWORD '…'`, `GRANT CONN
 
 Never `BYPASSRLS`, and never the owner as a runtime role. The wider view is granted `TO` the role through a policy of its own (below), so it is a fact visible in the schema and in `pg_policies` rather than an attribute on a role or a consequence of ownership.
 
-The migration library refuses a reordered list, so `CreateServiceRole` is the first migration from the package's start. A role the package gains later, such as the worker role when Temporal arrives, is appended like any other migration: its grant on all tables covers the tables that exist, and its default privileges cover the ones that follow.
+Role migrations usually come first: a new package starts its list with `CreateServiceRole`. The migration library refuses a reordered list, so a role the developer adds later — the internal role when the first tenant table arrives, the worker role when Temporal does — is appended at the end like any other migration, never inserted before applied ones: its grant on all tables covers the tables that exist, and its default privileges cover the ones that follow. A policy that names the role (`TO "<role>" USING (true)`) is appended after it.
 
 ## Row-level security
 

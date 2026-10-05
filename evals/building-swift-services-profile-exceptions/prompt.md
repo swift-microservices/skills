@@ -6,7 +6,7 @@ tags: [building]
 
 /swift-microservices:building-swift-services
 
-Write a concise architecture note to ./boundaries.md for these Authentication operations. The applicable AGENTS.md defines an EmberFilm profile that overrides general skill defaults: `AuthenticationRPC` and `AuthenticationServer` avoid dependency module collisions, and WebAuthn standard types and its concrete manager remain in Core because wrapping them adds no useful seam. Do not build a complete service or invent unrelated infrastructure.
+Write a concise architecture note to ./boundaries.md for these Authentication operations. The applicable AGENTS.md defines a project profile that overrides general skill defaults: `AuthenticationRPC` and `AuthenticationServer` avoid dependency module collisions, and WebAuthn standard types and its concrete manager remain in Core because wrapping them adds no useful seam. Do not build a complete service or invent unrelated infrastructure.
 
 Show Core signatures and inputs for creating an auth code, beginning passkey registration, finishing registration with a WebAuthn `RegistrationCredential`, and changing a password. Each operation affects only the signed-in user's account. Explain how the RPC handler supplies caller identity, how the authenticator-assigned credential ID is persisted, and how policy values reach use cases.
 

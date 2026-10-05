@@ -36,18 +36,26 @@ build and smoke-check the final image, and publish that same image before deploy
 
 ## The release image
 
-Published images build from a `Containerfile`, two stages, glibc:
+How the image is built is the project's choice, made once and recorded in `AGENTS.md` from the project's direction:
 
-- **Build stage** on the Swift toolchain image: `COPY ./Package.*` and `swift package --disable-automatic-resolution resolve` as their own layer so dependency resolution caches while manifests are unchanged, then `swift build --configuration release --disable-automatic-resolution --static-swift-stdlib --product <service>`, then stage the binary, `swift-backtrace-static`, and every `*.resources` bundle.
+- a **`Containerfile`** built with Docker (Buildx) or Apple's `container` tool;
+- a **static Linux SDK** binary (`swift build --swift-sdk <arch>-swift-linux-musl`) copied into a minimal base image;
+- **`swift-container-plugin`** (`swift package build-container-image`), with no daemon involved.
+
+Every choice satisfies the same contract: a release build from the locked graph (`--disable-automatic-resolution`, with the strict flags in [services-ci.md](services-ci.md#locked-dependency-resolution) where the build runs a compiler step CI controls), staged with the backtracer and every `*.resources` bundle; a runtime that runs as an unprivileged user, carries `ca-certificates` and `tzdata` where it has an OS layer, and configures `SWIFT_BACKTRACE`; and one image per service, serve and worker alike. The image CI validates is the image it publishes.
+
+The worked example is a two-stage glibc `Containerfile`:
+
+- **Build stage** on the Swift toolchain image: `COPY ./Package.*` and `swift package --disable-automatic-resolution resolve` as their own layer so dependency resolution caches while manifests are unchanged, then the release build command from [services-ci.md](services-ci.md#locked-dependency-resolution) with `--static-swift-stdlib --product <service>`, then stage the binary, `swift-backtrace-static`, and every `*.resources` bundle.
 - **Runtime stage** on the matching minimal OS image: `ca-certificates` and `tzdata`, any additional shared libraries required by the inspected release binary, an unprivileged system user with `/app` as home, the staged files copied in with that owner, `SWIFT_BACKTRACE` configured, `ENTRYPOINT ["./<service>"]`.
 
 A `.dockerignore` beside it excludes version control, `.github`, build state, secrets patterns, and everything not needed to compile the package.
 
-Build natively for the deployment host's architecture — an ARM host means an ARM runner and `platforms: linux/arm64` — never under emulation, which turns a release build into an hour. The static-musl container plugin remains the local `Makefile` path (see [environment.md](environment.md)); the Containerfile is the delivery path, and the two are allowed to differ because only one of them publishes — with the fallback above as the one time the local path publishes too.
+Build natively for the deployment host's architecture — an ARM host means an ARM runner and `platforms: linux/arm64` — never under emulation, which turns a release build into an hour. A local build may use a different tool from the published path (see [environment.md](environment.md)); only the published path is release evidence, except when refused CI runners force publishing from the local build (the skill's rule 6).
 
 ## Publishing per commit
 
-The image job runs after all checks on a deployment-branch push: buildx loads the native Containerfile image using the GitHub Actions layer cache, the final image is smoke-checked, and that same image is pushed with two tags —
+The image job runs after all checks on a deployment-branch push: the project's image tool builds the native image (in the worked example, Buildx loads the Containerfile image using the GitHub Actions layer cache), the final image is smoke-checked, and that same image is pushed with two tags —
 
 ```
 ghcr.io/<organization>/<organization>-<service>:<short-sha>
@@ -104,7 +112,7 @@ Dokploy specifics, each learned the expensive way:
 
 Migrations run **in the serving container, at boot**: the application's command is `serve --migrate-database`, and the process applies the list over a short-lived owner client — `PostgresClient.withClient` from swift-persistence-postgres — before the server binds (see *Migrations at boot* in the building-swift-services skill's composition reference). There is no migrate application and no pipeline ordering to maintain — a container cannot serve an unmigrated schema, because it migrates before it listens. The migration library makes the no-migration case a cheap no-op, so the flag stays on unconditionally.
 
-The trade, accepted with open eyes: the owner credentials sit in the serving container's environment for its lifetime. The serving *process* still connects only as the confined role — the row-level-security posture is unchanged — but a compromise of the container's environment now yields the owner pair. Two residual cautions: multiple replicas of one service would race the apply at startup (fine on one node; an advisory lock before the list when replicas arrive), and a failed migration crash-loops the new task while the platform's rolling update keeps the old one serving.
+The trade, accepted with open eyes: the owner credentials sit in the serving container's environment for its lifetime. The serving *process* still connects only as the confined role — the row-level-security posture is unchanged — but a compromise of the container's environment now yields the owner pair. Two residual cautions: multiple replicas of one service would race the apply at startup (fine on one replica; when replicas arrive, the project chooses an advisory lock around the list or a `migrate` one-shot before the rollout), and a failed migration crash-loops the new task while the platform's rolling update keeps the old one serving.
 
 Two facts boot-ordering cannot fix, and one rule that absorbs both: the old build briefly runs against the new schema during every deploy, and a rollback runs old code against a schema that migrated forward — **so migrations are expand/contract**. Adding tables, nullable columns, and indexes is always safe; renames, drops, and tightening constraints ship in a *later* commit, only after no deployed code references the old shape. A genuinely breaking migration is the rare event where the deploy is watched rather than unattended.
 

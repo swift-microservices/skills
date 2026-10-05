@@ -113,6 +113,6 @@ Do not call work complete until every applicable gate passes.
 - Every start or signal happens after the local transaction committed; no transaction spans a Temporal call.
 - Workflow IDs are deterministic with `.rejectDuplicate` and `.useExisting`; signals return without waiting; queries have no side effects.
 - The worker is `worker run` with its own composition root, connects as the worker role to its own database and to other services through their internal services as itself, holds no token, and is in a `ServiceGroup` with the Temporal client or worker.
-- The worker's environment carries the SDK's required keys and a heartbeat interval; a missing one fails at startup, not on the first task.
+- The worker's environment carries the SDK's required keys, plus a heartbeat interval when liveness reporting is required; a missing required key fails at startup, not on the first task.
 
 If a gate requires an unresolved product, consistency, or data-migration decision, stop at the safe boundary and request that decision rather than inventing behavior.

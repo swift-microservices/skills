@@ -14,5 +14,5 @@ in AGENTS.md alone is not sufficient. Run the independent checker from the origi
 `python3 evals/delivering-swift-services-library-ci/checks/verify.py <workspace>` (requires PyYAML).
 
 This package has no full-Foundation dependency: both Foundation consumer checks are required.
-FAIL for service's 400-column formatter, substituted workflow families/default matrices, hidden
+FAIL for a formatter other than the sample asset, substituted workflow families/default matrices, hidden
 snapshot failures, extra static architectures/SDK versions, or loss of existing behavior tests.

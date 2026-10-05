@@ -114,8 +114,8 @@ Construct the value inline instead when one method builds it once and nothing el
 
 Use the repository's formatter configuration and formatting command when it has them, and do not reformat unrelated files.
 
-A repository without one copies the [library formatter asset](../../delivering-swift-services/references/library-ci.md#formatting-and-headers) byte-for-byte to `.swift-format`: four-space indentation, 150-column lines, ordered imports, and `indentConditionalCompilationBlocks: false` so conditional `FoundationEssentials` and `Foundation` imports stay flush-left. Reusable libraries and services on the standard [service CI profile](../../delivering-swift-services/references/services-ci.md#source-quality-and-headers) both use it.
+A repository without one copies the [sample formatter](../../delivering-swift-services/references/library-ci.md#formatting-and-headers) to `.swift-format`: four-space indentation, 400-column lines, ordered imports, and `indentConditionalCompilationBlocks: false` so conditional `FoundationEssentials` and `Foundation` imports stay flush-left. It is the sample for libraries and, preferably, for deployable services.
 
-A repository profile in `AGENTS.md` may record another style, such as four spaces with a 400-column limit and Xcode author headers; keep that style for every file in the repository, including new ones, and never mass-reformat it to the asset.
+A repository profile in `AGENTS.md` may record another style, such as its own formatter or Xcode author headers; keep that style for every file in the repository, including new ones, and never mass-reformat it to the sample.
 
 Lint changed Swift with `swift format lint --strict` where the toolchain supports it. Do not introduce a different formatting tool.
