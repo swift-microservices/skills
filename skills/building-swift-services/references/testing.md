@@ -61,7 +61,7 @@ func makeSubject(role: UserRole) -> UserIdentity {
 
 A test that needs the subject's own id — a "reads their own row" case — makes the identity with a fixed id instead. An internal use case takes business input directly; test its invariants without manufacturing a caller.
 
-Dates in mocks are fixed (`Date(timeIntervalSince1970:)`), never `Date()`: an assertion against a mock's output must be reproducible. The mock repositories and scopes are the service's own, because they mirror the service's repositories; only the two doubles every service would write identically are shared.
+Dates in mocks are fixed (`Date(timeIntervalSince1970:)`), never `Date()`: an assertion against a mock's output must be reproducible. A use case that decides on time reads `Date.now`, so a test of that decision builds its dates relative to now with a clear margin — an end date a minute past or a minute ahead — never at the boundary. The mock repositories and scopes are the service's own, because they mirror the service's repositories; only the two doubles every service would write identically are shared.
 
 ## The scoped database helper
 
