@@ -62,7 +62,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 12. Choose the least complex mechanism per interaction: a direct use-case call inside one module, a use-case protocol across modules in a monolith, gRPC for an immediate typed result across processes, an event for a fact many consumers react to, a durable workflow for a multi-step process with retries, timers, or waits, a projection for a read model that spans services.
 13. Do not turn a local function graph into a chain of RPCs; expose capability-level operations that return what the caller's step needs.
 14. Design contracts before implementations: name RPCs for capabilities, define validation, response meaning, stable status mapping, deadlines, and idempotency, and give canonical protos one home, evolving `v1` additively. Default in microservices: the tagged `<project>-protos` package, because two or more packages consume them. Alternative in a gRPC monolith: in the package itself, until a second package consumes them.
-15. Split every contract by audience — `<Entity>PublicService`, `<Entity>Service`, `<Entity>InternalService` — so identification applies per service, never per method. A monolith rarely has an internal audience; a microservice that another process calls always does.
+15. Give every contract `<Entity>Service`, everything a person reaches, its RPCs grouped by who may call them (anyone; the caller's own, whose requests name no user; administrators), and, when another process calls in, `<Entity>InternalService`, holding only the RPCs another process calls, admitted by mTLS alone. A monolith rarely has an internal service; a microservice that another process calls always does.
 16. An event is the mechanism for a fact that more than one consumer reacts to and that the producer needs no answer to. The owner publishes it through a transactional outbox written in the same transaction as the mutation; a consumer is idempotent by event id; no broker exists before a second consumer does. In a monolith the default publisher is in-process, still through the outbox when the consumer's effect must survive a crash (events-and-projections.md).
 17. A projection is a consumer-owned read model kept by idempotent upsert and rebuildable from the owner. It never becomes a source of truth, never replaces a synchronous ask when the answer must be current, and is added from a measured read the owner cannot serve at the needed latency.
 
@@ -77,14 +77,14 @@ The rules follow from these. When a situation is not covered, decide from the pr
 ### Security and observability
 
 23. Terminate public TLS at the ingress or gateway; keep every internal gRPC connection mutually authenticated with the stack's CA; keep internal ports off the public ingress.
-24. Use mTLS for service and worker connections and user JWTs for user operations. Internal handlers accept business input without a bound process principal. Verify the original user token at every receiving service, forward it only on user descriptors, and authorize user operations in the owning use case.
+24. Use mTLS for service and worker connections and user JWTs for user operations. Internal handlers accept business input without a bound process principal. Verify the original user token at every receiving service, forward it only on `<Entity>Service` descriptors, and authorize user operations in the owning use case.
 25. Authorize resource and business access inside the owning use case; an optional API gate may additionally reject from verified JWT role claims without database lookups. Keep secrets as mounted files configured by path; connect as least-privilege database roles, one set per process; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`, in both shapes, and keep what a caller may do in the use case. Row-level security is the default where more than one end user owns rows in one database; a single-tenant application, an internal tool, or a deployment per customer needs none, and the decision record says which.
 26. Establish structured logs with a service label and correlation id shipped in-process to one aggregator, request and error rates and latency per operation, pool and migration health, and graceful shutdown in every process.
 
 ### Turning a module into a service
 
 27. Do it only for a reason from shapes.md that has become concrete, and say which. A separate concept is not a reason; the module boundary already gives that.
-28. Release the contract in `<project>-protos` first, split by audience; give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are; in each consumer keep the use-case protocol and swap the injected implementation for a gRPC client adapter built in the consumer's composition root over mTLS, with bearer propagation only for user descriptors.
+28. Release the contract in `<project>-protos` first, with its `<Entity>Service` and any internal service; give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are; in each consumer keep the use-case protocol and swap the injected implementation for a gRPC client adapter built in the consumer's composition root over mTLS, with bearer propagation only for `<Entity>Service` descriptors.
 29. Never infer permission to move or drop rows, discard data, or delete a migration; finish the non-destructive work and surface the decision.
 
 ## Workflow
@@ -97,7 +97,7 @@ Design a system:
 - [ ] 2. Decide the shape and the transport; write the decision record from shapes.md, naming any split candidate and its concrete reason
 - [ ] 3. Define the modules and data ownership; produce the module (or service) map; reject cycles
 - [ ] 4. Choose the mechanism per interaction; in microservices, document why each remote boundary exists
-- [ ] 5. Define versioned contracts by audience, with failure semantics and idempotency, before producers or consumers (protos only where a process boundary exists)
+- [ ] 5. Define versioned contracts, grouped by caller, with failure semantics and idempotency, before producers or consumers (protos only where a process boundary exists)
 - [ ] 6. Write the consistency record for every cross-module or cross-service read or write
 - [ ] 7. State where identity is verified: once at the transport, or at the gateway and every service
 - [ ] 8. Create and tag <project>-core (and <project>-protos in microservices) with the building-swift-server-libraries skill; then build each module or service vertically with the building-swift-services skill, and its HTTP surface or gateway with building-swift-http-surfaces
@@ -110,7 +110,7 @@ Do not call a design complete until every applicable gate passes.
 
 - The decision record states the shape and the transport, and a microservices shape names at least one module with a concrete reason to run alone.
 - Every module or service in the map owns one capability and its data; no table is read by two modules; no service-owned identifier is generated outside its owner; the dependency graph has no cycle; no module imports another module's targets.
-- Every cross-module interaction has a chosen mechanism and a consistency record naming source of truth, staleness, duplicates, and failure behavior; every remote boundary also has a stated reason and a versioned contract split by audience.
+- Every cross-module interaction has a chosen mechanism and a consistency record naming source of truth, staleness, duplicates, and failure behavior; every remote boundary also has a stated reason and a versioned contract.
 - No local transaction spans a call to another module or service except the documented, deadline-bounded single-use-secret rotation read; every retry is bounded and limited to idempotent operations; every mutation that may be retried has an owner-enforced key.
 - Every event has an owner-side outbox written in the mutation's transaction, a consumer that tolerates duplicates by event id, and, where a projection exists, one that is rebuildable from the owner; no broker exists with fewer than two consumers.
 - Every internal connection is mTLS from the stack's CA; users are tokens, processes are certificates; the token is verified once at the transport in a monolith and at every receiving process in microservices; resource and business authorization stays in use cases; optional API route gates may additionally check verified JWT roles without database lookups; every policy is tenant isolation and nothing else.

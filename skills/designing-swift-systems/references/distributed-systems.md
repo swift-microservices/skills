@@ -36,7 +36,7 @@ Produce a service map before implementation:
 | --- | --- | --- | --- | --- | --- |
 | `<Service>` | Business responsibility | Tables/records | RPCs/events | Services/providers | Explicit target |
 
-Draw dependency direction and reject cycles unless a real bidirectional business relationship exists. When cycles appear, reconsider ownership, extract a third capability, or use an event/projection to remove synchronous coupling.
+Draw dependency direction and reject cycles. When one appears, reconsider ownership, extract a third capability, or use an event/projection to remove synchronous coupling.
 
 ## Communication selection
 
@@ -59,7 +59,7 @@ gRPC is the default synchronous internal transport. Introduce a broker or workfl
 Design contracts before implementations:
 
 1. Name RPCs for business capabilities rather than CRUD tables.
-2. Split every contract by audience: `<Entity>PublicService` for anyone, `<Entity>Service` for a signed-in user, `<Entity>InternalService` for another process. Identification is applied per proto service, never per method.
+2. Give every contract `<Entity>Service` for everything a person reaches, its RPCs grouped by who may call them (anyone; the caller's own, whose requests name no user; administrators), and, when another process calls in, `<Entity>InternalService` for only the RPCs another process calls, admitted by mTLS alone.
 3. Define request validation, response meaning, and stable error/status mapping.
 4. Include stable identifiers and timestamps only when consumers need them.
 5. Establish deadlines and maximum payload expectations.
@@ -132,9 +132,9 @@ This is the rule that makes microservices different from a monolith, where the t
 
 **A token is verified by every process that receives it.** The gateway verifies it with the issuer's public key and binds the caller; each service it calls verifies the same token again with the same public key before its own interceptor binds the caller for its own use cases. Verification is a signature check against a public key, cheap enough to repeat, and it is the only thing that makes a service's authorization decision its own rather than an inherited assumption.
 
-**A token crosses a process boundary only as the original bearer credential.** The gateway and any service that calls a user-facing service forward the caller's token unchanged with `BearerPropagationInterceptor<UserIdentity>`, applied to that upstream's user-service descriptors alone, so a public service is dialled with nothing and an internal one is reached by certificate. No process forwards an identity as metadata it asserts, no process trusts a `user_id` header, and no process mints a credential on a user's behalf: there is one issuer, the authenticating service, with the private key, and everyone else holds the public key.
+**A token crosses a process boundary only as the original bearer credential.** The gateway and any service that calls a user-facing service forward the caller's token unchanged with `BearerPropagationInterceptor<UserIdentity>`, applied to that upstream's `<Entity>Service` descriptors alone; it forwards only when a principal is bound, so an anonymous call stays anonymous, and an internal service is reached by certificate. No process forwards an identity as metadata it asserts, no process trusts a `user_id` header, and no process mints a credential on a user's behalf: there is one issuer, the authenticating service, with the private key, and everyone else holds the public key.
 
-**Internal calls use transport trust.** Workers and services call internal descriptors over mTLS without a user token. The receiver accepts input directly, using its internal database scope. A user ID in that input names business data, not a principal to impersonate. Keep internal listeners private and gateway routes limited to public and user operations.
+**Internal calls use transport trust.** Workers and services call internal descriptors over mTLS without a user token. The receiver accepts input directly, using its internal database scope. A user ID in that input names business data, not a principal to impersonate. Keep backend listeners private and gateway routes limited to `<Entity>Service` operations.
 
 **The tenant reaches the policy in each service on its own.** Each service's `UserSettingsInterceptor` binds `PostgresSettings.user(_:)` from the caller it verified, so the tenant policy in each database sees the user that service verified, not one a caller claimed.
 
@@ -161,11 +161,11 @@ Define alerts from user-impacting symptoms and service objectives, not every log
 
 1. Write the capability map, the shape decision record, the service ownership table, the interaction map, and the non-functional requirements.
 2. Challenge every proposed remote boundary against the reasons in shapes.md; merge services that lack one into a module of another, or into a monolith.
-3. Define the first vertical user journey and the contracts it needs, split by audience.
+3. Define the first vertical user journey and the contracts it needs.
 4. Create and release the shared proto package, `<project>-protos`, and the organization's core package, `<project>-core`, over the swift-microservices packages.
 5. Initialize each service package with `swift package init --type executable`, and the gateway package `<organization>-api` (the building-swift-http-surfaces skill) when browsers or REST clients are among the callers.
 6. Build the owning service from Core outward through Postgres, gRPC, composition, and environment, with the building-swift-services skill.
-7. Build consumers against their local use-case protocols and generated clients, verifying the token at each service and forwarding it on user-facing descriptors alone.
+7. Build consumers against their local use-case protocols and generated clients, verifying the token at each service and forwarding it on `<Entity>Service` descriptors alone.
 8. Add dedicated databases, migration jobs, private networking, certificates, secrets, lifecycle, and observability.
 9. Verify the first journey end to end, including dependency failure and retry/idempotency behavior.
 10. Add the next vertical capability; do not scaffold unused services or infrastructure in advance.

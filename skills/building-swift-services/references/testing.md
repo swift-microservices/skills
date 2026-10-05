@@ -61,7 +61,7 @@ func makeSubject(role: UserRole) -> UserIdentity {
 
 A test that needs the subject's own id — a "reads their own row" case — makes the identity with a fixed id instead. An internal use case takes business input directly; test its invariants without manufacturing a caller.
 
-Dates in mocks are fixed (`Date(timeIntervalSince1970:)`), never `Date()`: an assertion against a mock's output must be reproducible. The mock repositories and scopes are the service's own, because they mirror the service's repositories; only the two doubles every service would write identically are shared.
+Dates in mocks are fixed (`Date(timeIntervalSince1970:)`), never `Date()`: an assertion against a mock's output must be reproducible. A use case that decides on time reads `Date.now`, so a test of that decision builds its dates relative to now with a clear margin — an end date a minute past or a minute ahead — never at the boundary. The mock repositories and scopes are the service's own, because they mirror the service's repositories; only the two doubles every service would write identically are shared.
 
 ## The scoped database helper
 
@@ -99,7 +99,7 @@ The result is that `swift test` runs the whole target in milliseconds with no co
 
 ## Transport tests
 
-A transport target is tested through the framework's own test harness, over mocks of what the controllers or handlers collaborate with — mocked use-case protocols in a module's surface, one mocked generated client protocol per proto service in a gateway — never over a database. On HTTP, compose the application in the test exactly as the composition root does, with a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key so the bearer middleware runs as shipped, and drive it with HummingbirdTesting's `.router` (or `VaporTesting`); the tier matrix and error mappings it covers are the building-swift-http-surfaces skill's (*Tests* in its [surface reference](../../building-swift-http-surfaces/references/surface.md#tests)). On gRPC, a handler test binds the principal with the standard `ServiceContext.withValue`, or runs the interceptor with `MockUserAuthenticator(["admin-token": admin])` and sends `Bearer admin-token`, and asserts the status each use-case error maps to.
+A transport target is tested through the framework's own test harness, over mocks of what the controllers or handlers collaborate with — mocked use-case protocols in a module's surface, one mocked generated client protocol per `<Entity>Service` in a gateway — never over a database. On HTTP, compose the application in the test exactly as the composition root does, with a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key so the bearer middleware runs as shipped, and drive it with HummingbirdTesting's `.router` (or `VaporTesting`); the tier matrix and error mappings it covers are the building-swift-http-surfaces skill's (*Tests* in its [surface reference](../../building-swift-http-surfaces/references/surface.md#tests)). On gRPC, a handler test binds the principal with the standard `ServiceContext.withValue`, or runs the interceptor with `MockUserAuthenticator(["admin-token": admin])` and sends `Bearer admin-token`, and asserts the status each use-case error maps to.
 
 A transport test asserts routing, identification, conversion, and status. What the use case decides is the use-case test's, and a transport test that re-asserts a business rule through a mocked use case is testing its own mock.
 

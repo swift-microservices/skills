@@ -26,7 +26,7 @@ Every Swift change also follows the writing-swift-server-code skill: its [Swift 
 
 ## Principles
 
-1. **A Workflow is a durable, deterministic program; everything else is an Activity.** Temporal replays Workflow code from history, so it may compute, wait, and decide, and may not touch a database, a network, a clock, or a random source except through the Workflow context.
+1. **A Workflow is a durable, deterministic program; everything else is an Activity.** Temporal replays Workflow code from history, so it may compute, wait, and decide, and may not touch a database, a network, `Date.now`, or a random source except through the Workflow context: the time a Workflow reads is `context.now`, a `Date` replayed from history.
 2. **Retry safety lives with the owner of the side effect.** An Activity can run again after its effect succeeded, so every write is idempotent where it is owned: a unique constraint, a compare-and-swap, a provider's idempotency key. Workflow history is never the deduplication mechanism.
 3. **Temporal history is the workflow state.** There is no second workflow-state store, no scanner that resumes Workflows from business rows, and no reconciliation loop unless the user accepts that consistency model.
 4. **A worker is a process, not a user.** It is proved by its certificate, connects to its own database as its own role, and carries the user it acts for as data. It holds no token and forwards none.
@@ -43,7 +43,7 @@ Every Swift change also follows the writing-swift-server-code skill: its [Swift 
 
 ### Workflow design
 
-4. Use Workflow code only for deterministic orchestration. Reach time, timers, conditions, Activities, signals, and queries through `WorkflowContext`. No database, gRPC, HTTP, email, filesystem, environment, `UUID()`, or `Date()` in a Workflow.
+4. Use Workflow code only for deterministic orchestration. Read the time as `context.now`, a `Date`, and reach timers, conditions, Activities, signals, and queries through `WorkflowContext`. No database, gRPC, HTTP, email, filesystem, environment, `UUID()`, `Date()`, or `Date.now` in a Workflow.
 5. Nest `Input` under the Workflow and return an `XWorkflowResult`, never a bare scalar.
 6. Keep workflow state `.inProgress` until the Activity that establishes a terminal outcome succeeds. Let cancellation and Activity failures propagate; never report a terminal state early.
 

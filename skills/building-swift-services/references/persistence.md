@@ -203,22 +203,16 @@ Dropping a table, deleting a migration, or moving data is a destructive product 
 
 A monolith has one database, owned by its executable, and every module owns its own tables inside it. The ownership rules between modules are the ones between services, enforced by review rather than by a network: a module creates and migrates its tables, generates its service-owned identifiers, and reads and writes them through its own repositories; no other module queries them, joins to them, or declares a foreign key onto them. A relationship across modules is a stored identifier plus a call through the other module's use-case protocol, exactly as it would be a stored identifier plus an RPC between services. Table names stay unqualified and there is no schema per module: the boundary is the target graph, not a namespace, and a module that later becomes a service takes its tables to its own database with a `pg_dump` of those tables and no renames.
 
-Roles are per process, not per module. A monolith therefore has one set — `<project>_service`, `<project>_internal`, `<project>_worker` — created by the same three migrations, and one `PostgresClient` per role in its composition root; a module's tenant-scoped scope and its internal scope are built over the shared clients. Each module's Postgres target exposes its migrations as an ordered list, and the composition root registers the role migrations first and then every module's list in module dependency order:
+Roles are per process, not per module. A monolith therefore has one set — `<project>_service`, `<project>_internal`, `<project>_worker` — created by the same three migrations, and one `PostgresClient` per role in its composition root; a module's tenant-scoped scope and its internal scope are built over the shared clients. Each module's Postgres target declares its migration types; the composition root's `Migrations.swift` adds every one of them by hand, the role migrations first and then each module's tables and policies in module dependency order:
 
 ```swift
-// Sources/CatalogPostgres/Migrations/CatalogMigrations.swift
-package enum CatalogMigrations {
-    package static func migrations(internalRole: String) -> [any DatabaseMigration] {
-        [CreateItemsTable(), CreateItemsRLSPolicy(internalRole: internalRole)]
-    }
-}
-
 // Sources/Backend/Database/Migrations.swift
 await migrations.add(CreateServiceRole(...))
 await migrations.add(CreateInternalRole(...))
-for migration in UsersMigrations.migrations(internalRole: internalRole) + CatalogMigrations.migrations(internalRole: internalRole) {
-    await migrations.add(migration)
-}
+await migrations.add(CreateUsersTable())
+await migrations.add(CreateUsersRLSPolicy(internalRole: internalRole))
+await migrations.add(CreateItemsTable())
+await migrations.add(CreateItemsRLSPolicy(internalRole: internalRole))
 ```
 
 The list is append-only across modules as much as within one: adding a module appends its migrations after every existing module's, so an existing database applies them in place. Row-level security is unchanged — the tenant predicate on each tenant table, the internal role's `USING (true)` policy, the setting bound per request — and a module that owns no tenant table simply has no policies; the roles exist once for the process regardless.
@@ -231,8 +225,8 @@ Migrations run as the owner — the instance's own `POSTGRES_USER` / `POSTGRES_P
 
 | Role | Created by | Policy on a tenant table | Connects |
 | --- | --- | --- | --- |
-| `<service>_service` (`<project>_service` in a monolith) | `CreateServiceRole`, the **first** migration | the tenant predicate | `serve`, for public and user use cases |
-| `<service>_internal` | `CreateInternalRole` | `USING (true)` | `serve`, for admin use cases and the internal use cases another process calls |
+| `<service>_service` (`<project>_service` in a monolith) | `CreateServiceRole`, the **first** migration | the tenant predicate | `serve`, for public RPCs and the caller's own |
+| `<service>_internal` | `CreateInternalRole` | `USING (true)` | `serve`, for administrators' RPCs and `…InternalService` |
 | `<service>_worker` | `CreateWorkerRole` | `USING (true)` | the worker, on its own service's database |
 
 A process with no tenant tables has the service role alone. One with tenant tables has the internal role too; one with a Temporal worker has the worker role too. Each has its own secret — `POSTGRES_SERVICE_*`, `POSTGRES_INTERNAL_*`, `POSTGRES_WORKER_*` — so the wider view is a credential held only by the connection that needs it, and a leaked service-role password still sees one tenant.
@@ -241,20 +235,20 @@ The rule here is the separation: the owner migrates and never serves, no role by
 
 ```swift
 let migrations = DatabaseMigrations()
-await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: configuration.servicePassword, database: database))
-await migrations.add(CreateInternalRole(role: configuration.internalUser, password: configuration.internalPassword, database: database))
+await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: try configuration.servicePassword, database: configuration.database))
+await migrations.add(CreateInternalRole(role: configuration.internalUser, password: try configuration.internalPassword, database: configuration.database))
 await migrations.add(CreateItemsTable())
 ```
 
-The migration is plain: `CREATE ROLE "<role>" LOGIN PASSWORD '…'`, `GRANT CONNECT` on the database, `GRANT USAGE` on `public`, DML on all tables and usage on all sequences, and the same two as `ALTER DEFAULT PRIVILEGES` so every table a later migration creates is the role's from the moment it exists. `revert` is `DROP ROLE IF EXISTS`. Keep it that simple — no existence checks, no quoting helpers; the values are the deployment's own configuration. The three role migrations are one shape with three names; share the grant list through a private helper in `Migrations/Role/`, not a base class. Roles are cluster-wide, so a database dropped and re-migrated in a cluster that still has the role fails on `CREATE ROLE`; drop the role with the database.
+The migration is plain: `CREATE ROLE "<role>" LOGIN PASSWORD '…'`, `GRANT CONNECT` on the database, `GRANT USAGE` on `public`, DML on all tables and usage on all sequences, and the same two as `ALTER DEFAULT PRIVILEGES` so every table a later migration creates is the role's from the moment it exists. `revert` is `DROP ROLE IF EXISTS`. Keep it that simple — no existence checks, no quoting helpers; the values are the deployment's own configuration. The three role migrations are one shape with three names; each writes its statements out as sequential `connection.query` calls, with no base class and no loop over a shared statement list. Roles are cluster-wide, so a database dropped and re-migrated in a cluster that still has the role fails on `CREATE ROLE`; drop the role with the database.
 
 Never `BYPASSRLS`, and never the owner as a runtime role. The wider view is granted `TO` the role through a policy of its own (below), so it is a fact visible in the schema and in `pg_policies` rather than an attribute on a role or a consequence of ownership.
 
-Because the migration library refuses a reordered list, a service that adopts the service role after its tables are applied cannot slide it in first without re-migrating from scratch. Adopt it at the first migration. The internal and worker roles append.
+The migration library refuses a reordered list, so `CreateServiceRole` is the first migration from the package's start. A role the package gains later, such as the worker role when Temporal arrives, is appended like any other migration: its grant on all tables covers the tables that exist, and its default privileges cover the ones that follow.
 
 ## Row-level security
 
-Row-level security is the default where more than one end user owns rows in one database, and it is not universal. A single-tenant application, an internal tool, a module whose tables are reference data or the application's own bookkeeping, or a deployment per customer (isolation by database, the strongest form) has no policies, one service role, one scope, and no settings interceptor or middleware; the decision record says so, and the rest of this section does not apply. Where the tenant is an organization rather than a user, everything below holds with the organization's id in the setting and the predicate, and the org layer's `PostgresSettings` helper carries that id instead.
+Row-level security is the default where more than one end user owns rows in one database, and it is not universal. A single-tenant application, an internal tool, a module whose tables are reference data or the application's own bookkeeping, or a deployment per customer (isolation by database, the strongest form) has no policies and one scope, and a package with no tenant table anywhere has one service role and no settings interceptor or middleware; the decision record says so, and the rest of this section does not apply. Where the tenant is an organization rather than a user, everything below holds with the organization's id in the setting and the predicate, and the org layer's `PostgresSettings` helper carries that id instead.
 
 When a service's rows belong to users — a user's documents, a user's devices, a customer's purchases — confine callers in Postgres, not in the statements. Restating the rule as a scope bound into every query is the same predicate maintained twice, and the copy in the statements is the one that drifts. The rule exists once, as policies; the service tells the database who is calling.
 
@@ -268,7 +262,7 @@ CREATE POLICY user_isolation ON documents
 
 Whether a caller is an administrator, and what they may do, is the use case's decision in Swift, against the `subject:` it was handed (see *Authorization lives in the use case* in [identity-and-access.md](identity-and-access.md)). A policy that restated such a decision would be authorization written twice, once in a use case and once in SQL, with the SQL copy invisible to the use case's tests; keep the policy to the tenant and let the use case decide.
 
-**Stamp the transaction, not the connection.** `<Project>Persistence`'s `UserSettingsInterceptor`, applied on the user service right after the bearer interceptor — or `UserSettingsMiddleware`, its HTTP counterpart, added to the identifying tier right after the bearer middleware (see *The tenant on HTTP* in the building-swift-http-surfaces skill's [surface reference](../../building-swift-http-surfaces/references/surface.md)) — turns the bound user into `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — in the task's `ServiceContext`, and every transaction begun under that call applies it: `set_config(name, value, true)` with bound parameters, so nothing is spliced into SQL, and transaction-local, so the value reverts at commit and rollback and a pooled connection carries nothing to its next borrower. With no user bound it sets nothing, and a policy then admits no rows — which is what an anonymous transaction on a tenant table deserves.
+**Stamp the transaction, not the connection.** `<Project>Persistence`'s `UserSettingsInterceptor`, applied on `<Entity>Service` right after the bearer interceptor — or `UserSettingsMiddleware`, its HTTP counterpart, added to the identifying tier right after the bearer middleware (see *The tenant on HTTP* in the building-swift-http-surfaces skill's [surface reference](../../building-swift-http-surfaces/references/surface.md)) — turns the bound user into `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — in the task's `ServiceContext`, and every transaction begun under that call applies it: `set_config(name, value, true)` with bound parameters, so nothing is spliced into SQL, and transaction-local, so the value reverts at commit and rollback and a pooled connection carries nothing to its next borrower. With no user bound it sets nothing, and a policy then admits no rows — which is what an anonymous transaction on a tenant table deserves.
 
 `NULLIF` is load-bearing: once a custom setting has been set on a connection, reading it after that transaction yields `''` rather than `NULL`, and `''::uuid` is an error rather than a non-match. A table nobody writes as a user — a grant made by a payment or an administrator — has `WITH CHECK (false)` for the tenant role. A join table is reachable through its parent: a child row's policy is `EXISTS (SELECT 1 FROM parents p WHERE p.id = parent_id AND p.user_id = …)`, and the subquery runs under the parent's own policy.
 
@@ -282,15 +276,15 @@ The composition root builds two databases and hands each to the use cases that b
 
 | Database | Role and policy | Tenant setting | Scope | Use cases |
 | --- | --- | --- | --- | --- |
-| Tenant-scoped | the service role, the tenant predicate | bound by `UserSettingsInterceptor` on the user service, or `UserSettingsMiddleware` on the identifying tier | `Postgres<Module>Scope` | public and user |
-| Unscoped | the internal role, `USING (true)` | none reaches it: the internal service has no bearer interceptor | `Postgres<Module>InternalScope` | admin, and internal ones another process calls |
+| Tenant-scoped | the service role, the tenant predicate | bound by `UserSettingsInterceptor` on `…Service`, or `UserSettingsMiddleware` on the identifying tier | `Postgres<Module>Scope` | public and the caller's own |
+| Unscoped | the internal role, `USING (true)` | ignored: the role's policy is `USING (true)` | `Postgres<Module>InternalScope` | administrators' and `…InternalService` |
 
 ```swift
 let database = PostgresDatabase<PostgresBillingScope>(client: serviceClient, logger: logger)
 let internalDatabase = PostgresDatabase<PostgresBillingInternalScope>(client: internalClient, logger: logger)
 ```
 
-The two databases are built the same way; what differs is the role each client connects as and which RPC services or route tiers reach each. The unscoped database sees every row, so every query on it names the user it means in its own `WHERE` clause, and the use case logs every use of it for a named user. An administrator's call arrives with a user bound and a tenant setting applied, and the internal role's `USING (true)` policy ignores it. A use case whose scope protocol is adopted only by the internal scope cannot be built over the tenant-scoped database, and the reverse; that refusal is the compiler's, not a code review's. A service whose one table is the tenant itself — users, where a person's own row and an administrator's any row are one use case deciding — may build only the unscoped database and leave the service role unused; say so in the composition root.
+The two databases are built the same way; what differs is the role each client connects as and which RPC services or route tiers reach each. The unscoped database sees every row, so every query on it names the user it means in its own `WHERE` clause, and the use case logs every use of it for a named user. An administrator's call arrives with a user bound and a tenant setting applied, and the internal role's `USING (true)` policy ignores it. A use case whose scope protocol is adopted only by the internal scope cannot be built over the tenant-scoped database, and the reverse; that refusal is the compiler's, not a code review's. A self-only read is its own use case on the tenant-scoped database and takes no id, even where the tenant is the row itself: a person's own record is `GetProfile`, served as the service role under the tenant policy, and an administrator's read of any record by id is `GetUserByID`, a separate RPC and use case on the unscoped database. One RPC never serves both.
 
 **A worker connects to its own service's database directly**, as the worker role, with the same `USING (true)` policy and its own secret, and builds the unscoped kind of database over `Postgres<Service>WorkerScope` in its own composition root (see *Worker composition* in the orchestrating-temporal-workflows skill). An Activity is inside the service's boundary and its input is durable workflow state rather than a caller's request, so nothing is gained by putting a network hop between it and the tables it owns. A worker never opens another service's database; it calls that service's internal RPC, which runs the use case over that service's unscoped database.
 

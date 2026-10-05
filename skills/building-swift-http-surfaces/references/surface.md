@@ -3,7 +3,7 @@
 How HTTP is put on the system: the target that owns it, the OpenAPI document, the request contexts, the router tiers, the middleware that identifies a caller and binds the tenant, the controllers, the conversions, the error translation, and the router and application sections of the composition root. The same surface serves two shapes with one set of rules; only the controller's collaborator differs:
 
 - **A module's HTTP transport.** Each module has an `<Module>HTTP` target whose controllers call the module's use-case protocols directly; a monolith's one executable mounts every module's controllers on one router, and a service mounts its own.
-- **A gateway in front of services.** A package of its own, `<organization>-api`, whose controllers call generated gRPC client protocols and forward the caller's token to the user-facing upstreams. Its package, manifest, and composition root are in [gateway.md](gateway.md); every rule below applies to it too.
+- **A gateway in front of services.** A package of its own, `<organization>-api`, whose controllers call generated gRPC client protocols and forward the caller's token on each upstream's `<Entity>Service` descriptors. Its package, manifest, and composition root are in [gateway.md](gateway.md); every rule below applies to it too.
 
 Hummingbird is the default framework; the Vapor section at the end covers what changes on Vapor 4.
 
@@ -159,7 +159,7 @@ let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
 
 `BearerAuthenticationMiddleware` comes from swift-authentication-hummingbird's `AuthenticationHummingbird`; it takes any `Authenticator<String, UserIdentity>`, sets the context's `identity`, and binds the `Principal<UserIdentity, String>` in `ServiceContext` that the tenant middleware and the propagating interceptor read. A target that builds the tiers links `Authentication` to name the authenticator protocol and `AuthenticationHummingbird` for the middleware — the executable in a monolith or a service, `API` in a gateway whose router builder takes the authenticator — and every surface target links `<Project>Authentication` for `UserIdentity`; the key, and `AuthenticationJWT`, reach only the executable.
 
-Tier 1 exists for the same reason the session-issuing RPCs live on a public service with no interceptor: it is that rule, one transport over. Token refresh sends the refresh token in the `Authorization` header, and a refresh token is a database row rather than a signed one. An authenticating middleware applied to it verifies that value as a claim payload, fails, and returns `401` before the handler is reached — so the route cannot succeed at any point, for any client. Registering it in the tier with no authenticating middleware makes that structural.
+Tier 1 exists because a session-issuing route must never meet an authenticating middleware. Token refresh sends the refresh token in the `Authorization` header, and a refresh token is a database row rather than a signed one. An authenticating middleware applied to it verifies that value as a claim payload, fails, and returns `401` before the handler is reached — so the route cannot succeed at any point, for any client. Registering it in the tier with no authenticating middleware makes that structural.
 
 Tier 2 is where a route that reads differently for a known caller belongs — a catalogue that is public but richer once logged in. Do not collapse tiers 2 and 3; identifying and requiring are separate decisions here exactly as they are on gRPC.
 
@@ -167,7 +167,7 @@ Tier 2 is where a route that reads differently for a known caller belongs — a 
 
 On gRPC the bound user becomes the tenant setting through `UserSettingsInterceptor`; on HTTP the same job is `UserSettingsMiddleware`, its HTTP counterpart in `<Project>Persistence`, added to the identifying tier right after the bearer middleware. It reads `ServiceContext.current?.user`, and when a user is bound runs the rest of the request under a `ServiceContext` carrying `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — so every transaction a use case begins during the request applies it and the tenant policy sees the caller. With no user bound it binds nothing, and a policy then admits no rows.
 
-A gateway has no database and no tenant middleware: the setting is applied where the transaction runs, by the service the token is forwarded to. A monolith or an HTTP-serving service with a tenant table applies it here, and the monolith is the place to notice that the token is verified exactly once — at this middleware — because no process boundary is crossed between it and the tables.
+A gateway has no database and no tenant middleware: the setting is applied where the transaction runs, by the service the token is forwarded to. A monolith or an HTTP-serving service with a tenant table applies it here, and the monolith is the place to notice that the token is verified exactly once — at the bearer middleware — because no process boundary is crossed between it and the tables.
 
 ## Route design
 
@@ -192,25 +192,24 @@ The conversion throws, so an administrative handler is unreachable without the c
 
 Two limits, both worth respecting rather than forcing through:
 
-- Flattening fails where two operations share a method and path but differ in scope — a caller-scoped list and an administrative list of everything. Keep those distinct with a query parameter or a separate path; collapsing them produces one operation with two meanings.
+- Flattening fails where two operations share a method and path but differ in scope — a caller-scoped list and an administrative list of everything. Keep those as separate paths over separate use cases; a query parameter that switches between them, like a collapsed route, is one operation with two meanings.
 - Not every route is a resource. Sessions, provider webhooks, and checkout callbacks are workflows, and `POST /payments/<provider>/webhook` is the honest spelling. Do not restructure a working verb-shaped route to satisfy a taxonomy.
 
-Where a check depends on a path parameter — this record if it is yours, any record if you are an administrator — it cannot be a context. In a monolith it is the use case's guard, as always. In a gateway, where no use case runs, write it in the handler and give it one name rather than open-coding it at each call site.
+A check that depends on a path parameter — this record if it is yours, any record if you are an administrator — is not one route deciding two ways. The caller's own route names no user and calls the caller's-own use case, which reads under the tenant policy; an administrator's read of any record is a separate route behind `AdminRequestContext`, calling a separate use case, or a separate RPC from a gateway. The use case decides in both, so a gateway handler never adds a resource check of its own.
 
 ## Controllers
 
 One `XController` per resource, holding protocols rather than concrete types so a test can substitute them. What the protocol is depends on the shape:
 
 - Over use cases, in a module's own surface: the use-case protocol existentials the module's Core declares, one per operation the resource exposes. The controller reads the caller from the context and passes it as `subject:`; a public route passes `input:` alone.
-- Over services, in a gateway: generated client protocols, one per proto service the resource speaks, because a proto service is one audience and a public route must not reach a user RPC through the wrong stub:
+- Over services, in a gateway: generated client protocols, one per `<Entity>Service` the resource speaks. Every tier calls the same stub; the forwarded token, present only when the tier bound a principal, is what the service's handlers check:
 
 ```swift
 package struct ItemController: Sendable {
-    private let publicClient: <Organization>_Catalog_V1_ItemPublicService.ClientProtocol
     private let client: <Organization>_Catalog_V1_ItemService.ClientProtocol
 
-    package func addPublicRoutes(to group: RouterGroup<BasicRequestContext>) { ... }        // publicClient
-    package func addAuthenticatedRoutes(to group: RouterGroup<IdentityRequestContext>) { ... }  // client
+    package func addPublicRoutes(to group: RouterGroup<BasicRequestContext>) { ... }
+    package func addAuthenticatedRoutes(to group: RouterGroup<IdentityRequestContext>) { ... }
 }
 ```
 
@@ -313,7 +312,7 @@ With Temporal, the serving process also builds one long-lived `TemporalClient` a
 
 ## One surface or two
 
-Default to one target, one document, and one application. Authorization by context conversion is enough to keep administrative routes out of ordinary hands, and a second surface doubles the generated type set.
+Default to one target, one document, and one application. The context conversion already keeps administrative routes out of ordinary hands, with the use case deciding behind it, and a second surface doubles the generated type set.
 
 Split into two Hummingbird applications — two routers, two ports, one `ServiceGroup` — only when the administrative routes must not be publicly routable at all. That buys something a role check cannot: the routes are absent from the public router's tree, so no ordering mistake can expose them, and the port is simply never published.
 
@@ -349,4 +348,4 @@ Tiers are route groups: session-issuing routes on the bare application, an ident
 
 ## Tests
 
-Compose the application in tests exactly as the composition root does, over mocks of the controllers' collaborators — mocked use-case protocols for a module's surface, one mocked generated client protocol per proto service for a gateway — and a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key, so the middleware is exercised as shipped, not mocked. Drive it with HummingbirdTesting's `.router` (or `VaporTesting` on Vapor). Cover the tier matrix: anonymous → `401`, a token whose subject is not a user id → `401` from the verifier, the user and admin paths, and distinct error mappings. Exercise a shared status mapper once with explicit input/expected pairs rather than repeating it through every controller. What a use case decides is covered by its own tests (see the building skill's [testing reference](../../building-swift-services/references/testing.md)), so a surface test asserts routing, identification, conversion, and status, not business rules.
+Compose the application in tests exactly as the composition root does, over mocks of the controllers' collaborators — mocked use-case protocols for a module's surface, one mocked generated client protocol per `<Entity>Service` for a gateway — and a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key, so the middleware is exercised as shipped, not mocked. Drive it with HummingbirdTesting's `.router` (or `VaporTesting` on Vapor). Cover the tier matrix: anonymous → `401`, a token whose subject is not a user id → `401` from the verifier, the user and admin paths, and distinct error mappings. Exercise a shared status mapper once with explicit input/expected pairs rather than repeating it through every controller. What a use case decides is covered by its own tests (see the building skill's [testing reference](../../building-swift-services/references/testing.md)), so a surface test asserts routing, identification, conversion, and status, not business rules.

@@ -190,23 +190,27 @@ The root of a monolith does what a service's root does, once per module, and one
 
 ```swift
 // MARK: - Composition
-// Two clients, one per role; one database per module per role. Every tenant-scoped database
+// Two clients, one per role; one database per module per role it uses. Every tenant-scoped database
 // reads the same caller setting, bound once at the transport.
 let catalogDatabase = PostgresDatabase<PostgresCatalogScope>(client: serviceClient, logger: logger)
-let catalogInternalDatabase = PostgresDatabase<PostgresCatalogInternalScope>(client: internalClient, logger: logger)
 let usersDatabase = PostgresDatabase<PostgresUsersScope>(client: serviceClient, logger: logger)
 let usersInternalDatabase = PostgresDatabase<PostgresUsersInternalScope>(client: internalClient, logger: logger)
 
-// Users: the module every other module asks about accounts.
-let getAccountUseCase = GetAccountUseCase(database: usersInternalDatabase, logger: logger)
-let usersController = UserController(getAccount: getAccountUseCase, /* … */)
+// Users: a person reads their own profile under the tenant policy; other modules resolve
+// an account by id on the internal role.
+let getProfileUseCase = GetProfileUseCase(database: usersDatabase, logger: logger)
+let resolveAccountUseCase = ResolveAccountUseCase(database: usersInternalDatabase, logger: logger)
+let usersController = UserController(getProfileUseCase: getProfileUseCase, /* … */)
 
-// Catalog: its AccountClient port is Users' use case, called locally. Were Users its own service,
-// this one line would inject GRPCAccountClient over a GRPCClient instead, and nothing in
-// CatalogCore would change.
-let createItemUseCase = CreateItemUseCase(database: catalogDatabase, accounts: getAccountUseCase, logger: logger)
-let itemController = ItemController(createItem: createItemUseCase, /* … */)
-let itemService = ItemService(createItem: createItemUseCase, /* … */)          // with gRPC
+// Catalog: its AccountClient port is Users' use case, called locally through a few lines in the
+// executable that convert Users' entity into Catalog's Account. Were Users its own service, this
+// one argument would be GRPCAccountClient over a GRPCClient instead, and nothing in CatalogCore
+// would change. Items are not tenant rows, so Catalog has one scope, and its administrator's
+// create runs there.
+let accounts = UsersAccountClient(resolveAccountUseCase: resolveAccountUseCase)
+let createItemUseCase = CreateItemUseCase(database: catalogDatabase, accounts: accounts, logger: logger)
+let itemController = ItemController(createItemUseCase: createItemUseCase, /* … */)
+let itemService = ItemService(createItemUseCase: createItemUseCase, /* … */)          // with gRPC
 ```
 
 Compose modules in dependency order, producers before consumers, so a port is satisfied by a value that already exists. A cycle between two modules' ports is a design fault; resolve it by reconsidering ownership, never by a lazy reference. Keep the port call outside the consumer's `withTransaction`, except for the bounded single-use-secret rotation read documented in [core.md](core.md#database-boundary).
@@ -219,7 +223,7 @@ With HTTP, the root adds **Router** and **Hummingbird** sections after Compositi
 
 ## The gRPC section
 
-Construct one server with every proto service the process serves, every module's in a monolith, and apply each interceptor to the service whose audience it identifies:
+Construct one server with every proto service the process serves, every module's in a monolith, and apply the identifying interceptors to every `<Entity>Service`, never to an internal one:
 
 ```swift
 // MARK: - gRPC
@@ -232,7 +236,7 @@ let server = GRPCServer(
         ),
         transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader)
     ),
-    services: [itemPublicService, itemService, itemInternalService, userPublicService, userService],
+    services: [itemService, itemInternalService, userService],
     interceptorPipeline: [
         .apply(
             BearerAuthenticationInterceptor(authenticator: userAuthenticator),
@@ -252,7 +256,7 @@ let server = GRPCServer(
 )
 ```
 
-Public and internal descriptors have no application authentication interceptor. `BearerAuthenticationInterceptor` binds users only on user descriptors; `UserSettingsInterceptor` follows it for tenant operations. The backend listener still requires mTLS for every descriptor. Keep internal operations private and outside gateway routes. A monolith uses local calls between its modules rather than internal network hops.
+Internal descriptors have no application authentication interceptor. `BearerAuthenticationInterceptor` binds users on `<Entity>Service` descriptors without requiring one; `UserSettingsInterceptor` follows it where tenant tables exist, and each handler requires what its RPC needs. The backend listener still requires mTLS for every descriptor. Keep internal operations private and outside gateway routes. A monolith uses local calls between its modules rather than internal network hops.
 
 ## Lifecycle
 
@@ -274,7 +278,7 @@ A project may record borrowed SDK-managed HTTP singletons such as `HTTPClient.sh
 
 ## The gateway composition root
 
-A gateway's root — the authenticator, one mTLS `GRPCClient` per upstream with bearer propagation on user descriptors, the router, and no database — is the building-swift-http-surfaces skill's, in its [gateway reference](../../building-swift-http-surfaces/references/gateway.md#composition-root). It uses the transport security factories below.
+A gateway's root — the authenticator, one mTLS `GRPCClient` per upstream with bearer propagation on `<Entity>Service` descriptors, the router, and no database — is the building-swift-http-surfaces skill's, in its [gateway reference](../../building-swift-http-surfaces/references/gateway.md#composition-root). It uses the transport security factories below.
 
 ## Transport security factories
 
@@ -377,7 +381,7 @@ struct Run: AsyncParsableCommand {
 }
 ```
 
-There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. The one thing `worker run` must not do is open a server or read the verifying key; keep those dependencies out of the worker command. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
+There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. `worker run` must not open a server or read the verifying key; keep those dependencies out of the worker command. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
 
 The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. Then create one `TemporalWorker`:
 
@@ -399,7 +403,7 @@ The configuration comes from the SDK's **own** reader, `TemporalWorker.Configura
 
 Add the worker, both certificate reloaders, and every owned runnable dependency used by Activities directly to one `ServiceGroup` services array; the recorded borrowed HTTP-singleton exception also applies here. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
 
-A worker has no inbound user request to forward. It calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to webhook handlers and scheduled jobs; see [identity-and-access.md](identity-and-access.md).
+A worker has no inbound user request to forward. It calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to a scheduled job; a provider webhook is different, an `<Entity>Service` RPC anyone may call, proved by the provider's signature in the request. See [identity-and-access.md](identity-and-access.md).
 
 ## Migrations at boot
 
@@ -413,17 +417,19 @@ if migrateDatabase {
 }
 ```
 
-`PostgresClient.withClient` comes from `PersistencePostgres`: it starts the client in a task group and cancels it when the operation returns or throws. `Migrations.run()` in `Database/Migrations.swift` adds the list explicitly in order: the role migrations first, `CreateServiceRole` before the others, reading each role's password from the configuration, then every module's `<Module>Migrations.migrations(internalRole:)` in module dependency order, and applies it:
+`PostgresClient.withClient` comes from `PersistencePostgres`: it starts the client in a task group and cancels it when the operation returns or throws. `Migrations.run()` in `Database/Migrations.swift` adds every migration explicitly, one call each, in the order databases apply them: the role migrations first, `CreateServiceRole` before the others, reading each role's password from the configuration, then each module's tables and policies in module dependency order, and applies the list:
 
 ```swift
 await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: try configuration.servicePassword, database: configuration.database))
 await migrations.add(CreateInternalRole(role: configuration.internalUser, password: try configuration.internalPassword, database: configuration.database))
-for migration in UsersMigrations.migrations(internalRole: configuration.internalUser) { await migrations.add(migration) }
-for migration in CatalogMigrations.migrations(internalRole: configuration.internalUser) { await migrations.add(migration) }
+await migrations.add(CreateUsersTable())
+await migrations.add(CreateUsersRLSPolicy(internalRole: configuration.internalUser))
+await migrations.add(CreateItemsTable())
+await migrations.add(CreateItemsRLSPolicy(internalRole: configuration.internalUser))
 try await migrations.apply(client: client, logger: logger, dryRun: false)
 ```
 
-A service has one module, so its list is the roles and one module's migrations. The library refuses a reordered list, so a module that gains a migration appends it to its own list and never reorders another's; a new module appends its whole list after the existing ones. The long-lived clients the `ServiceGroup` owns are built from `postgres.service` and `postgres.internalService` and never hold owner credentials; the owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
+A service has one module, so its list is the roles and that module's migrations. The library refuses a reordered list, so a new migration is appended at the end, after every migration already applied, and nothing is ever reordered or removed; this one file is where the order lives. The long-lived clients the `ServiceGroup` owns are built from `postgres.service` and `postgres.internalService` and never hold owner credentials; the owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
 
 The flag is the default because it needs no platform support: one container, one command, and the schema is current before the port opens. The alternative is a `migrate` subcommand running the same `Migrations.run()` and exiting, deployed as a one-shot job before the rollout, for a platform that orders jobs (an init container, a pre-deploy hook) or starts several replicas at once, where N containers racing the same list at boot is what the library's ordering check would refuse. Either way the rule holds: nothing serves an unmigrated schema, and only the migration client ever connects as the owner.
 

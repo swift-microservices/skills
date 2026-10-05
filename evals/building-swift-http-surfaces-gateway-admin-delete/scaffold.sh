@@ -71,14 +71,9 @@ import GRPCCore
 package import Hummingbird
 
 package struct ItemController: Sendable {
-    private let publicClient: Acme_Catalog_V1_ItemPublicService.ClientProtocol
     private let client: Acme_Catalog_V1_ItemService.ClientProtocol
 
-    package init(
-        publicClient: Acme_Catalog_V1_ItemPublicService.ClientProtocol,
-        client: Acme_Catalog_V1_ItemService.ClientProtocol
-    ) {
-        self.publicClient = publicClient
+    package init(client: Acme_Catalog_V1_ItemService.ClientProtocol) {
         self.client = client
     }
 
@@ -93,14 +88,14 @@ package struct ItemController: Sendable {
 
     @Sendable
     private func listItems(_ request: Request, context: BasicRequestContext) async throws -> [ItemResponse] {
-        let response = try await publicClient.listItems(.init())
+        let response = try await client.listItems(.init())
         return response.items.map(ItemResponse.init(item:))
     }
 
     @Sendable
     private func getItem(_ request: Request, context: BasicRequestContext) async throws -> ItemResponse {
         let id = try context.parameters.require("id")
-        let response = try await publicClient.getItem(.with { $0.id = id })
+        let response = try await client.getItem(.with { $0.id = id })
         return ItemResponse(item: response.item)
     }
 }

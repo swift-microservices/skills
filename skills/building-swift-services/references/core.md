@@ -112,7 +112,7 @@ package struct CreateItemUseCase<DatabaseType>: CreateItemUseCaseProtocol where 
             logger.warning("Item create rejected: duplicate name", metadata: ["name": "\(input.name)"])
             throw .duplicateName
         } catch {
-            logger.warning("Item create failed: unknown error", metadata: ["name": "\(input.name)", "error": "\(String(reflecting: error))"])
+            logger.error("Item create failed: unknown error", metadata: ["name": "\(input.name)", "error": "\(String(reflecting: error))"])
             throw .unknown
         }
     }
@@ -121,13 +121,13 @@ package struct CreateItemUseCase<DatabaseType>: CreateItemUseCaseProtocol where 
 
 The guards are the use case's business rules, stated where they apply; see *Business rules, policies, and adapters* in [architecture.md](architecture.md). Build the command inside the closure and execute it on the next line rather than nesting the construction in the call.
 
-**User authorization is explicit.** User use cases take `subject: UserIdentity` and business `input:` when needed; self-only operations derive the resource ID from the subject, and operations with no other data omit `input:` rather than declaring an empty carrier. Explicit permission predicates run before I/O and throw the use case's own `.forbidden`; deriving a self-only resource ID from the subject needs no redundant equality guard. Public and internal use cases take `input:`. Internal peers are admitted by mTLS; their use cases enforce input validity, resource relationships, state transitions, and idempotency without reading a request principal. Two audiences may share a private implementation after their respective checks. Core never reads `ServiceContext`. See [identity-and-access.md](identity-and-access.md).
+**User authorization is explicit.** User use cases take `subject: UserIdentity` and business `input:` when needed; self-only operations derive the resource ID from the subject, and operations with no other data omit `input:` rather than declaring an empty carrier. Explicit permission predicates run before I/O and throw the use case's own `.forbidden`; deriving a self-only resource ID from the subject needs no redundant equality guard. Public and internal use cases take `input:`. Internal peers are admitted by mTLS; their use cases enforce input validity, resource relationships, state transitions, and idempotency without reading a request principal. A use case serves one kind of caller through one `callAsFunction`; two use cases that perform the same operation share the repository and its command, not an implementation. Core never reads `ServiceContext`. See [identity-and-access.md](identity-and-access.md).
 
-An input carries a value in the type the transport already validated it into: an enum as the enum, a timestamp as a `Date`, so the use case does not re-parse it. The caller's own id arrives in the `subject`, already a `UUID`. A value the wire still carries as a string — a target user's id in a request body — is parsed by the use case, which owns that error.
+An input carries a value in the type the transport already validated it into: an enum as the enum, a timestamp as a `Date`, so the use case does not re-parse it. The caller's own id arrives in the `subject`, already a `UUID`; another user's id in a request is parsed into a `UUID` by the conversion initializer, which refuses a malformed one.
 
 When a lookup inside a transaction finds nothing, throw the use case's own typed error from inside the closure and rethrow it by type outside — `catch let error as CreateItemUseCaseError { throw error }` — before the named repository errors and the catch-all. Do not return an optional from the closure and unwrap it afterwards, and do not invent a private sentinel error to carry the refusal out of the closure.
 
-Do not pass `Date`, a clock, or a `now` closure into a use case merely to stamp a record. The repository, in practice the database default, owns that persistence concern. The default is therefore no clock in a use case at all. The alternative is a `Clock` injected where the use case *decides* on time — whether a token has expired, whether a grace period has passed — so a test can fix the instant; the clock is then a real seam, and the stored dates still come from the database.
+Do not pass `Date` or a `now` closure into a use case to stamp a record. The repository, in practice the database default, owns that persistence concern. A use case that *decides* on time — whether a token has expired, whether a grace period has passed, when a token it issues expires — reads `Date.now` at the point it decides, and the stored creation and update dates still come from the database.
 
 ## Ports to other modules
 

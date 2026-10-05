@@ -9,4 +9,4 @@ PASS if all of these hold:
 - On timeout it runs an expiration Activity before assigning an expired state.
 - Its `Input` is nested, `Codable`, and `Sendable`.
 
-FAIL if the Workflow performs database or network work directly, or calls `Date()`, `UUID()`, or a random source outside the Workflow context.
+FAIL if the Workflow performs database or network work directly, or reads `Date()` or `Date.now` rather than `context.now`, calls `UUID()`, or uses a random source outside the Workflow context.

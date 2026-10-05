@@ -22,7 +22,7 @@ An event fits when all three hold:
 - more than one consumer reacts, or one consumer whose effect must survive the producer's crash and its own;
 - the consumer may lag: the design tolerates the fact arriving later, twice, or out of order with an unrelated fact.
 
-If the producer needs a result, it is a use-case call (monolith) or gRPC (microservices). If the reaction is a multi-step process with retries, timers, or waits, it is a workflow (the orchestrating-temporal-workflows skill). If only one consumer exists and it may run inside the producer's transaction, it is a direct call; the outbox appears the day that stops being true.
+If the producer needs a result, it is a use-case call (monolith) or gRPC (microservices). If the reaction is a multi-step process with retries, timers, or waits, it is a workflow (the orchestrating-temporal-workflows skill). If only one consumer exists and its effect need not survive a crash, it is a direct call after the producer's transaction commits; the outbox appears the day that stops being true.
 
 ## The event
 
@@ -106,7 +106,7 @@ The building-swift-services skill owns the layout inside each target; this table
 
 ## In a monolith
 
-The composition root is the broker by default. It builds the producer's publisher over the outbox and a relay that delivers to the consumers' use cases in-process, in order, with the same at-least-once contract and the same processed-events dedup. That keeps the consumer's code identical to the microservices version, so moving either module out later swaps the relay's target for a broker adapter and nothing else. Skip the outbox only when the single consumer's effect need not survive a crash and the design says so; then the producer's use case calls the consumer's use case directly, in its own transaction, and there is no event.
+The composition root is the broker by default. It builds the producer's publisher over the outbox and a relay that delivers to the consumers' use cases in-process, in order, with the same at-least-once contract and the same processed-events dedup. That keeps the consumer's code identical to the microservices version, so moving either module out later swaps the relay's target for a broker adapter and nothing else. Skip the outbox only when the single consumer's effect need not survive a crash and the design says so; then the producer's use case calls the consumer's use case directly after its own transaction commits, and there is no event.
 
 ## The consistency record
 
@@ -119,5 +119,5 @@ staleness: seconds; a page may lag, a decision never reads the projection
 duplicates: by eventId in processed_events, per consumer
 ordering: per order id; a stale event is applied as no-op by version check
 failure: consumer retries with backoff; a permanent failure parks the event, logged
-rebuild: Orders.ListOrdersInternalService, paged
+rebuild: OrderInternalService.ListOrders, paged
 ```

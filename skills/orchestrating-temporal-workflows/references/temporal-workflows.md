@@ -42,7 +42,7 @@ Core must not import Temporal. The Workflows target must not implement SQL, cons
 
 ## Workflow design
 
-Use Workflow code only for deterministic orchestration. Call `WorkflowContext` for workflow time, timers, conditions, Activities, signals, and queries. Do not perform database, gRPC, HTTP, email, filesystem, environment, UUID generation, ordinary `Date()` reads, or other nondeterministic side effects directly in a Workflow.
+Use Workflow code only for deterministic orchestration. Read the time as `context.now`, a `Date` replayed from history, and call `WorkflowContext` for timers, conditions, Activities, signals, and queries. Do not perform database, gRPC, HTTP, email, filesystem, environment, UUID generation, `Date()` or `Date.now` reads, or other nondeterministic side effects directly in a Workflow.
 
 ```swift
 @Workflow
@@ -201,7 +201,7 @@ package struct ReservationActivities {
 }
 ```
 
-Nest Activity input and output values under the container, as *Payloads* describes. Use `Id`, not `ID`, and noun-based date names, as everywhere else.
+Nest Activity input and output values under the container, as *Payloads* describes. Spell identifiers `ID` in type names and `Id` in values (`registrationId`), and noun-based date names, as everywhere else.
 
 Assume every Activity can be retried after its side effect succeeds but before Temporal receives the result. Make each write retry-safe at the system that owns the side effect: unique constraints for creates, compare-and-swap updates for transitions, provider idempotency keys for email, payments, or messaging. Do not rely on Workflow fields, Activity memory, or Temporal history as the downstream idempotency mechanism.
 
@@ -470,4 +470,4 @@ Sources/<Service>Workflows/<Feature>/
   Temporal<Feature>WorkflowClient.swift
 ```
 
-Use `package` access across targets, `private` mutable Workflow fields, nested `Input` values, and nested Activity input and output values. Use FoundationEssentials where needed and preserve import ordering and any SDK compatibility fallback, following the writing-swift-server-code skill's [Foundation policy](../../writing-swift-server-code/references/foundation.md). Name identifiers `xId`, Workflow types `XWorkflow`, Activity containers `XActivities`, Core ports `XWorkflowClient`, and Temporal implementations `TemporalXWorkflowClient`.
+Use `package` access across targets, `private` mutable Workflow fields, nested `Input` values, and nested Activity input and output values. Use FoundationEssentials where needed and preserve import ordering and any SDK compatibility fallback, following the writing-swift-server-code skill's [Foundation policy](../../writing-swift-server-code/references/foundation.md). Spell identifiers `ID` in type names and `Id` in values, name Workflow types `XWorkflow`, Activity containers `XActivities`, Core ports `XWorkflowClient`, and Temporal implementations `TemporalXWorkflowClient`.

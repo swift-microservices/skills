@@ -1,6 +1,6 @@
 # Identity and access
 
-Use mTLS to admit service connections and user JWTs to authorize user operations. Keep those responsibilities separate from business invariants and database tenant isolation.
+Use mTLS to admit service connections and user JWTs to identify users; use cases authorize. Keep those responsibilities separate from business invariants and database tenant isolation.
 
 ## Contents
 
@@ -10,7 +10,7 @@ Use mTLS to admit service connections and user JWTs to authorize user operations
 - Identifying a caller versus requiring one
 - Where the caller lives
 - Authorization lives in the use case
-- One RPC service per audience
+- Two RPC services
 - Propagating the caller
 - Validation at every process boundary
 - Processes: the certificate is the credential
@@ -46,7 +46,7 @@ An open string `UserRole` can expose `.user` and `.admin` constants without turn
 
 An authenticator receives a credential and returns an identity or throws. The bearer interceptor or middleware rejects a presented invalid token. With no credential it continues unbound. A user handler requires a verified identity and returns `unauthenticated` (HTTP 401) when absent.
 
-Keep login, refresh, registration, and provider webhooks outside user bearer authentication. These operations check their own passwords, refresh tokens, challenges, or signatures. An expired access token attached by a client must not block the operation that replaces it.
+Login, refresh, registration, and provider webhooks never require a user's access token: they check their own passwords, refresh tokens, challenges, or signatures. An expired access token must not block the operation that replaces it. On HTTP these routes sit in the tier with no authenticating middleware, so a refresh token may ride in the `Authorization` header. On gRPC they sit on `<Entity>Service` behind the identifying interceptor, which refuses a presented invalid token, so their proofs travel in the request message and a caller sends no bearer on them: the gateway binds no principal on those routes and so forwards none, and an app calling the service directly attaches its access token only to the RPCs that take one.
 
 ## Where the caller lives
 
@@ -54,27 +54,28 @@ The bearer transport binds `Principal<UserIdentity, String>` under `PrincipalKey
 
 Handlers pass the identity to use cases as `subject:`. Core never reads `ServiceContext`. Log the local process using the logger's service label and the verified user through `.user`; do not invent a remote process identity from request metadata.
 
-On tenant operations, the user settings interceptor or middleware follows bearer authentication and binds transaction-local `app.caller_user_id`. See [persistence.md](persistence.md).
+Where tenant tables exist, the user settings interceptor or middleware follows bearer authentication and binds transaction-local `app.caller_user_id`. See [persistence.md](persistence.md).
 
 ## Authorization lives in the use case
 
 | Audience | Use-case signature | Access boundary |
 | --- | --- | --- |
 | Public | `callAsFunction(input:)` | Operation-specific credentials or proofs |
-| User / administrator | `callAsFunction(subject: UserIdentity, input:)` (omit empty input) | Verified user; owning use case checks role and resource access |
+| The caller's own | `callAsFunction(subject: UserIdentity, input:)` (omit empty input) | `requireUser()`; the tenant policy confines rows, and the input names no user |
+| Administrator | `callAsFunction(subject: UserIdentity, input:)` | `requireAdministrator()`; owning use case requires the administrator role again before any I/O |
 | Internal service / worker | `callAsFunction(input:)` | Peer admitted by transport mTLS; owning use case checks business invariants |
 
-Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep backend listeners private and gateway routes limited to public and user operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
+Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep backend listeners private and gateway routes limited to `<Entity>Service` operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
 
 An HTTP route collection or verb may additionally be protected by `AdminRequestContext` or equivalent middleware using only verified JWT role claims, without database lookups. This early gate supplements the owning use case; it does not replace resource or business authorization.
 
 A self-only operation derives its user ID from `subject`, never a business input. Explicit permission predicates are checked before side effects and throw the use case's own `.forbidden`; deriving a self-only ID from the subject needs no redundant equality guard. The producer translates that to `permissionDenied` (HTTP 403). Internal input still requires valid relationships, legal state transitions, consistency, and idempotency. A user ID in internal input identifies a resource; it is not a verified user principal.
 
-When two audiences share business work, expose a user overload and an input-only internal overload with a private common implementation. Do not let the user overload skip its permission check.
+A use-case protocol declares exactly one `callAsFunction`, so one use case serves one kind of caller. When an administrator and another process perform the same operation, they are two use cases, each with its own input, typed error, and single entry point, named for the business capability: billing's worker grants and revokes an entitlement (`GrantEntitlementUseCase(input:)`, `RevokeEntitlementUseCase(input:)`, behind `GrantEntitlement` and `RevokeEntitlement` on the internal service) where an administrator upserts and deletes one (`UpsertEntitlementUseCase(subject:input:)`, `DeleteEntitlementUseCase(subject:input:)`, which check the role). They share the repository and its command, not an implementation. A use case neither the gateway exposes nor a process calls is deleted, with its RPC.
 
-## One RPC service per audience
+## Two RPC services
 
-Split protobuf descriptors into `<Entity>PublicService`, `<Entity>Service`, and `<Entity>InternalService`, omitting unused audiences. Apply bearer authentication and then tenant settings only to user descriptors:
+Split protobuf descriptors into `<Entity>Service` and `<Entity>InternalService`, omitting the internal one when no process calls in (the table in [grpc-and-protos.md](grpc-and-protos.md#contract-design) says what each holds). Apply bearer authentication and then tenant settings to `<Entity>Service`. The bearer interceptor identifies without requiring: a call with no token passes with no principal bound, a call with an invalid token is `.unauthenticated`, and each handler requires what its RPC needs:
 
 ```swift
 interceptorPipeline: [
@@ -89,11 +90,30 @@ interceptorPipeline: [
 ]
 ```
 
-Internal descriptors have no application authentication interceptor. Their listener still requires mTLS. Public backend descriptors also remain behind that listener, with their own operation-specific proofs.
+```swift
+/// The interceptor identifies a user without requiring one; the caller's own RPCs require one.
+private func requireUser() throws -> UserIdentity {
+    guard let user = ServiceContext.current?.user else {
+        throw RPCError(code: .unauthenticated, message: "Authentication is required.")
+    }
+    return user.identity
+}
+
+/// An early gate for administrators' RPCs; the use case checks the role again.
+private func requireAdministrator() throws -> UserIdentity {
+    let subject = try requireUser()
+    guard subject.role == .admin else {
+        throw RPCError(code: .permissionDenied, message: "Administrator access is required.")
+    }
+    return subject
+}
+```
+
+An administrator's call has the tenant setting bound too; its use case runs on the internal role, which ignores it. Internal descriptors have no application authentication interceptor. Their listener still requires mTLS.
 
 ## Propagating the caller
 
-Apply `BearerPropagationInterceptor<UserIdentity>()` only to upstream user descriptors. It sends the original credential from the bound principal. The receiver verifies that JWT independently. It is not applied to public or internal descriptors, and a worker carries no user token.
+Apply `BearerPropagationInterceptor<UserIdentity>()` only to upstream `<Entity>Service` descriptors; it forwards a credential only when a principal is bound, so an anonymous call stays anonymous. It sends the original credential from the bound principal. The receiver verifies that JWT independently. It is not applied to internal descriptors, and a worker carries no user token.
 
 Bearer parsing takes the first authorization entry, matches the scheme case-insensitively, and replaces existing authorization metadata when forwarding a bound credential. Use the packages' parsers rather than duplicating them.
 
@@ -112,7 +132,7 @@ Temporal always uses its own certificate/key pair, trust configuration, and relo
 ## The three rules
 
 1. Authorize a user-triggered workflow at the initiating request. Put resource IDs and durable business input in the workflow, never the user's token.
-2. Forward the original JWT when a service continues a user RPC through another user descriptor. Verify it again at the receiver.
+2. Forward the original JWT when a service continues a user RPC through another `<Entity>Service`. Verify it again at the receiver.
 3. Let transport trust admit internal peers. Internal handlers accept input directly; use cases enforce business invariants over the internal or worker database scope without impersonating a user.
 
 ## Key material in configuration
