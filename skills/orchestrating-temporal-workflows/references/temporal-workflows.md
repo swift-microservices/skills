@@ -42,7 +42,7 @@ Core must not import Temporal. The Workflows target must not implement SQL, cons
 
 ## Workflow design
 
-Use Workflow code only for deterministic orchestration. Call `WorkflowContext` for workflow time, timers, conditions, Activities, signals, and queries. Do not perform database, gRPC, HTTP, email, filesystem, environment, UUID generation, ordinary `Date()` reads, or other nondeterministic side effects directly in a Workflow.
+Use Workflow code only for deterministic orchestration. Read the time as `context.now`, a `Date` replayed from history, and call `WorkflowContext` for timers, conditions, Activities, signals, and queries. Do not perform database, gRPC, HTTP, email, filesystem, environment, UUID generation, `Date()` or `Date.now` reads, or other nondeterministic side effects directly in a Workflow.
 
 ```swift
 @Workflow
