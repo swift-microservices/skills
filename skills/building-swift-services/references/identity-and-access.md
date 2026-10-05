@@ -10,7 +10,7 @@ Use mTLS to admit service connections and user JWTs to authorize user operations
 - Identifying a caller versus requiring one
 - Where the caller lives
 - Authorization lives in the use case
-- One RPC service per kind of caller
+- Two RPC services
 - Propagating the caller
 - Validation at every process boundary
 - Processes: the certificate is the credential
@@ -61,8 +61,8 @@ On tenant operations, the user settings interceptor or middleware follows bearer
 | Audience | Use-case signature | Access boundary |
 | --- | --- | --- |
 | Public | `callAsFunction(input:)` | Operation-specific credentials or proofs |
-| User (`…Service`) | `callAsFunction(subject: UserIdentity, input:)` (omit empty input) | Verified user; the tenant policy confines rows, and the input names no user |
-| Administrator (`…AdminService`) | `callAsFunction(subject: UserIdentity, input:)` | Verified user; owning use case requires the administrator role before any I/O |
+| The caller's own | `callAsFunction(subject: UserIdentity, input:)` (omit empty input) | `requireUser()`; the tenant policy confines rows, and the input names no user |
+| Administrator | `callAsFunction(subject: UserIdentity, input:)` | `requireAdministrator()`; owning use case requires the administrator role again before any I/O |
 | Internal service / worker | `callAsFunction(input:)` | Peer admitted by transport mTLS; owning use case checks business invariants |
 
 Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep backend listeners private and gateway routes limited to public and user operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
@@ -73,15 +73,15 @@ A self-only operation derives its user ID from `subject`, never a business input
 
 When two audiences share business work, expose a user overload and an input-only internal overload with a private common implementation. Do not let the user overload skip its permission check.
 
-## One RPC service per kind of caller
+## Two RPC services
 
-Split protobuf descriptors into `<Entity>PublicService`, `<Entity>Service`, `<Entity>AdminService`, and `<Entity>InternalService`, omitting unused ones (the table in [grpc-and-protos.md](grpc-and-protos.md#contract-design) says what each holds). Apply bearer authentication to the self and admin descriptors, and tenant settings to the self descriptors only — an admin RPC runs on the internal role, which no tenant setting narrows:
+Split protobuf descriptors into `<Entity>Service` and `<Entity>InternalService`, omitting the internal one when no process calls in (the table in [grpc-and-protos.md](grpc-and-protos.md#contract-design) says what each holds). Apply bearer authentication and then tenant settings to `<Entity>Service`. The bearer interceptor identifies without requiring: a call with no token passes with no principal bound, a call with an invalid token is `.unauthenticated`, and each handler requires what its RPC needs:
 
 ```swift
 interceptorPipeline: [
     .apply(
         BearerAuthenticationInterceptor(authenticator: userAuthenticator),
-        to: .services([UserService.descriptor, UserAdminService.descriptor])
+        to: .services([UserService.descriptor])
     ),
     .apply(
         UserSettingsInterceptor(),
@@ -90,11 +90,30 @@ interceptorPipeline: [
 ]
 ```
 
-Internal descriptors have no application authentication interceptor. Their listener still requires mTLS. Public backend descriptors also remain behind that listener, with their own operation-specific proofs.
+```swift
+/// The interceptor identifies a user without requiring one; the caller's own RPCs require one.
+private func requireUser() throws -> UserIdentity {
+    guard let user = ServiceContext.current?.user else {
+        throw RPCError(code: .unauthenticated, message: "Authentication is required.")
+    }
+    return user.identity
+}
+
+/// An early gate for administrators' RPCs; the use case checks the role again.
+private func requireAdministrator() throws -> UserIdentity {
+    let subject = try requireUser()
+    guard subject.role == .admin else {
+        throw RPCError(code: .permissionDenied, message: "Administrator access is required.")
+    }
+    return subject
+}
+```
+
+An administrator's call has the tenant setting bound too; its use case runs on the internal role, which ignores it. Internal descriptors have no application authentication interceptor. Their listener still requires mTLS.
 
 ## Propagating the caller
 
-Apply `BearerPropagationInterceptor<UserIdentity>()` only to upstream self and admin descriptors. It sends the original credential from the bound principal. The receiver verifies that JWT independently. It is not applied to public or internal descriptors, and a worker carries no user token.
+Apply `BearerPropagationInterceptor<UserIdentity>()` only to upstream `<Entity>Service` descriptors; it forwards a credential only when a principal is bound, so an anonymous call stays anonymous. It sends the original credential from the bound principal. The receiver verifies that JWT independently. It is not applied to public or internal descriptors, and a worker carries no user token.
 
 Bearer parsing takes the first authorization entry, matches the scheme case-insensitively, and replaces existing authorization metadata when forwarding a bound credential. Use the packages' parsers rather than duplicating them.
 

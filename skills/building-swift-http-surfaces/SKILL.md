@@ -75,7 +75,7 @@ Do not call work complete until every applicable gate passes.
 - Session-issuing and health routes sit outside the authenticating middleware; the identifying tier admits anonymous requests; the requiring tier refuses them; administrative routes are reachable only through `AdminRequestContext`; `UserSettingsMiddleware` follows the bearer middleware wherever tenant tables exist and nowhere in a gateway.
 - Every failure is problem details with the classified status; no conversion drops a malformed value.
 - Resource and business authorization stay in the use cases; a route gate reads only verified JWT role claims.
-- A gateway declares no persistence package, routes no internal operation, forwards the original token only on user descriptors, and dials every upstream over mTLS from one long-lived client in its `ServiceGroup`.
+- A gateway declares no persistence package, routes no internal operation, forwards the original token only on `<Entity>Service` descriptors, and dials every upstream over mTLS from one long-lived client in its `ServiceGroup`.
 - No HTTP process publishes a host port; the surface builds, and its router tests cover the tier matrix and the distinct error mappings.
 
 If a gate requires an unresolved product, contract, or security decision, stop at the safe boundary and request that decision rather than inventing behavior.

@@ -153,12 +153,12 @@ let usersClient = GRPCClient(
         serviceConfig: .defaults
     ),
     interceptorPipeline: [
-        .apply(propagation, to: .services([<Organization>_Users_V1_UserService.descriptor, <Organization>_Users_V1_UserAdminService.descriptor]))
+        .apply(propagation, to: .services([<Organization>_Users_V1_UserService.descriptor]))
     ]
 )
 ```
 
-Under Composition, wrap each client in one generated stub per proto service, `UserPublicService.Client(wrapping:)`, `UserService.Client(wrapping:)`, and `UserAdminService.Client(wrapping:)` over the same `GRPCClient`, and hand them to the controller; admin routes, behind `AdminRequestContext`, call the admin stub, and a self route sends no user id — the forwarded token names the caller. The public stub is dialled with nothing, which is what the session-issuing RPCs expect: they run before any caller exists, so there is no token to forward. The gateway exposes only intended public, self, and admin operations; its mTLS credential must not be treated as permission to publish internal routes.
+Under Composition, wrap each client in its generated stub, `UserService.Client(wrapping:)` over the `GRPCClient`, and hand it to the controller. Propagation forwards a token only when a principal is bound, so a route in the first tier calls the same stub anonymously, which is what the session-issuing RPCs expect; a self route sends no user id — the forwarded token names the caller. The gateway exposes only intended `<Entity>Service` operations; its mTLS credential must not be treated as permission to publish internal routes.
 
 Under Router, call `API`'s router builder, which registers the same three tiers as a module's, without `UserSettingsMiddleware`: a gateway has no database for the setting to reach, and the tenant is bound again, from the forwarded token, inside the service that owns the rows. Under Hummingbird, `ApplicationConfiguration(reader:)` scoped to `http.server`. Under Lifecycle, the application and every client in one `ServiceGroup`:
 

@@ -59,7 +59,7 @@ gRPC is the default synchronous internal transport. Introduce a broker or workfl
 Design contracts before implementations:
 
 1. Name RPCs for business capabilities rather than CRUD tables.
-2. Split every contract by caller: `<Entity>PublicService` for anyone, `<Entity>Service` for a signed-in person about themselves (its requests name no user), `<Entity>AdminService` for an administrator about anyone, `<Entity>InternalService` for another process. Identification and the database role are applied per proto service, never per method.
+2. Give every contract two services: `<Entity>Service` for everything a person reaches, its RPCs grouped by who may call them (anyone; the caller's own, whose requests name no user; administrators), and `<Entity>InternalService` for only the RPCs another process calls, admitted by mTLS alone.
 3. Define request validation, response meaning, and stable error/status mapping.
 4. Include stable identifiers and timestamps only when consumers need them.
 5. Establish deadlines and maximum payload expectations.
@@ -161,7 +161,7 @@ Define alerts from user-impacting symptoms and service objectives, not every log
 
 1. Write the capability map, the shape decision record, the service ownership table, the interaction map, and the non-functional requirements.
 2. Challenge every proposed remote boundary against the reasons in shapes.md; merge services that lack one into a module of another, or into a monolith.
-3. Define the first vertical user journey and the contracts it needs, split by caller.
+3. Define the first vertical user journey and the contracts it needs.
 4. Create and release the shared proto package, `<project>-protos`, and the organization's core package, `<project>-core`, over the swift-microservices packages.
 5. Initialize each service package with `swift package init --type executable`, and the gateway package `<organization>-api` (the building-swift-http-surfaces skill) when browsers or REST clients are among the callers.
 6. Build the owning service from Core outward through Postgres, gRPC, composition, and environment, with the building-swift-services skill.

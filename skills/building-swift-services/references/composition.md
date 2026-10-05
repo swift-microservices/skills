@@ -219,7 +219,7 @@ With HTTP, the root adds **Router** and **Hummingbird** sections after Compositi
 
 ## The gRPC section
 
-Construct one server with every proto service the process serves, every module's in a monolith, and apply each interceptor to the services whose callers it identifies:
+Construct one server with every proto service the process serves, every module's in a monolith, and apply the identifying interceptors to every `<Entity>Service`, never to an internal one:
 
 ```swift
 // MARK: - gRPC
@@ -232,13 +232,12 @@ let server = GRPCServer(
         ),
         transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader)
     ),
-    services: [itemPublicService, itemService, itemAdminService, itemInternalService, userPublicService, userService],
+    services: [itemService, itemInternalService, userService],
     interceptorPipeline: [
         .apply(
             BearerAuthenticationInterceptor(authenticator: userAuthenticator),
             to: .services([
                 <Organization>_Catalog_V1_ItemService.descriptor,
-                <Organization>_Catalog_V1_ItemAdminService.descriptor,
                 <Organization>_Users_V1_UserService.descriptor,
             ])
         ),
@@ -253,7 +252,7 @@ let server = GRPCServer(
 )
 ```
 
-Public and internal descriptors have no application authentication interceptor. `BearerAuthenticationInterceptor` binds users only on user descriptors; `UserSettingsInterceptor` follows it for tenant operations. The backend listener still requires mTLS for every descriptor. Keep internal operations private and outside gateway routes. A monolith uses local calls between its modules rather than internal network hops.
+Internal descriptors have no application authentication interceptor. `BearerAuthenticationInterceptor` binds users on `<Entity>Service` descriptors without requiring one; `UserSettingsInterceptor` follows it for tenant operations, and each handler requires what its RPC needs. The backend listener still requires mTLS for every descriptor. Keep internal operations private and outside gateway routes. A monolith uses local calls between its modules rather than internal network hops.
 
 ## Lifecycle
 
@@ -275,7 +274,7 @@ A project may record borrowed SDK-managed HTTP singletons such as `HTTPClient.sh
 
 ## The gateway composition root
 
-A gateway's root — the authenticator, one mTLS `GRPCClient` per upstream with bearer propagation on user descriptors, the router, and no database — is the building-swift-http-surfaces skill's, in its [gateway reference](../../building-swift-http-surfaces/references/gateway.md#composition-root). It uses the transport security factories below.
+A gateway's root — the authenticator, one mTLS `GRPCClient` per upstream with bearer propagation on `<Entity>Service` descriptors, the router, and no database — is the building-swift-http-surfaces skill's, in its [gateway reference](../../building-swift-http-surfaces/references/gateway.md#composition-root). It uses the transport security factories below.
 
 ## Transport security factories
 

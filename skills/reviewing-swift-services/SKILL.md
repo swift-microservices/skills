@@ -30,7 +30,7 @@ A finding is a claim you can point at: a file and a line, a symbol, or a grep re
 Severity, in this order:
 
 - **Blocking** — data isolation, authorization, credentials, or build correctness: a policy that admits the wrong rows, resource or business authorization delegated outside a use case (an additional JWT-role route gate without database lookups is allowed), a shared secret, a Core target linking a driver or a server framework, a package that does not build.
-- **Major** — a convention whose violation the architecture depends on: ownership, idempotency, the interceptor and role per kind of caller, the transaction boundary, the roles.
+- **Major** — a convention whose violation the architecture depends on: ownership, idempotency, the handler requirement and role per kind of caller, the transaction boundary, the roles.
 - **Minor** — naming, layout, logging, test coverage gaps.
 
 ## Audit
@@ -87,7 +87,7 @@ Review progress:
 
 **4. Contracts and gRPC transport** — read `Sources/<Service>GRPC` and the proto dependency; skip when the package serves no gRPC.
 - Canonical protos have one home: `<project>-protos` by tag in microservices, with no `.proto` in a service; `Sources/<Module>GRPC/Protos/` with the generator plugin in a gRPC monolith. A `.proto` duplicated in a second package is a finding.
-- The contract is split by caller: `<Entity>PublicService`, `<Entity>Service`, `<Entity>AdminService`, `<Entity>InternalService`, one conformance each at the feature root, holding only that caller's use cases. A `…Service` request that names a user, or an administrative RPC on `…Service`, is a finding; so is a `…Service` use case on the internal role or an `…AdminService` one on the tenant-scoped role.
+- The contract has `<Entity>Service` and `<Entity>InternalService`, one conformance each at the feature root. `<Entity>Service`'s RPCs and handlers are grouped by who may call them, and each handler starts with what its group requires: nothing, `requireUser()`, or `requireAdministrator()`. Findings: a request for the caller's own that names a user; a caller's-own use case on the internal role or an administrator's on the tenant-scoped role; an `<Entity>Service` handler calling an `(input:)` overload that exists for internal callers; an internal RPC no other process calls.
 - Conversions live in the feature's `Protobuf/` directory as `X+Protobuf.swift`, as initializers on the destination type or inline construction in the one method that needs it; transport validation (UUID parsing, enum recognition) happens in the conversion initializer; `.unspecified` and `.UNRECOGNIZED` are refused, not defaulted. Evidence: each `X+Protobuf.swift` declares initializers on the destination type.
 - User handlers require the verified user, then call the owning use case. Internal handlers accept business input directly behind mTLS. Map typed failures to stable gRPC codes. User permission checks belong in use cases; business invariants apply to every audience.
 - UUIDs are lowercased on the wire. Generated messages appear only in this target and consumer adapters.
@@ -102,7 +102,7 @@ Review progress:
 
 **6. Identity and access** — read `Serve.swift` and the manifest.
 - `UserIdentity` is the one `JWTPayload` type, keys `sub` as a `UUID`, and verifies expiry in `verify(using:)`; additional claims are stored properties on it. Verification uses `JWTAuthenticator<UserIdentity>` over the public key (the `<Project>Authentication` `init(publicKey:)` convenience, or `init(keys:)` over a collection holding only public keys); only the authenticating service builds `JWTIssuer<UserIdentity>` over the private key. A symmetric secret shared between processes, a JWT signing key outside the authenticating service, or a key read from an environment variable rather than a path, is blocking; a symmetric key inside a single-process monolith is not a finding.
-- Apply `BearerAuthenticationInterceptor` and then tenant `UserSettingsInterceptor` only to user descriptors. Internal descriptors rely on listener mTLS, not an application authentication interceptor. Keep public proof-checking paths separate from user bearer authentication.
+- Apply `BearerAuthenticationInterceptor` and then tenant `UserSettingsInterceptor` to every `<Entity>Service` descriptor, never to an internal one. Internal descriptors rely on listener mTLS, not an application authentication interceptor. A public RPC's own proof (a refresh token, a webhook signature) travels in the request, never as the bearer credential.
 - Outgoing clients carry `BearerPropagationInterceptor<UserIdentity>` on user-service descriptors alone; a client that speaks as the process carries no interceptor and no token.
 - No custom `@TaskLocal` carries a caller. Logging includes the local process label and verified-user metadata, not an invented remote process identity.
 - Internal service connections use transport mTLS with explicit CA trust. Check private listener exposure, required client certificates, server hostname verification, and the absence of internal gateway routes.

@@ -67,7 +67,7 @@ Row-level security is the same in both shapes, applies only where end users own 
 
 **HTTP** is for browsers, mobile apps that speak REST, and anything that expects OpenAPI. In a monolith it lives in the `<Module>HTTP` targets, one router in the executable; in microservices it is the gateway package, `<organization>-api`, which owns no data and translates each request into an RPC. Either way the surface identifies the caller once with `BearerAuthenticationMiddleware`, requires per tier, and answers failures as RFC 9457 problem details.
 
-**gRPC** is for apps and systems that speak it and for every internal call between services. In a monolith the `<Module>GRPC` targets register their services on one `GRPCServer`; in microservices each service has its own. Contracts are split by caller (`<Entity>PublicService`, `<Entity>Service`, `<Entity>AdminService`, `<Entity>InternalService`) so that identification and the database role apply per service, never per method; in a monolith the internal service usually does not exist, because no process calls in.
+**gRPC** is for apps and systems that speak it and for every internal call between services. In a monolith the `<Module>GRPC` targets register their services on one `GRPCServer`; in microservices each service has its own. Contracts have two services, `<Entity>Service` for people, its RPCs grouped by who may call them, and `<Entity>InternalService` for other processes; in a monolith the internal service usually does not exist, because no process calls in.
 
 **Both** means both surfaces over the same use cases: the module's HTTP controllers and its gRPC conformances call the same `XUseCaseProtocol`, and no business decision lives in either transport.
 
@@ -96,7 +96,7 @@ A module has earned its own service when at least one of these is concrete, meas
 
 "It is a separate concept" is not a reason; the module boundary already gives that. One service per entity, table, endpoint, or team name is not a boundary.
 
-Turning a module into a service is three moves, not a program. Release its contract in `<project>-protos`, split by caller. Give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are. In the consumer, keep the use-case protocol and swap the injected implementation for a gRPC client adapter conforming to the same protocol, constructed in the consumer's composition root over mTLS, applying bearer propagation only to user descriptors. What the consumer calls does not change; what answers does. Moving existing rows into the new database, and removing them from the old one, is the user's decision, planned and executed explicitly.
+Turning a module into a service is three moves, not a program. Release its contract in `<project>-protos`. Give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are. In the consumer, keep the use-case protocol and swap the injected implementation for a gRPC client adapter conforming to the same protocol, constructed in the consumer's composition root over mTLS, applying bearer propagation only to user descriptors. What the consumer calls does not change; what answers does. Moving existing rows into the new database, and removing them from the old one, is the user's decision, planned and executed explicitly.
 
 ## The decision record
 

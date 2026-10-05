@@ -77,16 +77,16 @@ message CreateItemRequest {
 
 Treat `idempotency_key` as required through producer validation even though proto3 strings default to empty. Name it for its transport semantics rather than leaking a caller concept such as `registration_id`. Each caller generates or derives one stable, namespaced key per logical operation and reuses it across retries. The key is not a secret, caller authentication, or permission to perform the mutation.
 
-**One gRPC service per kind of caller.** A contract has up to four services in the same proto file, named for who calls them. The service an RPC belongs to decides everything the receiving side does before the use case runs — which interceptors apply, which database role serves it — and whether its request may name a user:
+**Two gRPC services per contract.** A contract has up to two services in the same proto file. `<Entity>Service` holds everything a person reaches through the gateway or an app; `<Entity>InternalService` holds only the RPCs another service or a worker actually calls, and an RPC no process calls is not on it. Inside `<Entity>Service`, RPCs are grouped under a comment saying who may call them, and who may call an RPC decides what its handler requires, which database role serves it, and whether its request may name a user:
 
-| Service | Callers | Holds | Interceptors | Database role | Request names a user |
-| --- | --- | --- | --- | --- | --- |
-| `<Entity>PublicService` | anyone | the session-issuing RPCs, sign-up, catalogue reads, a provider's webhook — everything reached before or without a token | none; operation-specific proofs | the service role, no caller bound | no |
-| `<Entity>Service` | a signed-in person, about themselves | the person's own operations | bearer, then tenant settings | the service role, under the tenant policy | never: the token does |
-| `<Entity>AdminService` | a signed-in administrator, about anyone | the administrative operations; the use case requires the administrator role | bearer | the internal role | yes |
-| `<Entity>InternalService` | another process | what a worker or another service does on the service's data with no user present | none; transport mTLS | the internal role | yes |
+| RPC | Handler starts with | Use case | Database role | Request names a user |
+| --- | --- | --- | --- | --- |
+| anyone, on `<Entity>Service`: sign-up, the session-issuing RPCs, catalogue reads, a provider's webhook | nothing; operation-specific proofs | `(input:)` | the service role, no caller bound | no |
+| the caller's own, on `<Entity>Service` | `requireUser()` | `(subject:input:)` | the service role, under the tenant policy | never: the token does |
+| administrators, on `<Entity>Service` | `requireAdministrator()` | `(subject:input:)`, which requires the administrator role again | the internal role | yes |
+| another process, on `<Entity>InternalService` | nothing; transport mTLS admits the peer | `(input:)` | the internal role | yes |
 
-So a self-only operation's request carries no user id, not even one checked against the token: a person's own record is `GetProfile(google.protobuf.Empty)`, and a field that once named the caller is `reserved`. An operation both a person and an administrator perform is two RPCs, one on each service, over two use cases. Omit a service the contract has no callers for — a newsletter has a public and an admin service and no other. A process with no tenant tables has the service role alone, and every one of its services runs on it. An RPC both a user and a process call appears on both services with the same messages; the producer maps each to the use case's matching overload. Never fold the four into one service with a method list of exclusions: the split is what makes the interceptors apply structurally (see *One RPC service per kind of caller* in [identity-and-access.md](identity-and-access.md)). There is no RPC that issues a token to a process, because a process is proved by its certificate.
+So a self-only operation's request carries no user id, not even one checked against the token: a person's own record is `GetProfile(google.protobuf.Empty)`, and a field that once named the caller is `reserved`. An operation both a person and an administrator perform is two RPCs over two use cases. A process with no tenant tables has the service role alone, and every RPC runs on it. An RPC both an administrator and a process call appears on both services with the same messages; the producer maps each to the use case's matching overload. The internal service stays its own descriptor because its handlers accept business input with no principal, which only the listener's mTLS trust may admit (see *Two RPC services* in [identity-and-access.md](identity-and-access.md)). There is no RPC that issues a token to a process, because a process is proved by its certificate.
 
 ## Producer adapter
 
@@ -107,7 +107,7 @@ package struct ItemService: <Organization>_Catalog_V1_ItemService.SimpleServiceP
 }
 ```
 
-One conformance per proto service: `ItemPublicService`, `ItemService`, `ItemAdminService`, `ItemInternalService`, each holding only its caller's use cases. User and administrator handlers require a verified principal with `requireUser()`, then pass it as `subject:`. Internal handlers accept input directly because mTLS admits the connection. Both translate transport input and typed use-case failures explicitly:
+One conformance per proto service: `ItemService` and `ItemInternalService`, with `ItemService`'s handlers in `// MARK:` groups that match the contract's comments. A handler for the caller's own RPCs requires a verified principal with `requireUser()`; an administrator's handler requires one whose role is administrator with `requireAdministrator()`, which throws `.permissionDenied` before the request is converted, an early gate the use case's own role check backs; both pass the principal as `subject:`. A public handler calls an `(input:)` use case. An `ItemService` handler never calls an `(input:)` overload that exists for internal callers — that overload skips the permission check. Internal handlers accept input directly because mTLS admits the connection. All of them translate transport input and typed use-case failures explicitly:
 
 ```swift
 package func getItem(request: …, context: ServerContext) async throws -> … {

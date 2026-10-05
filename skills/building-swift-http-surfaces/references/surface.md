@@ -159,7 +159,7 @@ let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
 
 `BearerAuthenticationMiddleware` comes from swift-authentication-hummingbird's `AuthenticationHummingbird`; it takes any `Authenticator<String, UserIdentity>`, sets the context's `identity`, and binds the `Principal<UserIdentity, String>` in `ServiceContext` that the tenant middleware and the propagating interceptor read. A target that builds the tiers links `Authentication` to name the authenticator protocol and `AuthenticationHummingbird` for the middleware — the executable in a monolith or a service, `API` in a gateway whose router builder takes the authenticator — and every surface target links `<Project>Authentication` for `UserIdentity`; the key, and `AuthenticationJWT`, reach only the executable.
 
-Tier 1 exists for the same reason the session-issuing RPCs live on a public service with no interceptor: it is that rule, one transport over. Token refresh sends the refresh token in the `Authorization` header, and a refresh token is a database row rather than a signed one. An authenticating middleware applied to it verifies that value as a claim payload, fails, and returns `401` before the handler is reached — so the route cannot succeed at any point, for any client. Registering it in the tier with no authenticating middleware makes that structural.
+Tier 1 exists for the same reason the session-issuing RPCs take their tokens in the request message rather than as a bearer credential: it is that rule, one transport over. Token refresh sends the refresh token in the `Authorization` header, and a refresh token is a database row rather than a signed one. An authenticating middleware applied to it verifies that value as a claim payload, fails, and returns `401` before the handler is reached — so the route cannot succeed at any point, for any client. Registering it in the tier with no authenticating middleware makes that structural.
 
 Tier 2 is where a route that reads differently for a known caller belongs — a catalogue that is public but richer once logged in. Do not collapse tiers 2 and 3; identifying and requiring are separate decisions here exactly as they are on gRPC.
 
@@ -202,15 +202,14 @@ Where a check depends on a path parameter — this record if it is yours, any re
 One `XController` per resource, holding protocols rather than concrete types so a test can substitute them. What the protocol is depends on the shape:
 
 - Over use cases, in a module's own surface: the use-case protocol existentials the module's Core declares, one per operation the resource exposes. The controller reads the caller from the context and passes it as `subject:`; a public route passes `input:` alone.
-- Over services, in a gateway: generated client protocols, one per proto service the resource speaks, because a proto service is one audience and a public route must not reach a user RPC through the wrong stub:
+- Over services, in a gateway: generated client protocols, one per `<Entity>Service` the resource speaks. Every tier calls the same stub; the forwarded token, present only when the tier bound a principal, is what the service's handlers check:
 
 ```swift
 package struct ItemController: Sendable {
-    private let publicClient: <Organization>_Catalog_V1_ItemPublicService.ClientProtocol
     private let client: <Organization>_Catalog_V1_ItemService.ClientProtocol
 
-    package func addPublicRoutes(to group: RouterGroup<BasicRequestContext>) { ... }        // publicClient
-    package func addAuthenticatedRoutes(to group: RouterGroup<IdentityRequestContext>) { ... }  // client
+    package func addPublicRoutes(to group: RouterGroup<BasicRequestContext>) { ... }
+    package func addAuthenticatedRoutes(to group: RouterGroup<IdentityRequestContext>) { ... }
 }
 ```
 
