@@ -1,6 +1,6 @@
 # Identity and access
 
-Use mTLS to admit service connections and user JWTs to authorize user operations. Keep those responsibilities separate from business invariants and database tenant isolation.
+Use mTLS to admit service connections and user JWTs to identify users; use cases authorize. Keep those responsibilities separate from business invariants and database tenant isolation.
 
 ## Contents
 
@@ -46,7 +46,7 @@ An open string `UserRole` can expose `.user` and `.admin` constants without turn
 
 An authenticator receives a credential and returns an identity or throws. The bearer interceptor or middleware rejects a presented invalid token. With no credential it continues unbound. A user handler requires a verified identity and returns `unauthenticated` (HTTP 401) when absent.
 
-Keep login, refresh, registration, and provider webhooks outside user bearer authentication. These operations check their own passwords, refresh tokens, challenges, or signatures. An expired access token attached by a client must not block the operation that replaces it.
+Login, refresh, registration, and provider webhooks never require a user's access token: they check their own passwords, refresh tokens, challenges, or signatures. An expired access token must not block the operation that replaces it. On HTTP these routes sit in the tier with no authenticating middleware, so a refresh token may ride in the `Authorization` header. On gRPC they sit on `<Entity>Service` behind the identifying interceptor, which refuses a presented invalid token, so their proofs travel in the request message and a caller sends no bearer on them: the gateway binds no principal on those routes and so forwards none, and an app calling the service directly attaches its access token only to the RPCs that take one.
 
 ## Where the caller lives
 
@@ -54,7 +54,7 @@ The bearer transport binds `Principal<UserIdentity, String>` under `PrincipalKey
 
 Handlers pass the identity to use cases as `subject:`. Core never reads `ServiceContext`. Log the local process using the logger's service label and the verified user through `.user`; do not invent a remote process identity from request metadata.
 
-On tenant operations, the user settings interceptor or middleware follows bearer authentication and binds transaction-local `app.caller_user_id`. See [persistence.md](persistence.md).
+Where tenant tables exist, the user settings interceptor or middleware follows bearer authentication and binds transaction-local `app.caller_user_id`. See [persistence.md](persistence.md).
 
 ## Authorization lives in the use case
 
@@ -65,7 +65,7 @@ On tenant operations, the user settings interceptor or middleware follows bearer
 | Administrator | `callAsFunction(subject: UserIdentity, input:)` | `requireAdministrator()`; owning use case requires the administrator role again before any I/O |
 | Internal service / worker | `callAsFunction(input:)` | Peer admitted by transport mTLS; owning use case checks business invariants |
 
-Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep backend listeners private and gateway routes limited to public and user operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
+Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep backend listeners private and gateway routes limited to `<Entity>Service` operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
 
 An HTTP route collection or verb may additionally be protected by `AdminRequestContext` or equivalent middleware using only verified JWT role claims, without database lookups. This early gate supplements the owning use case; it does not replace resource or business authorization.
 
@@ -113,7 +113,7 @@ An administrator's call has the tenant setting bound too; its use case runs on t
 
 ## Propagating the caller
 
-Apply `BearerPropagationInterceptor<UserIdentity>()` only to upstream `<Entity>Service` descriptors; it forwards a credential only when a principal is bound, so an anonymous call stays anonymous. It sends the original credential from the bound principal. The receiver verifies that JWT independently. It is not applied to public or internal descriptors, and a worker carries no user token.
+Apply `BearerPropagationInterceptor<UserIdentity>()` only to upstream `<Entity>Service` descriptors; it forwards a credential only when a principal is bound, so an anonymous call stays anonymous. It sends the original credential from the bound principal. The receiver verifies that JWT independently. It is not applied to internal descriptors, and a worker carries no user token.
 
 Bearer parsing takes the first authorization entry, matches the scheme case-insensitively, and replaces existing authorization metadata when forwarding a bound credential. Use the packages' parsers rather than duplicating them.
 
@@ -132,7 +132,7 @@ Temporal always uses its own certificate/key pair, trust configuration, and relo
 ## The three rules
 
 1. Authorize a user-triggered workflow at the initiating request. Put resource IDs and durable business input in the workflow, never the user's token.
-2. Forward the original JWT when a service continues a user RPC through another user descriptor. Verify it again at the receiver.
+2. Forward the original JWT when a service continues a user RPC through another `<Entity>Service`. Verify it again at the receiver.
 3. Let transport trust admit internal peers. Internal handlers accept input directly; use cases enforce business invariants over the internal or worker database scope without impersonating a user.
 
 ## Key material in configuration

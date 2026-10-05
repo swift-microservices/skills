@@ -148,7 +148,6 @@ Sources/
       Postgres<Module>InternalScope.swift             # only a module with tenant tables
       Postgres<Module>WorkerScope.swift               # only with Temporal
     Migrations/
-      <Table>/                                        # one create migration per table, then its policies
       Role/                                           # only a service: a monolith's roles live at the executable
         CreateServiceRole.swift
         CreateInternalRole.swift                      # only with tenant tables
@@ -201,7 +200,7 @@ Tests/
 
 Use plural feature folders such as `Items`, then group repository and use-case artifacts within that feature. Do not create top-level `Entities`, `UseCases`, or `Repositories` buckets in Core. In Postgres, group by technical responsibility and then entity because those files implement infrastructure mechanics.
 
-In GRPC, keep the generated-service conformances at the feature root, one file per proto service. Put every request/input and entity/message conversion in that feature's single `Protobuf/` directory, shared by the three. Do not split it further. In HTTP, keep one controller per resource and the conversions in `Schemas/`, matching the gateway's layout so a controller reads the same whether it calls a use case or a stub. The contents of the HTTP target are the building-swift-http-surfaces skill's [surface reference](../../building-swift-http-surfaces/references/surface.md).
+In GRPC, keep the generated-service conformances at the feature root, one file per proto service. Put every request/input and entity/message conversion in that feature's single `Protobuf/` directory, shared by both. Do not split it further. In HTTP, keep one controller per resource and the conversions in `Schemas/`, matching the gateway's layout so a controller reads the same whether it calls a use case or a stub. The contents of the HTTP target are the building-swift-http-surfaces skill's [surface reference](../../building-swift-http-surfaces/references/surface.md).
 
 The `Database` protocol comes from swift-persistence, `PostgresDatabase`, `PostgresScope`, and `PostgresClient.withClient` from swift-persistence-postgres, and the test double from `<Project>Testing`. The module writes scopes, statements, repositories, and migrations.
 
@@ -377,7 +376,7 @@ The same block in every shape; the executable that links them differs.
 
 A `<Module>GRPC` that consumes another service adds that service's `<Producer>Protos` product for its client adapter and nothing else; a `<Module>Core` never adds a protos product.
 
-A gRPC monolith that keeps its contracts in the package (the default is `<project>-protos`; see *Canonical proto package* in [grpc-and-protos.md](grpc-and-protos.md)) drops the `<Module>Protos` product, puts the files under `Sources/<Module>GRPC/Protos/`, and generates in place:
+A gRPC monolith keeps its contracts in the package (see *Canonical proto package* in [grpc-and-protos.md](grpc-and-protos.md)): it drops the `<Module>Protos` product, puts the files under `Sources/<Module>GRPC/Protos/`, and generates in place:
 
 ```swift
 .target(
@@ -500,6 +499,6 @@ products: [
 ]
 ```
 
-Internal targets communicate through `package` declarations. The Temporal worker is a subcommand of this executable, not a second product: it links the same targets, and one image with two process types is simpler to build, publish and deploy than two images that must move together. What the worker must not do, open the server or read the verifying key, is a property of its command, not of the manifest. The worker once was a separate executable so the manifest could keep the database driver out of it; the worker owns its database now, so that edge enforces nothing.
+Internal targets communicate through `package` declarations. The Temporal worker is a subcommand of this executable, not a second product: it links the same targets, and one image with two process types is simpler to build, publish and deploy than two images that must move together. What the worker must not do, open the server or read the verifying key, is a property of its command, not of the manifest. A separate executable would not keep the database driver out of the worker either, because the worker owns its database.
 
 Close every manifest with `swiftLanguageModes: [.v6]`.

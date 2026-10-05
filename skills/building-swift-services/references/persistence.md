@@ -235,20 +235,20 @@ The rule here is the separation: the owner migrates and never serves, no role by
 
 ```swift
 let migrations = DatabaseMigrations()
-await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: configuration.servicePassword, database: database))
-await migrations.add(CreateInternalRole(role: configuration.internalUser, password: configuration.internalPassword, database: database))
+await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: try configuration.servicePassword, database: configuration.database))
+await migrations.add(CreateInternalRole(role: configuration.internalUser, password: try configuration.internalPassword, database: configuration.database))
 await migrations.add(CreateItemsTable())
 ```
 
-The migration is plain: `CREATE ROLE "<role>" LOGIN PASSWORD '…'`, `GRANT CONNECT` on the database, `GRANT USAGE` on `public`, DML on all tables and usage on all sequences, and the same two as `ALTER DEFAULT PRIVILEGES` so every table a later migration creates is the role's from the moment it exists. `revert` is `DROP ROLE IF EXISTS`. Keep it that simple — no existence checks, no quoting helpers; the values are the deployment's own configuration. The three role migrations are one shape with three names; share the grant list through a private helper in `Migrations/Role/`, not a base class. Roles are cluster-wide, so a database dropped and re-migrated in a cluster that still has the role fails on `CREATE ROLE`; drop the role with the database.
+The migration is plain: `CREATE ROLE "<role>" LOGIN PASSWORD '…'`, `GRANT CONNECT` on the database, `GRANT USAGE` on `public`, DML on all tables and usage on all sequences, and the same two as `ALTER DEFAULT PRIVILEGES` so every table a later migration creates is the role's from the moment it exists. `revert` is `DROP ROLE IF EXISTS`. Keep it that simple — no existence checks, no quoting helpers; the values are the deployment's own configuration. The three role migrations are one shape with three names; each writes its statements out as sequential `connection.query` calls, with no base class and no loop over a shared statement list. Roles are cluster-wide, so a database dropped and re-migrated in a cluster that still has the role fails on `CREATE ROLE`; drop the role with the database.
 
 Never `BYPASSRLS`, and never the owner as a runtime role. The wider view is granted `TO` the role through a policy of its own (below), so it is a fact visible in the schema and in `pg_policies` rather than an attribute on a role or a consequence of ownership.
 
-Because the migration library refuses a reordered list, a service that adopts the service role after its tables are applied cannot slide it in first without re-migrating from scratch. Adopt it at the first migration. The internal and worker roles append.
+The migration library refuses a reordered list, so `CreateServiceRole` is the first migration from the package's start. A role the package gains later, such as the worker role when Temporal arrives, is appended like any other migration: its grant on all tables covers the tables that exist, and its default privileges cover the ones that follow.
 
 ## Row-level security
 
-Row-level security is the default where more than one end user owns rows in one database, and it is not universal. A single-tenant application, an internal tool, a module whose tables are reference data or the application's own bookkeeping, or a deployment per customer (isolation by database, the strongest form) has no policies, one service role, one scope, and no settings interceptor or middleware; the decision record says so, and the rest of this section does not apply. Where the tenant is an organization rather than a user, everything below holds with the organization's id in the setting and the predicate, and the org layer's `PostgresSettings` helper carries that id instead.
+Row-level security is the default where more than one end user owns rows in one database, and it is not universal. A single-tenant application, an internal tool, a module whose tables are reference data or the application's own bookkeeping, or a deployment per customer (isolation by database, the strongest form) has no policies and one scope, and a package with no tenant table anywhere has one service role and no settings interceptor or middleware; the decision record says so, and the rest of this section does not apply. Where the tenant is an organization rather than a user, everything below holds with the organization's id in the setting and the predicate, and the org layer's `PostgresSettings` helper carries that id instead.
 
 When a service's rows belong to users — a user's documents, a user's devices, a customer's purchases — confine callers in Postgres, not in the statements. Restating the rule as a scope bound into every query is the same predicate maintained twice, and the copy in the statements is the one that drifts. The rule exists once, as policies; the service tells the database who is calling.
 

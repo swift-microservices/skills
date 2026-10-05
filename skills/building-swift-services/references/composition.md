@@ -190,23 +190,27 @@ The root of a monolith does what a service's root does, once per module, and one
 
 ```swift
 // MARK: - Composition
-// Two clients, one per role; one database per module per role. Every tenant-scoped database
+// Two clients, one per role; one database per module per role it uses. Every tenant-scoped database
 // reads the same caller setting, bound once at the transport.
 let catalogDatabase = PostgresDatabase<PostgresCatalogScope>(client: serviceClient, logger: logger)
-let catalogInternalDatabase = PostgresDatabase<PostgresCatalogInternalScope>(client: internalClient, logger: logger)
 let usersDatabase = PostgresDatabase<PostgresUsersScope>(client: serviceClient, logger: logger)
 let usersInternalDatabase = PostgresDatabase<PostgresUsersInternalScope>(client: internalClient, logger: logger)
 
-// Users: the module every other module asks about accounts.
-let getAccountUseCase = GetAccountUseCase(database: usersInternalDatabase, logger: logger)
-let usersController = UserController(getAccount: getAccountUseCase, /* … */)
+// Users: a person reads their own profile under the tenant policy; other modules resolve
+// an account by id on the internal role.
+let getProfileUseCase = GetProfileUseCase(database: usersDatabase, logger: logger)
+let resolveAccountUseCase = ResolveAccountUseCase(database: usersInternalDatabase, logger: logger)
+let usersController = UserController(getProfileUseCase: getProfileUseCase, /* … */)
 
-// Catalog: its AccountClient port is Users' use case, called locally. Were Users its own service,
-// this one line would inject GRPCAccountClient over a GRPCClient instead, and nothing in
-// CatalogCore would change.
-let createItemUseCase = CreateItemUseCase(database: catalogDatabase, accounts: getAccountUseCase, logger: logger)
-let itemController = ItemController(createItem: createItemUseCase, /* … */)
-let itemService = ItemService(createItem: createItemUseCase, /* … */)          // with gRPC
+// Catalog: its AccountClient port is Users' use case, called locally through a few lines in the
+// executable that convert Users' entity into Catalog's Account. Were Users its own service, this
+// one argument would be GRPCAccountClient over a GRPCClient instead, and nothing in CatalogCore
+// would change. Items are not tenant rows, so Catalog has one scope, and its administrator's
+// create runs there.
+let accounts = UsersAccountClient(resolveAccountUseCase: resolveAccountUseCase)
+let createItemUseCase = CreateItemUseCase(database: catalogDatabase, accounts: accounts, logger: logger)
+let itemController = ItemController(createItemUseCase: createItemUseCase, /* … */)
+let itemService = ItemService(createItemUseCase: createItemUseCase, /* … */)          // with gRPC
 ```
 
 Compose modules in dependency order, producers before consumers, so a port is satisfied by a value that already exists. A cycle between two modules' ports is a design fault; resolve it by reconsidering ownership, never by a lazy reference. Keep the port call outside the consumer's `withTransaction`, except for the bounded single-use-secret rotation read documented in [core.md](core.md#database-boundary).
@@ -252,7 +256,7 @@ let server = GRPCServer(
 )
 ```
 
-Internal descriptors have no application authentication interceptor. `BearerAuthenticationInterceptor` binds users on `<Entity>Service` descriptors without requiring one; `UserSettingsInterceptor` follows it for tenant operations, and each handler requires what its RPC needs. The backend listener still requires mTLS for every descriptor. Keep internal operations private and outside gateway routes. A monolith uses local calls between its modules rather than internal network hops.
+Internal descriptors have no application authentication interceptor. `BearerAuthenticationInterceptor` binds users on `<Entity>Service` descriptors without requiring one; `UserSettingsInterceptor` follows it where tenant tables exist, and each handler requires what its RPC needs. The backend listener still requires mTLS for every descriptor. Keep internal operations private and outside gateway routes. A monolith uses local calls between its modules rather than internal network hops.
 
 ## Lifecycle
 
@@ -377,7 +381,7 @@ struct Run: AsyncParsableCommand {
 }
 ```
 
-There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. The one thing `worker run` must not do is open a server or read the verifying key; keep those dependencies out of the worker command. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
+There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. `worker run` must not open a server or read the verifying key; keep those dependencies out of the worker command. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
 
 The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. Then create one `TemporalWorker`:
 
@@ -399,7 +403,7 @@ The configuration comes from the SDK's **own** reader, `TemporalWorker.Configura
 
 Add the worker, both certificate reloaders, and every owned runnable dependency used by Activities directly to one `ServiceGroup` services array; the recorded borrowed HTTP-singleton exception also applies here. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
 
-A worker has no inbound user request to forward. It calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to webhook handlers and scheduled jobs; see [identity-and-access.md](identity-and-access.md).
+A worker has no inbound user request to forward. It calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to a scheduled job; a provider webhook is different, an `<Entity>Service` RPC anyone may call, proved by the provider's signature in the request. See [identity-and-access.md](identity-and-access.md).
 
 ## Migrations at boot
 

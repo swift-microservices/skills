@@ -40,7 +40,7 @@ Before adding a package, check whether the concept is already one of these, and 
 
 - Repository and package: `swift-<concept>` for an abstraction, `swift-<concept>-<technology>` for its driver or binding, lowercase: `swift-persistence-postgres`, `swift-authentication-grpc`.
 - Product and module: the concept in upper camel case, then the technology: `Persistence`, `PersistencePostgres`, `AuthenticationGRPC`. A product carries no organization prefix; an organization-layer product does (`<Project>Authentication`).
-- Types: the concept they provide, never a framework's generic vocabulary (`PostgresDatabase`, `JWTAuthenticator`, `BearerPropagationInterceptor`), and `xId` rather than `xID` in every identifier.
+- Types: the concept they provide, never a framework's generic vocabulary (`PostgresDatabase`, `JWTAuthenticator`, `BearerPropagationInterceptor`), and identifiers spelled `ID` in type names and `Id` in values (`userId`).
 - A client library named for the technology it plugs into keeps that technology's prefix: swift-openapi-token-authentication (`OpenAPITokenAuthentication`) is middleware for Swift OpenAPI Generator's clients, not a binding of swift-authentication, and does not depend on it.
 - A test target is `<Module>Tests`; a second test target that needs heavier dependencies is named for what it proves (`<Project>MTLSTests`).
 

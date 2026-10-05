@@ -76,7 +76,7 @@ Do not use `T : Sendable` or move the constraint to a trailing `where` unless th
 
 ## APIs and errors
 
-- In a service, use `callAsFunction` for use cases, with the principal first and the `input:` label: `useCase(input: input)` for public/internal operations and `useCase(subject: subject, input: input)` for user operations; omit `input:` when the operation has no business input.
+- In a service, use `callAsFunction` for use cases, one per use case, with the principal first when there is one and the `input:` label: `useCase(subject: subject, input: input)` for the caller's own and administrators' operations, and `useCase(input: input)` for public and internal ones; omit `input:` when the operation has no business input.
 - Use typed throws for Core use-case protocols and implementations, and wherever a library's error set is closed and part of its contract.
 - Catch named enum cases directly: `catch ItemRepositoryError.duplicateName`.
 - End with a deliberate catch-all mapping when the public typed error includes `.unknown`, and log the cause there with `String(reflecting:)`.

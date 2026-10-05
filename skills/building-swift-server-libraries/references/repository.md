@@ -62,7 +62,7 @@ Every library carries an `AGENTS.md`, the repository profile an agent reads befo
 
 - **What this package is**: its products, what each holds, what it depends on and why that set is the whole set, and the test that states the shape consumers rely on.
 - **What does not belong here**: the concepts a contributor will be tempted to add, and where each lives instead (another package, the organization layer, a composition root).
-- **Application standard**, where the package touches security: the rules it assumes of its consumers, stated once (users are proved by JWTs, processes by transport mTLS; bindings apply to user descriptors only; authorization lives in the owning use case).
+- **Application standard**, where the package touches security: the rules it assumes of its consumers, stated once (users are proved by JWTs, processes by transport mTLS; bindings apply to `<Entity>Service` descriptors only, never internal ones; authorization lives in the owning use case).
 - **Swift**: Swift 6.3 and strict concurrency, swift-testing, documentation on every public declaration and a warning-free DocC catalog, the formatter and its lint command, the header format.
 - **Releases**: the SemVer labels, the Auto Release workflow, "consumers pin by tag, never by branch or path".
 - **Library CI profile**: the gates the repository runs and every capability exception with its reason and replacement coverage (a PostgresNIO or Vapor 4 full-Foundation requirement, a real-database test matrix, a generated package's build-only matrix), as the [library CI profile](../../delivering-swift-services/references/library-ci.md) requires.
