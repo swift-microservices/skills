@@ -79,7 +79,7 @@ package protocol CreateItemUseCaseScope: Sendable {
 Keep use-case construction generic over `DatabaseType`, expose it through `XUseCaseProtocol`, and use typed throws:
 
 ```swift
-package struct CreateItemUseCase<DatabaseType>: CreateItemUseCaseProtocol where DatabaseType: Database, DatabaseType.Scope: CreateItemUseCaseScope {
+package struct CreateItemUseCase<DatabaseType: Database>: CreateItemUseCaseProtocol where DatabaseType.Scope: CreateItemUseCaseScope {
     private let database: DatabaseType
     private let logger: Logger
 
@@ -147,8 +147,7 @@ package struct Account: Equatable, Sendable {
 The `Account` here is the consumer's own value, carrying only what the consumer reads; it is not the producer's entity and not a generated message. The use case takes the port in its initializer beside the database and calls it outside `withTransaction`:
 
 ```swift
-package struct CreateItemUseCase<DatabaseType, Accounts>: CreateItemUseCaseProtocol
-where DatabaseType: Database, DatabaseType.Scope: CreateItemUseCaseScope, Accounts: AccountClient {
+package struct CreateItemUseCase<DatabaseType: Database, Accounts: AccountClient>: CreateItemUseCaseProtocol where DatabaseType.Scope: CreateItemUseCaseScope {
     private let database: DatabaseType
     private let accounts: Accounts
     private let logger: Logger

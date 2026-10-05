@@ -61,7 +61,7 @@ Externally assigned standard/provider identifiers are validated and preserved ra
 
 Roles are per process, so the monolith has one set: `<project>_service`, created by `CreateServiceRole`, usually the first migration; `<project>_internal`, created by `CreateInternalRole`, when any module has tenant tables; `<project>_worker` with Temporal. The composition root's `Migrations.swift` adds every migration explicitly — usually the role migrations first, then each module's tables and policies in module dependency order, with a role added later appended at the end — and runs them before the process serves: at boot behind `serve --migrate-database` by default, or as a `migrate` one-shot before the rollout when the platform orders jobs.
 
-Row-level security is the same in both shapes, applies only where end users own rows in one database (a single-tenant application or a deployment per customer has none, and says so in the decision record), and its main concern is tenant isolation: the policy on a table whose rows belong to users is `user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid`, what the caller may do stays in the use case, and the internal role has its own `USING (true)` policy. Scopes are per role per module (`PostgresCatalogScope`, `PostgresCatalogInternalScope`), so which scope adopts a use case's scope protocol decides which database the use case may run on.
+Row-level security is the same in both shapes, applies only where end users own rows in one database (a single-tenant application or a deployment per customer has none, and says so in the decision record), and its main concern is tenant isolation: the policy on a table whose rows belong to users is `user_id = NULLIF(current_setting('app.caller_user_id', true), '')::uuid`, what the caller may do stays in the use case, and the internal role has its own `USING (true)` policy. Scopes are per role per module (`PostgresUsersScope`, `PostgresUsersInternalScope`), so which scope adopts a use case's scope protocol decides which database the use case may run on.
 
 ## The transport
 
@@ -108,6 +108,8 @@ transport: HTTP | gRPC | both
 modules: <name> owns <tables>, exposes <use cases | proto services>
 callers: browsers | apps (REST | gRPC) | partners | internal processes
 identity: verified at <the transport | the gateway and every service>
+postgres placement: instance per service | shared instance, database per service | schema per service
+tenant isolation: row-level security | none (<reason>)
 split candidates: <module>: <the concrete reason>, or none
 ```
 

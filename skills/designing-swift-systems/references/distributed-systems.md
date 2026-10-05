@@ -72,7 +72,7 @@ Generated protobuf values are transport DTOs. Map them at service/client boundar
 
 ## Data ownership and consistency
 
-Give every service an exclusive database and migration history. Other services use contracts, never SQL access, shared tables, or foreign keys across service databases.
+Give every service exclusive ownership of its data and its own migration history, in its own database or, where that is the recorded placement, its own schema. Other services use contracts, never SQL access, shared tables, or foreign keys across service databases.
 
 Where that database lives is the project's choice, decided per environment, not per service, and recorded once; the skills set no default: an instance per service (complete isolation, N clusters to run), one instance with a database and owner per service (logical isolation Postgres enforces itself, one cluster to run, cluster-wide recovery and role names), or a schema per service (cheapest, and held apart only by review). The building skill's persistence reference weighs the three with the recovery, pooling, replica, connection-budget, and placement concerns that usually decide. Postgres is the default store; a module may own a different store when its measured access pattern is a different shape, provided one store stays the truth for each entity and no transaction spans two stores.
 
@@ -83,7 +83,7 @@ Classify each invariant:
 - Keep a strong invariant inside one service and one local transaction.
 - For a synchronous cross-service decision, query the owning service and define unavailable/timeout behavior.
 - For eventual consistency, publish a fact and maintain an idempotent local projection.
-- For a multi-step business process, persist workflow state and define compensation rather than holding locks across services.
+- For a multi-step business process, run a durable workflow, whose state is its Temporal history, and define compensating Activities rather than holding locks across services.
 
 Do not make remote calls inside a local transaction except the building skill's [bounded single-use-secret rotation read](../../building-swift-services/references/core.md#database-boundary). Never claim exactly-once delivery. Design event consumers and imports to tolerate duplicates. If atomic database mutation plus event publication is required, use a transactional outbox and an independently retryable publisher.
 
@@ -121,7 +121,7 @@ Identify public, private, administrative, and data-sensitive boundaries. Keep in
 - Terminate public TLS at the platform ingress or the gateway's sidecar.
 - Mutually authenticate internal gRPC connections against explicit CA trust and verify destination hostnames. Internal peers admitted by that trust can call internal RPCs; those use cases enforce business invariants. User operations additionally require verified user JWTs and owning-use-case authorization.
 - Keep mTLS admission separate from verified-user authorization. A private network does not substitute for TLS peer verification.
-- Keep secrets as mounted files configured by path, never in source control or environment variables.
+- Keep key material (signing keys, TLS keys and certificates, enrollment credentials) as mounted files configured by path, never in source control or environment variables; database role passwords come from the environment, read as secrets, never from source control.
 - Mark secret configuration values with `isSecret: true`.
 - Avoid logging tokens, credentials, sensitive payloads, or raw database errors.
 - Connect as a least-privilege database role; confine user-owned rows with tenant-isolation policies on `app.caller_user_id`; what a caller may do is the use case's decision.

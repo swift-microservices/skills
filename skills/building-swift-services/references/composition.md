@@ -19,7 +19,7 @@ The composition root is the one place that knows the shape. It composes one modu
 
 ## Command tree
 
-Name the executable target after the service or project by default; use a collision-safe name such as `AuthenticationServer` when a dependency already owns the default, and record it in `AGENTS.md`. The root command defaults to serving. Migrations run before the process serves; by default they are a `serve` flag applied in-process before the server binds, and a platform that orders jobs or starts several replicas at once runs them as a `migrate` subcommand one-shot instead (see *Migrations at boot* below).
+Name the executable target after the service or project by default; use a collision-safe name such as `AuthenticationServer` when a dependency already owns the default, and record it in `AGENTS.md`. The root command defaults to serving. Migrations run before the process serves; by default they are a `serve` flag applied in-process before the server binds, and a platform that orders jobs runs them as a `migrate` subcommand one-shot instead, while replicas that start together and migrate at boot serialize the apply with an advisory lock; the project records which (see *Migrations at boot* below).
 
 ```text
 backend                          # a monolith; a service reads `catalog`
@@ -53,12 +53,12 @@ Build `ConfigReader(providers: [EnvironmentVariablesProvider(), InMemoryProvider
 ```dotenv
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_USER=…                      # the instance's owner, verbatim: migrations only
+POSTGRES_USER=…                      # the database's owner: migrations only
 POSTGRES_PASSWORD=…
 POSTGRES_DB=<project>_catalog        # a service; a monolith's is <project>
 POSTGRES_SERVICE_PASSWORD=…          # <name>_service, the tenant-scoped role; the name defaults
 POSTGRES_INTERNAL_PASSWORD=…         # <name>_internal: only a package with tenant tables
-POSTGRES_WORKER_PASSWORD=…           # <name>_worker: only the worker's environment
+POSTGRES_WORKER_PASSWORD=…           # <name>_worker: the worker's environment and the migrating one
 HTTP_SERVER_HOST=0.0.0.0             # with HTTP
 HTTP_SERVER_PORT=8080
 GRPC_SERVER_HOST=0.0.0.0             # with gRPC
@@ -79,6 +79,7 @@ TEMPORAL_HOST=temporal
 TEMPORAL_PORT=7233
 TEMPORAL_CLIENT_NAMESPACE=production                      # serve: the SDK's own client keys
 TEMPORAL_CLIENT_INSTRUMENTATION_SERVERHOSTNAME=temporal
+TEMPORAL_TASK_QUEUE=catalog                               # serve: the queue its workflow clients start on, equal to the worker's
 TEMPORAL_WORKER_NAMESPACE=production                      # worker: the SDK's own worker keys
 TEMPORAL_WORKER_TASKQUEUE=catalog
 TEMPORAL_WORKER_BUILDID=production
@@ -121,9 +122,9 @@ struct PostgresConfiguration: Sendable {
 }
 ```
 
-Each connection reads its password when it is asked for rather than in `init`. That is what lets one type serve every command: `serve` reads the service and internal roles, `serve --migrate-database` the owner too, and `worker run` the worker role alone, so the worker's environment carries neither the owner pair nor the serving roles' secrets, and a missing secret still fails at startup, naming the key, because every command builds its clients before its `ServiceGroup` runs. The password properties are exposed so the role migrations can read them.
+Each connection reads its password when it is asked for rather than in `init`. That is what lets one type serve every command: `serve` reads the service and internal roles, `serve --migrate-database` (or `migrate`) the owner too and, when there is a worker, the worker role's password for `CreateWorkerRole`, and `worker run` the worker role alone, so the worker's environment carries neither the owner pair nor the serving roles' secrets and the serving process never connects as the worker, and a missing secret still fails at startup, naming the key, because every command builds its clients before its `ServiceGroup` runs. The password properties are exposed so the role migrations can read them.
 
-Require topology and secrets where no appropriate default exists. Put application mount paths, database/role names, listener bindings, task queues, and URLs in the application defaults provider; library tuning defaults belong to their readers. A local wrapper such as `PostgresConfiguration` owns parsing and role-specific connections. Record exceptions to default ownership in `AGENTS.md`. Use the pinned library’s documented required keys and native scoping; required SDK keys may be satisfied by application defaults. If workflow starts and worker polling use different SDK keys for one queue, derive both defaults from one value and document that overrides must agree.
+Require topology and secrets where no appropriate default exists. Put application mount paths, database/role names, listener bindings, task queues, and URLs in the application defaults provider; library tuning defaults belong to their readers. A local wrapper such as `PostgresConfiguration` owns parsing and role-specific connections. Record exceptions to default ownership in `AGENTS.md`. Use the pinned library’s documented required keys and native scoping; required SDK keys may be satisfied by application defaults. Workflow starts read the application key `temporal.taskQueue` and worker polling reads the SDK's `temporal.worker.taskqueue`; derive both defaults from one value and document that overrides must agree.
 
 Key material, signing keys and certificates, is configured as a path and file loading is delegated to the configured cryptographic library. A path is the form NIOSSL and grpc-swift already take credentials in, it keeps a private key out of the environment, and it fails at startup naming the path. The rationale is in [identity-and-access.md](identity-and-access.md), *Key material in configuration*.
 
@@ -236,7 +237,7 @@ let server = GRPCServer(
         ),
         transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader)
     ),
-    services: [itemService, itemInternalService, userService],
+    services: [itemService, userService],
     interceptorPipeline: [
         .apply(
             BearerAuthenticationInterceptor(authenticator: userAuthenticator),
@@ -248,8 +249,7 @@ let server = GRPCServer(
         .apply(
             UserSettingsInterceptor(),   // only where tenant tables exist: the bound user becomes the tenant setting
             to: .services([
-                <Organization>_Catalog_V1_ItemService.descriptor,
-                <Organization>_Users_V1_UserService.descriptor,
+                <Organization>_Users_V1_UserService.descriptor,   // items are not tenant rows
             ])
         ),
     ]
@@ -383,7 +383,7 @@ struct Run: AsyncParsableCommand {
 
 There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. `worker run` must not open a server or read the verifying key; keep those dependencies out of the worker command. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
 
-The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the reconciliation use cases over it, the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. Then create one `TemporalWorker`:
+The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the worker's use cases over it (those taking `input:` alone), the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. Then create one `TemporalWorker`:
 
 ```swift
 let temporalWorker = try TemporalWorker(
@@ -401,9 +401,9 @@ let temporalWorker = try TemporalWorker(
 
 The configuration comes from the SDK's **own** reader, `TemporalWorker.Configuration(configReader:)`, handed the `temporal` scope, never a hand-built one; the serve side's client is the same shape, `TemporalClient.Configuration(configReader:)`. Preserve the SDK's environment names: `TEMPORAL_WORKER_NAMESPACE`, `_TASKQUEUE`, `_BUILDID`, `_CLIENT_IDENTITY`, and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`. Required SDK values may come from application defaults, such as a project task queue; otherwise the environment must supply them. `_HEARTBEATINTERVALMS` is optional; set it (60000 is a sane interval) so the worker reports liveness, which the SDK default disables. The client reads `TEMPORAL_CLIENT_NAMESPACE` and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`. Only the dial target and transport factory remain the composition root's job.
 
-Add the worker, both certificate reloaders, and every owned runnable dependency used by Activities directly to one `ServiceGroup` services array; the recorded borrowed HTTP-singleton exception also applies here. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
+Add the worker, the Temporal certificate reloader, the service `tls` reloader when its Activities call another service, and every owned runnable dependency used by Activities directly to one `ServiceGroup` services array; the recorded borrowed HTTP-singleton exception also applies here. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
 
-A worker has no inbound user request to forward. It calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to a scheduled job; a provider webhook is different, an `<Entity>Service` RPC anyone may call, proved by the provider's signature in the request. See [identity-and-access.md](identity-and-access.md).
+A worker has no inbound user request to forward. When its Activities call another service, it calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to a scheduled job; a provider webhook is different, an `<Entity>Service` RPC anyone may call, proved by the provider's signature in the request. See [identity-and-access.md](identity-and-access.md).
 
 ## Migrations at boot
 
@@ -425,7 +425,6 @@ await migrations.add(CreateInternalRole(role: configuration.internalUser, passwo
 await migrations.add(CreateUsersTable())
 await migrations.add(CreateUsersRLSPolicy(internalRole: configuration.internalUser))
 await migrations.add(CreateItemsTable())
-await migrations.add(CreateItemsRLSPolicy(internalRole: configuration.internalUser))
 try await migrations.apply(client: client, logger: logger, dryRun: false)
 ```
 

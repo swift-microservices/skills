@@ -10,7 +10,7 @@ Use these verified build facts for this offline evaluation; do not resolve or bu
 
 - The library has only library products. Its fresh release-consumer build lists libFoundationEssentials.so and Swift runtime libraries, with no libFoundation.so, libFoundationInternationalization.so, or lib_FoundationICU.so.
 - The application uses Vapor 4.122.2 and PostgresNIO 1.33.1. Its release executable lists libFoundation.so, libFoundationInternationalization.so, lib_FoundationICU.so, and libFoundationEssentials.so. The required upstream products still use full Foundation. Neither offers a trait that removes that requirement.
-- vapor/ci publishes no release tags; its reviewed `main` commit is `ad78413e13bebb9158083aa226608e028754106b` (2026-09-23).
+- vapor/ci publishes no release tags.
 - A separate OpenAPI client dependency already has its default FullFoundation trait disabled. The application's own code needs JSON decoding and ISO 8601 timestamps, with no localized display formatting.
 
 Do not claim an action was run unless you ran it. No publishing, deployment, or release work is requested.

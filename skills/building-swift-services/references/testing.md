@@ -68,7 +68,7 @@ Dates in mocks are fixed (`Date(timeIntervalSince1970:)`), never `Date()`: an as
 Construct the mock database through one scoped helper beside the mocks, and write test bodies inside it:
 
 ```swift
-func withDatabase<T>(
+func withDatabase<T: Sendable>(
     repository: any SubscriberRepository,
     operation: (MockDatabase<MockNewsletterScope>) async throws -> T
 ) async rethrows -> T {

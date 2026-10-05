@@ -83,7 +83,7 @@ Treat `idempotency_key` as required through producer validation even though prot
 | --- | --- | --- | --- | --- |
 | anyone, on `<Entity>Service`: sign-up, the session-issuing RPCs, catalogue reads, a provider's webhook | nothing; operation-specific proofs | `(input:)` | the service role | no |
 | the caller's own, on `<Entity>Service` | `requireUser()` | `(subject:input:)` | the service role, under the tenant policy | never: the token does |
-| administrators, on `<Entity>Service` | `requireAdministrator()` | `(subject:input:)`, which requires the administrator role again | the internal role | yes |
+| administrators, on `<Entity>Service` | `requireAdministrator()` | `(subject:input:)`, which requires the administrator role again | the internal role (the service role where the module has no tenant tables) | yes |
 | another process, on `<Entity>InternalService` | nothing; transport mTLS admits the peer | `(input:)` | the internal role | yes |
 
 So a self-only operation's request carries no user id, not even one checked against the token: a person's own record is `GetProfile(google.protobuf.Empty)`, and a user field removed from such a request is `reserved`, never reused. An operation both a person and an administrator perform is two RPCs over two use cases. A module with no tenant tables has one scope, on the service role, and every one of its RPCs runs on it. When an administrator and a process perform the same operation, the internal RPC is named for what the process does — `GrantEntitlement` beside the administrator's `UpsertEntitlement`, `ResolveUser` beside `GetUserByID` — with its own request message and its own use case. An RPC that neither the gateway exposes nor a process calls is removed. The internal service stays its own descriptor because its handlers accept business input with no principal, which only the listener's mTLS trust may admit (see *Two RPC services* in [identity-and-access.md](identity-and-access.md)). There is no RPC that issues a token to a process, because a process is proved by its certificate.
@@ -110,18 +110,20 @@ package struct ItemService: <Organization>_Catalog_V1_ItemService.SimpleServiceP
 One conformance per proto service: `ItemService` and `ItemInternalService`, with `ItemService`'s handlers in `// MARK:` groups that match the contract's comments. A handler for the caller's own RPCs requires a verified principal with `requireUser()`; an administrator's handler requires one whose role is administrator with `requireAdministrator()`, which throws `.permissionDenied` before the request is converted, an early gate the use case's own role check backs; both pass the principal as `subject:`. A public handler calls an `(input:)` use case. An `ItemService` handler never calls a use case that exists for internal callers — it has no permission check. Internal handlers accept input directly because mTLS admits the connection. All of them translate transport input and typed use-case failures explicitly:
 
 ```swift
-package func getItem(request: …, context: ServerContext) async throws -> … {
-    let subject = try requireUser()
+package func createItem(request: …, context: ServerContext) async throws -> … {
+    let subject = try requireAdministrator()
 
     do {
-        let item = try await getItemUseCase(subject: subject, input: GetItemUseCaseInput(request: request))
+        let item = try await createItemUseCase(subject: subject, input: CreateItemUseCaseInput(request: request))
         return <Organization>_Catalog_V1_Item(item: item)
-    } catch GetItemUseCaseError.forbidden {
-        throw RPCError(code: .permissionDenied, message: "An item may be read by its owner only.")
-    } catch GetItemUseCaseError.itemNotFound {
-        throw RPCError(code: .notFound, message: "The item was not found.")
-    } catch GetItemUseCaseError.unknown {
-        throw RPCError(code: .internalError, message: "The item could not be obtained.")
+    } catch CreateItemUseCaseError.forbidden {
+        throw RPCError(code: .permissionDenied, message: "Only an administrator may create an item.")
+    } catch CreateItemUseCaseError.invalidName {
+        throw RPCError(code: .invalidArgument, message: "The item name must not be empty.")
+    } catch CreateItemUseCaseError.duplicateName {
+        throw RPCError(code: .alreadyExists, message: "An item with this name already exists.")
+    } catch CreateItemUseCaseError.unknown {
+        throw RPCError(code: .internalError, message: "The item could not be created.")
     }
 }
 ```
@@ -169,29 +171,37 @@ Do not mark a conversion extension `private` when another file in the GRPC targe
 
 ## Consumer adapter
 
-A consumer declares the use-case protocol it needs in its own Core, and what is injected behind it is the shape's decision: in a monolith the composition root injects the producer module's use case itself, a local call; between services it injects this adapter, over a client. Keep the consumer's caller-facing use-case protocol, input, error, and local entity in either case, so moving from the first to the second replaces only the concrete implementation:
+A consumer declares the port it needs in its own Core, and what is injected behind it is the shape's decision: in a monolith the composition root injects the producer module's use case itself, wrapped in a few lines, a local call; between services it injects this adapter, over a client. Keep the consumer's port, its error, and its local value in either case, so moving from the first to the second replaces only the concrete implementation:
 
 ```swift
-package struct ListCatalogItemsUseCase: ListCatalogItemsUseCaseProtocol {
+// Sources/OrdersGRPC/Clients/GRPCCatalogItemsClient.swift
+package struct GRPCCatalogItemsClient: CatalogItemsClient {
     private let client: <Organization>_Catalog_V1_ItemService.ClientProtocol
 
     package init<Transport>(client: GRPCClient<Transport>) {
         self.client = <Organization>_Catalog_V1_ItemService.Client(wrapping: client)
     }
 
-    package func callAsFunction() async throws -> [Item] {
-        let response = try await client.listItems(.init())
-        return try response.items.map { message in
+    package func items() async throws(CatalogItemsClientError) -> [CatalogItem] {
+        let response: <Organization>_Catalog_V1_ListItemsResponse
+        do {
+            response = try await client.listItems(.init())
+        } catch let error as RPCError where error.code == .unavailable || error.code == .deadlineExceeded {
+            throw .unavailable
+        } catch {
+            throw .unknown
+        }
+        return try response.items.map { message throws(CatalogItemsClientError) in
             guard let id = UUID(uuidString: message.id) else {
-                throw ListCatalogItemsUseCaseError.malformedResponse
+                throw .malformedResponse
             }
-            return Item(id: id, name: message.name, creationDate: message.creationDate.date)
+            return CatalogItem(id: id, name: message.name)
         }
     }
 }
 ```
 
-Catch `RPCError` and map known status codes to the existing local use-case error. A remote adapter catches no repository errors; the producer already translated them. Decide how unavailable/deadline failures appear to the caller; do not silently collapse all transport failures into a business conflict, and do not funnel them into a single `.unavailable` case (see *Boundary rules* in [architecture.md](architecture.md)).
+`CatalogItemsClient` is the port the consumer's Core declares (*Ports to other modules* in [core.md](core.md)), and `CatalogItem` the consumer's own value. Catch `RPCError` and map known status codes to the port's own error. A remote adapter catches no repository errors; the producer already translated them. Decide how unavailable/deadline failures appear to the caller; do not silently collapse all transport failures into a business conflict, and do not funnel them into a single `.unavailable` case (see *Boundary rules* in [architecture.md](architecture.md)).
 
 Construct one long-lived `GRPCClient` per upstream in the consuming executable, wrap it in one generated service client per proto service the consumer speaks, inject those, and add the client to `ServiceGroup`. Do not create a client per request. Apply `BearerPropagationInterceptor<UserIdentity>` on the client through `interceptorPipeline`, to the upstream's `<Entity>Service` descriptors alone, never per call; a client that speaks as the process to an internal service carries no interceptor (see *Propagating the caller* in [identity-and-access.md](identity-and-access.md)).
 

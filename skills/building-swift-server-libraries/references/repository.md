@@ -21,7 +21,7 @@ swift-<concept>[-<technology>]/
   .license_header_template
   .licenseignore                 # Package.swift and LICENSE only
   .spi.yml
-  .github/                       # the library CI profile's workflows, Dependabot, release notes
+  .github/                       # the library CI profile's workflows and Dependabot; the release workflow where Auto Release is used
   scripts/test.sh                # only a driver that needs a real provider
   Sources/<Module>/
     <Type>.swift                 # one public declaration per file, named for it
@@ -64,7 +64,7 @@ Every library carries an `AGENTS.md`, the repository profile an agent reads befo
 - **What does not belong here**: the concepts a contributor will be tempted to add, and where each lives instead (another package, the organization layer, a composition root).
 - **Application standard**, where the package touches security: the rules it assumes of its consumers, stated once (users are proved by JWTs, processes by transport mTLS; bindings apply to `<Entity>Service` descriptors only, never internal ones; authorization lives in the owning use case).
 - **Swift**: Swift 6.3 and strict concurrency, swift-testing, documentation on every public declaration and a warning-free DocC catalog, the formatter and its lint command, the header format.
-- **Releases**: the SemVer labels, the Auto Release workflow, "consumers pin by tag, never by branch or path".
+- **Releases**: the SemVer labels, the repository's recorded release mechanism (Auto Release or hand-cut bare tags), "consumers pin by tag, never by branch or path".
 - **Library CI profile**: the gates the repository runs and every capability exception with its reason and replacement coverage (a PostgresNIO or Vapor 4 full-Foundation requirement, a real-database test matrix, a generated package's build-only matrix), as the [library CI profile](../../delivering-swift-services/references/library-ci.md) requires.
 
 An application's or organization layer's `AGENTS.md` adds a **Skills** table routing tasks to these skills, and its **conventions**: the shape, transport, identity, database, and delivery decisions the skills leave as project choices. Keep the profile true: a rule the code does not follow is a defect in one of them.
@@ -84,4 +84,4 @@ A README that links a documentation badge needs both the catalog and `.spi.yml`;
 
 ## Headers, formatting, and CI
 
-Every tracked Swift file, script, and workflow carries the compact license header matched by `.license_header_template`; `Package.swift` keeps the tools-version line first, then the header. Start `.swift-format` from the sample formatter (four spaces, 400 columns) unless `AGENTS.md` records another, and lint all tracked Swift, manifests included. The workflows, the gates, Dependabot, the release workflow, and every exception are the delivering skill's [library CI profile](../../delivering-swift-services/references/library-ci.md); apply it as written and record exceptions in `AGENTS.md`.
+Every tracked Swift file, script, and workflow carries the compact license header matched by `.license_header_template`; `Package.swift` keeps the tools-version line first, then the header. Start `.swift-format` from the sample formatter (four spaces, 400 columns) unless `AGENTS.md` records another, and lint all tracked Swift, manifests included. The workflows, the gates, Dependabot, the release mechanism, and every exception are the delivering skill's [library CI profile](../../delivering-swift-services/references/library-ci.md); apply it as written and record exceptions in `AGENTS.md`.

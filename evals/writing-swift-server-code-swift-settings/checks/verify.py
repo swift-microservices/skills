@@ -13,13 +13,16 @@ manifest = json.loads(subprocess.check_output(
 ))
 expected = {"ExistentialAny", "MemberImportVisibility", "InternalImportsByDefault",
             "NonisolatedNonsendingByDefault"}
+assert manifest["toolsVersion"]["_version"].startswith("6.3"), manifest["toolsVersion"]
 assert manifest["swiftLanguageVersions"] == ["6"], manifest.get("swiftLanguageVersions")
+assert [(p["platformName"], p["version"]) for p in manifest["platforms"]] == [("macos", "15.0")], manifest["platforms"]
 assert {t["name"] for t in manifest["targets"]} == {
     "UtilityCore", "UtilityAdapter", "UtilityExtensions", "UtilityApp", "UtilityTests"
 }
 for target in manifest["targets"]:
     features = set()
     for setting in target["settings"]:
+        assert "defaultIsolation" not in setting["kind"] and "unsafeFlags" not in setting["kind"], (target["name"], setting)
         if "enableUpcomingFeature" in setting["kind"]:
             assert not setting.get("condition"), (target["name"], setting)
             features.add(setting["kind"]["enableUpcomingFeature"]["_0"])

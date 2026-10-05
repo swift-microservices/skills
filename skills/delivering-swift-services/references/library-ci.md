@@ -106,7 +106,7 @@ sample. The sample derives from an Apple library formatter captured at commit
 asset is the sample, so later upstream changes require a deliberate update. Public documentation
 remains required even though the formatter does not enforce documentation on every declaration.
 Format and strictly lint all tracked Swift, including manifests and CI consumers, with the CI
-formatter toolchain (currently 6.3). Generated build output is not tracked or hand-formatted.
+formatter toolchain (currently 6.3, `format_check_container_image: swift:6.3-noble`). Generated build output is not tracked or hand-formatted.
 
 Enable compact license-header checking and preserve the repository's license/owner. MIT packages
 in this organization use:
@@ -142,7 +142,8 @@ rule. Moving refs include upstream changes and are not immutable; inspect curren
 Dependabot checks `github-actions` weekly at `/`, targets main, and labels update PRs `semver/none`.
 
 Every PR has exactly one impact label: `⚠️ semver/major`, `🆕 semver/minor`, `🔨 semver/patch`,
-or `semver/none`. Preserve the repository's release mechanism: a manual label-based Auto Release
+or `semver/none`. The label workflow grants `pull-requests: read` beside `contents: read`; a
+private repository's default token cannot read the labels without it. Preserve the repository's release mechanism: a manual label-based Auto Release
 may reuse the shared workflow at `@main`; a contract/SDK package can keep bare version tags.
 Adding CI does not publish a release. A bare-tag exception changes release machinery, not the
 SemVer PR gate.

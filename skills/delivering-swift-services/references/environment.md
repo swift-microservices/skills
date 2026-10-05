@@ -22,11 +22,11 @@ This file is the worked default: a Compose suite, a `step`-issued CA, Loki. Ever
 The images the environment runs come from the delivery pipeline, built per commit with the project's recorded image tool (see *The release image* in [delivery.md](delivery.md)); nothing here builds what production pulls. For a local build on a workstation, and as the fallback when the pipeline cannot run, every service carries the same `Makefile` wrapping the project's local build. This example uses `swift-container-plugin` with the static Linux SDK, with no Docker daemon involved; a project on Docker or Apple's `container` wraps that command instead:
 
 ```make
-TAG ?= $(shell git rev-parse --short HEAD)
+TAG ?= $(shell git rev-parse --short=7 HEAD)        # the same short SHA CI tags
 SWIFT_SDK ?= aarch64-swift-linux-musl     # or x86_64-swift-linux-musl for the target host
 
 build:
-	swift package --swift-sdk $(SWIFT_SDK) \
+	swift package --disable-automatic-resolution --swift-sdk $(SWIFT_SDK) \
 		--configuration release \
 		--allow-network-connections all build-container-image \
 		--product catalog \
@@ -53,6 +53,13 @@ x-tls: &tls
   TLS_PRIVATE_KEY_PATH: /run/tls/key.pem
   TLS_TRUST_ROOTS_PATH: /run/tls/ca.pem
 
+x-temporal: &temporal
+  TEMPORAL_HOST: temporal
+  TEMPORAL_PORT: "7233"
+  TEMPORAL_TLS_CERTIFICATE_PATH: /run/temporal-tls/cert.pem
+  TEMPORAL_TLS_PRIVATE_KEY_PATH: /run/temporal-tls/key.pem
+  TEMPORAL_TLS_TRUST_ROOTS_PATH: /run/temporal-tls/ca.pem
+
 x-observability: &observability
   LOKI_URL: ${LOKI_URL:-http://loki:3100}
 ```
@@ -63,7 +70,7 @@ Consumers reach producers by service name: `GRPC_<SERVICE>_HOST=<service>`, `GRP
 
 ## Postgres and migrations
 
-Where Postgres runs is the project's choice (see *Where a service's data lives* in the building-swift-services skill's persistence reference); this worked example runs one instance per service — `<service>-postgres`, `postgres:18`, its own volume mounted at `/var/lib/postgresql` (PostgreSQL 18 changed the image's volume layout; do not set a custom `PGDATA`), a health check, and no `ports:`. The instance is provisioned with its database and owner through the image's own variables, so there is no init job and nothing ever creates a database. A project that runs one shared instance with a database per service instead creates each `<project>_<service>` database and owner once while provisioning; the ownership rule survives either shape.
+Where Postgres runs is the project's choice (see *Where a service's data lives* in the building-swift-services skill's persistence reference); this worked example runs one instance per service — `<service>-postgres`, `postgres:18`, its own volume mounted at `/var/lib/postgresql` (PostgreSQL 18 changed the image's volume layout; do not set a custom `PGDATA`), a health check, and no `ports:`. The instance is provisioned with its database and owner through the image's own variables, so there is no init job and nothing ever creates a database. A project that runs one shared instance with a database per service instead creates each `<project>_<service>` database and its owner once while provisioning, the owner with `CREATEROLE` so its role migrations can run, and that per-service owner is the pair the service migrates as; the ownership rule survives either shape.
 
 Per service:
 
@@ -87,25 +94,37 @@ Per service:
     POSTGRES_HOST: <service>-postgres
     POSTGRES_PORT: "5432"
     POSTGRES_DB: <project>_<service>
-    POSTGRES_USER: ${<SERVICE>_OWNER:-<organization>}          # the instance's pair, verbatim — migrations only
+    POSTGRES_USER: ${<SERVICE>_OWNER:-<organization>}          # the database's owner (here the instance's pair), verbatim — migrations only
     POSTGRES_PASSWORD: ${<SERVICE>_OWNER_PASSWORD:?set the instance owner password}
     POSTGRES_SERVICE_USER: ${<SERVICE>_SERVICE_ROLE:-<service>_service}
     POSTGRES_SERVICE_PASSWORD: ${<SERVICE>_SERVICE_PASSWORD:?set the service role password}
     POSTGRES_INTERNAL_USER: ${<SERVICE>_INTERNAL_ROLE:-<service>_internal}         # only a tenant service
     POSTGRES_INTERNAL_PASSWORD: ${<SERVICE>_INTERNAL_PASSWORD:?set the internal role password}
+    POSTGRES_WORKER_USER: ${<SERVICE>_WORKER_ROLE:-<service>_worker}               # only with a worker: CreateWorkerRole reads it
+    POSTGRES_WORKER_PASSWORD: ${<SERVICE>_WORKER_PASSWORD:?set the worker role password}
+    # With Temporal, serve starts workflows too: merge *temporal, set TEMPORAL_CLIENT_NAMESPACE
+    # and TEMPORAL_TASK_QUEUE: <service>, and mount its Temporal leaf at /run/temporal-tls.
 
 <service>-worker:
   image: ${REGISTRY:-ghcr.io/<organization>}/<organization>-<service>:${IMAGE_TAG:?set a published branch or SHA tag}
   command: ["worker", "run"]
   environment:
-    <<: [*tls, *observability]
+    <<: [*tls, *temporal, *observability]                       # *tls only when its Activities call another service
     POSTGRES_HOST: <service>-postgres
     POSTGRES_DB: <project>_<service>
     POSTGRES_WORKER_USER: ${<SERVICE>_WORKER_ROLE:-<service>_worker}
     POSTGRES_WORKER_PASSWORD: ${<SERVICE>_WORKER_PASSWORD:?set the worker role password}
+    TEMPORAL_WORKER_NAMESPACE: ${TEMPORAL_NAMESPACE:?set the Temporal namespace}
+    TEMPORAL_WORKER_TASKQUEUE: <service>
+    TEMPORAL_WORKER_HEARTBEATINTERVALMS: "60000"
+    GRPC_<UPSTREAM>_HOST: <upstream>                           # only when its Activities call another service
+    GRPC_<UPSTREAM>_PORT: "50051"
+  volumes:
+    - <service>-worker-tls:/run/tls:ro                          # its own leaf, written by its renewer; only with *tls
+    - <service>-worker-temporal-tls:/run/temporal-tls:ro
 ```
 
-The service's Postgres block repeats the instance's `POSTGRES_*` values because the app reads them as the owner connection; the `SERVICE_*` pair names the tenant-scoped role serving uses and the `INTERNAL_*` pair the one that sees every row. The worker gets its own role's pair and no owner pair at all. The owner pair sits in the serving container's environment — the accepted price of in-process migration; the serving *process* never connects with it.
+The service's Postgres block repeats the instance's `POSTGRES_*` values because the app reads them as the owner connection; the `SERVICE_*` pair names the tenant-scoped role serving uses and the `INTERNAL_*` pair the one that sees every row. The serving container also carries the worker role's pair when there is a worker, because the `CreateWorkerRole` migration it runs at boot reads that password. The worker gets its own role's pair and no owner pair at all. The owner pair sits in the serving container's environment — the accepted price of in-process migration; the serving *process* never connects with it.
 
 The migration library refuses a migration list whose order differs from what a database has already applied — it throws, it does not revert. A change that inserts a migration before applied ones therefore means `docker compose down -v` and a fresh start, not an in-place `up`. Appending a migration, a role added later included, applies in place.
 
@@ -115,7 +134,7 @@ Publish nothing that nothing outside the stack calls. Postgres, the cache, Tempo
 
 ## Secrets
 
-Key material is mounted as files and configured by path — never as an environment variable, which is readable from `/proc/<pid>/environ`, reported by the runtime's inspect command, and inherited by every child process:
+Key material (signing keys, TLS keys and certificates, enrollment credentials) is mounted as files and configured by path — never as an environment variable, which is readable from `/proc/<pid>/environ`, reported by the runtime's inspect command, and inherited by every child process:
 
 ```yaml
 secrets:
@@ -136,7 +155,7 @@ services:
 
 Only the authenticating service mounts the private key. Every service that verifies tokens merges `*jwt-verification` and mounts `jwt-public`; a worker mounts neither. Compose refuses to start a service whose secret's source file is missing, so a stack without keys fails at `up` rather than at the first request — the same guarantee a `${VAR:?message}` guard gives a variable. `docker compose config` validates a file whose secret source is missing; only `up` refuses.
 
-Signing keys, TLS private keys, and enrollment credentials are secret files. Provision each workload’s initial certificate before startup, then keep a renewer running beside it.
+Signing keys, TLS private keys, and enrollment credentials are secret files. Database role passwords are the one secret that stays a variable: the Postgres driver takes them as values, so they come from `${VAR:?message}` guards in the environment and the application reads them with `isSecret: true`, which keeps them out of its logs. Provision each workload’s initial certificate before startup, then keep a renewer running beside it.
 
 JWT key rotation and TLS renewal have separate lifecycles. TLS leaves reload for new handshakes; CA trust changes require transport reconstruction.
 

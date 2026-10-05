@@ -23,8 +23,8 @@ worker commands and justified style or coverage exceptions. Explicit user scope 
 
 | Event | Required behavior |
 | --- | --- |
-| PR opened/reopened/synchronize, any target branch | Source quality, workflow lint, locked existing tests, supported static SDK build, final release-image build and smoke check; no publication/deployment |
-| Push to develop | Same source/tests/static checks, then build and smoke-check the release image, publish it, and trigger staging deployment |
+| PR opened/reopened/synchronize, any target branch | Source quality, workflow lint, locked existing tests, a static SDK build where the image path uses it, final release-image build and smoke check; no publication/deployment |
+| Push to develop | Same source/tests checks (and static SDK build where used), then build and smoke-check the release image, publish it, and trigger staging deployment |
 | Push to main | Same checks and image validation/publication, then production deployment where configured |
 | Dependabot | Weekly Swift and Actions update PRs against develop; normal PR checks apply |
 
@@ -46,7 +46,7 @@ Apple's `container`, a static SDK base image or `swift-container-plugin` replace
 workflow's build step and keeps its gates. Copy the assets into these destinations and fill in
 the product, registry and optional Containerfile target/worker inputs:
 
-- `service-checks.yml` → `.github/workflows/checks.yml` (reusable source/tests/static checks).
+- `service-checks.yml` → `.github/workflows/checks.yml` (reusable source/tests/static checks). When the image path, local or published, does not use the static SDK, set `enable_linux_static_sdk_build: false` and remove the `linux_static_sdk_*` inputs.
 - `service-image.yml` → `.github/workflows/image.yml` (reusable native image build/validation).
 - `service-check-image.sh` → `.github/scripts/check-image.sh`.
 - `service-pull-request.yml`, `service-develop.yml`, `service-main.yml` → their corresponding workflows.
@@ -149,7 +149,7 @@ the binary silently drops staged resources. In the final image:
 
 These commands catch loader and command-packaging failures; they do not establish readiness,
 resource consumption by every code path, or deployed connectivity. Static binaries have no
-dynamic closure to inspect; verify their execution separately.
+dynamic closure to inspect; verify their execution separately. `service-check-image.sh` assumes an image loaded into a local Docker daemon with `ldd` in it and the binary at `/app`; another image tool meets the same gate by loading its image locally (or into a local registry) and running the same commands against it, skipping `ldd` for a fully static binary.
 
 Prefer FoundationEssentials in owned code. Inspect the actual Linux executable; the library
 Foundation consumer workflow cannot validate an application. Full Foundation may be required

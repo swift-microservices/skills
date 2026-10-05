@@ -110,7 +110,7 @@ let package = Package(
 
 - The tools-version line is first, then the compact license header, then `import PackageDescription`.
 - One shared settings array, each feature commented with its proposal, attached to every target and test target; the [Swift settings](../../writing-swift-server-code/references/swift-settings.md) explain each.
-- One library product per package by default, exposing the one module consumers import. A second product is justified only by a second dependency set a consumer must be able to avoid; a test-support product is an organization-layer pattern (`<Project>Testing`), linked by test targets only.
+- One library product per package by default, exposing the one module consumers import. A second product is justified only by a second dependency set a consumer must be able to avoid; a test-support product is an organization-layer pattern (`<Project>Testing`), linked by test targets only. The organization layer records two more exceptions: `<project>-protos` has one `<Module>Protos` product per contract, so a consumer imports only the contracts it calls, and `<Project>Persistence` bundles its gRPC and Hummingbird bindings (and the Vapor one on a Vapor project) because only executables link it (see [organization-layer.md](organization-layer.md)).
 - Every target declares exactly the products it imports, and every declared package is used. Use `.package(url:from:)` with the full `.git` URL.
 - No unsafe flags, no `@preconcurrency` imports, no default MainActor isolation: a consumer cannot build a package whose manifest uses unsafe flags as a dependency.
 

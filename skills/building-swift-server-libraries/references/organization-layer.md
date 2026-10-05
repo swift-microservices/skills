@@ -19,7 +19,7 @@ The swift-microservices packages know nothing of an organization. `<project>-cor
 | `<Project>Persistence` | `PostgresSettings.user(_:)`, `UserSettingsInterceptor`, `UserSettingsMiddleware` | the executable of a process with a database and tenant tables |
 | `<Project>Testing` | `MockDatabase<Scope>`, `MockUserAuthenticator` | test targets only |
 
-Each product is its own dependency set, so a domain target that links `<Project>Authentication` acquires no transport: the gRPC and Hummingbird dependencies sit in `<Project>Persistence`, which only an executable links.
+Each product is its own dependency set, so a domain target that links `<Project>Authentication` acquires no transport: the gRPC and Hummingbird dependencies sit in `<Project>Persistence`, which only an executable links. That bundling is the organization layer's recorded exception to one technology per product: `<Project>Persistence` carries its gRPC and Hummingbird bindings (and the Vapor one on a Vapor project) together because only executables link it, and an executable already links the transport it serves.
 
 ## `<Project>Authentication`
 
@@ -54,7 +54,7 @@ Loading key files and reading configuration stay in each executable; the conveni
 
 ## `<Project>Persistence`
 
-`PostgresSettings.user(_:)` turns a verified user into the one setting the tenant policies read, `app.caller_user_id`, lowercased. `UserSettingsInterceptor` (a GRPCCore `ServerInterceptor`) and `UserSettingsMiddleware<Context: RequestContext>` (a Hummingbird `RouterMiddleware`) read `ServiceContext.current?.user`, and when a user is bound run the continuation under a `ServiceContext` carrying `postgresSettings = .user(user.identity)`; with no user they continue unchanged, which the policies treat as no rows. Both follow the bearer binding: the interceptor on every `<Entity>Service` descriptor and never an internal one, the middleware in the identifying tier; and both match their framework's `@concurrent` continuation requirement. A project on Vapor adds the Vapor form, which reads and writes `request.serviceContext`. Where the tenant is an organization rather than a user, the setting and the helper name that id instead.
+`PostgresSettings.user(_:)` turns a verified user into the one setting the tenant policies read, `app.caller_user_id`, lowercased. `UserSettingsInterceptor` (a GRPCCore `ServerInterceptor`) and `UserSettingsMiddleware<Context: RequestContext>` (a Hummingbird `RouterMiddleware`) read `ServiceContext.current?.user`, and when a user is bound run the continuation under a `ServiceContext` carrying `postgresSettings = .user(user.identity)`; with no user they continue unchanged, which the policies treat as no rows. Both follow the bearer binding: the interceptor on every `<Entity>Service` descriptor whose module has tenant tables and never an internal one, the middleware in the identifying tier; and both match their framework's `@concurrent` continuation requirement. A project on Vapor adds the Vapor form, which reads and writes `request.serviceContext`. Where the tenant is an organization rather than a user, the setting and the helper name that id instead.
 
 ## `<Project>Testing`
 
@@ -70,4 +70,4 @@ Loading key files and reading configuration stay in each executable; the conveni
 
 ## `<project>-protos`
 
-The canonical proto package is a library too: one `<Module>Protos` product per module with a gRPC contract, generated with the `GRPCProtobufGenerator` plugin at `public` access, versioned additively, released by tag before any producer or consumer pins it. Its layout and generator configuration are in the building skill's [gRPC reference](../../building-swift-services/references/grpc-and-protos.md#canonical-proto-package). It has no runtime tests, so its CI is the library profile's build-and-consumer variant for generated packages.
+The canonical proto package is a library too: one `<Module>Protos` product per module with a gRPC contract (a recorded exception to one product per dependency set, beside `<Project>Testing`: the products share their dependencies, and a consumer imports only the contracts it calls), generated with the `GRPCProtobufGenerator` plugin at `public` access, versioned additively, released by tag before any producer or consumer pins it. Its layout and generator configuration are in the building skill's [gRPC reference](../../building-swift-services/references/grpc-and-protos.md#canonical-proto-package). It has no runtime tests, so its CI is the library profile's build-and-consumer variant for generated packages.
