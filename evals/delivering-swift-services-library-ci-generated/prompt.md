@@ -10,5 +10,5 @@ no runtime tests and a default URLSession transport trait. Validate generated pu
 a separate consumer and the custom-transport configuration too. Preserve its MIT license and
 owner. Document supported configurations and justified upstream exceptions in AGENTS.md.
 
-Do not commit, push, publish, or change repository settings. Validate what is available locally
+Put the workflows where the skill's layout puts them. Do not commit, push, publish, or change repository settings. Validate what is available locally
 and distinguish local results from checks requiring GitHub/Linux/provider access.

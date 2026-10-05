@@ -4,6 +4,6 @@ focus: { source: file, path: acme-api/Package.swift }
 ---
 
 PASS if all of these hold:
-- The source targets are exactly `API` and the executable `Acme`, plus a test target named `APITests`.
+- The source targets are exactly `API` and the executable `Acme`, plus a test target named `APITests`. Extra product dependencies in any target (for example `HummingbirdTesting` in `APITests`) are fine.
 - The `API` target runs the `OpenAPIGenerator` plugin.
-- No target named with Core or Postgres exists, and no postgres-nio, postgres-migrations, or swift-persistence package is declared.
+- No `.target`, `.executableTarget`, or `.testTarget` declaration has a name containing Core or Postgres; product dependencies such as `GRPCCore` or `NIOCore`, and the `acme-core` package, are expected and allowed. No postgres-nio, postgres-migrations, or swift-persistence package is declared.

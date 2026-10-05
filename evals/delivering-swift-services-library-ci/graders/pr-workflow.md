@@ -1,0 +1,7 @@
+---
+type: llm
+focus: { source: file, path: .github/workflows/pull_request.yml }
+---
+
+PASS if this pull-request workflow runs on `pull_request` types opened, reopened, and synchronize and has: a soundness job on `swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.15` with `api_breakage_check_enabled: false`, `license_header_check_enabled: true`, `format_check_container_image: swift:6.3-noble`, and `docs_check_targets` naming `LibraryCore`, with no other soundness check disabled; an `apple/swift-nio/.github/workflows/unit_tests.yml@main` job with `minimum_swift_version: "6.3"`, `linux_6_2_enabled: false`, the 6.3 and 6.4 argument overrides `-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable`, and the nightly-next and nightly-main overrides the same without `-Xswiftc -warnings-as-errors`; an `apple/swift-nio/.github/workflows/release_builds.yml@main` job with `minimum_swift_version: "6.3"` and `linux_6_2_enabled: false`; an `apple/swift-nio/.github/workflows/static_sdk.yml@main` job with no `with:` inputs and no `needs:`; and two `vapor/ci/.github/workflows/check-foundation-linking.yml@main` jobs, one with `swift_image: swift:6.3-noble` and one with `swift:6.4-noble`.
+FAIL if it adds a schedule, a macOS job, an API-breakage or API-diff job, `continue-on-error` or `|| true`, `--disable-automatic-resolution`, extra static SDK architectures or versions, or replaces the standard unit-test matrix with a hand-written one.

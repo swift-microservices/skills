@@ -39,9 +39,17 @@ images, deployment credentials, or deployment branches. Dependabot's weekly upda
 separate from CI scheduling. PR code gates use `opened`, `reopened`, `synchronize`; the label gate
 also uses `labeled`, `unlabeled`. Main means `push.branches: [main]`.
 
-Copy [the PR template](../assets/library-pull-request.yml),
-[main template](../assets/library-main.yml), [label workflow](../assets/library-pr-label.yml),
-and [Dependabot configuration](../assets/library-dependabot.yml). Replace the DocC target name.
+Copy the templates into these destinations and replace the DocC target name:
+
+- [the PR template](../assets/library-pull-request.yml) → `.github/workflows/pull_request.yml`
+- [the main template](../assets/library-main.yml) → `.github/workflows/main.yml`
+- [the label workflow](../assets/library-pr-label.yml) → `.github/workflows/pull_request_label.yml`
+- [the Dependabot configuration](../assets/library-dependabot.yml) → `.github/dependabot.yml`
+- where a capability exception replaces the unit-test matrix (below), the reusable
+  [PostgreSQL test template](../assets/library-postgres-tests.yml) → `.github/workflows/tests.yml`
+  or [build template](../assets/library-builds.yml) → `.github/workflows/builds.yml`, called from
+  both `pull_request.yml` and `main.yml` (`uses: ./.github/workflows/tests.yml`) in place of the
+  `unit-tests` job
 Keep independent gates independent: do not add `needs: static-sdk` or cancellation wrappers
 around unrelated checks. Required merge checks should cover stable toolchains and applicable
 quality/integration gates. Snapshots remain visible and advisory unless explicitly required.

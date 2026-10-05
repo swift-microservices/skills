@@ -92,7 +92,7 @@ Use hierarchy for concerns and camelCase relative keys. `tls.refreshIntervalSeco
 
 For application-owned numeric durations, include the unit: `refreshIntervalSeconds`, `maxConnectionAgeSeconds`, `connectionGraceTimeSeconds`, or `expirationSeconds`. An interval describes repetition; expiration describes lifetime. Neither word specifies a unit. Read `Duration` with `config.int(forKey:as:default:)` where the receiving API uses it; convert at the adapter boundary for APIs that take `TimeInterval`. Keep unit suffixes off typed Swift properties. Library-owned keys retain their upstream units, including milliseconds.
 
-Use required accessors for mandatory values and mark actual secret values `isSecret: true`. A file path is not the secret contents. Defaulted accessors can fall back on missing or invalid values; use throwing accessors or focused adapter validation where silent fallback would be wrong. Keep validation out of `Serve` and `Run`, and do not duplicate underlying library checks or add arbitrary positivity guards to a boilerplate cleanup.
+Use required accessors for mandatory values and mark actual secret values `isSecret: true`. A file path is not the secret contents. In `.env.example`, a secret variable has an empty value (`POSTGRES_SERVICE_PASSWORD=`), never a placeholder such as `change-me`. Defaulted accessors can fall back on missing or invalid values; use throwing accessors or focused adapter validation where silent fallback would be wrong. Keep validation out of `Serve` and `Run`, and do not duplicate underlying library checks or add arbitrary positivity guards to a boilerplate cleanup.
 
 Document the configuration contract in examples and deployment declarations, including required keys, defaults, scopes, and numeric units.
 

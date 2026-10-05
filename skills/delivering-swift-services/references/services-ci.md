@@ -49,7 +49,7 @@ the product, registry and optional Containerfile target/worker inputs:
 - `service-checks.yml` → `.github/workflows/checks.yml` (reusable source/tests/static checks). When the image path, local or published, does not use the static SDK, set `enable_linux_static_sdk_build: false` and remove the `linux_static_sdk_*` inputs.
 - `service-image.yml` → `.github/workflows/image.yml` (reusable native image build/validation).
 - `service-check-image.sh` → `.github/scripts/check-image.sh`.
-- `service-pull-request.yml`, `service-develop.yml`, `service-main.yml` → their corresponding workflows.
+- `service-pull-request.yml`, `service-develop.yml`, `service-main.yml` → `.github/workflows/pull_request.yml`, `develop.yml`, `main.yml`.
 - `service-dependabot.yml` → `.github/dependabot.yml`.
 
 Reuse `swiftlang/github-workflows` soundness and package-test workflows pinned to a reviewed
@@ -149,7 +149,7 @@ the binary silently drops staged resources. In the final image:
 
 These commands catch loader and command-packaging failures; they do not establish readiness,
 resource consumption by every code path, or deployed connectivity. Static binaries have no
-dynamic closure to inspect; verify their execution separately. `service-check-image.sh` assumes an image loaded into a local Docker daemon with `ldd` in it and the binary at `/app`; another image tool meets the same gate by loading its image locally (or into a local registry) and running the same commands against it, skipping `ldd` for a fully static binary.
+dynamic closure to inspect; verify their execution separately. `service-check-image.sh` assumes an image loaded into a local Docker daemon with `ldd` in it and the binary at `/app`; another image tool meets the same gate by loading its image locally (or into a local registry) and running the same commands against it, with the binary path that tool uses, skipping `ldd` for a fully static binary. A tool that pushes as it builds, such as `swift-container-plugin`, pushes to a run-scoped tag (`:run-${{ github.run_id }}`), the job pulls and checks that digest — a daemon on the runner for validation is fine, since the project's "no daemon" choice is about the build — and then copies that same digest to the short-SHA and branch tags with a registry copy (`crane copy`, `skopeo copy`, or `docker buildx imagetools create`), never a rebuild. A copier or runtime used only to check or re-tag the image is not a second image tool.
 
 Prefer FoundationEssentials in owned code. Inspect the actual Linux executable; the library
 Foundation consumer workflow cannot validate an application. Full Foundation may be required
