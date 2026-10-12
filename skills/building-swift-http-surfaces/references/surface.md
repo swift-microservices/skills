@@ -152,7 +152,7 @@ let identified = v1.group(context: IdentityRequestContext.self)
 let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
 ```
 
-`BearerAuthenticationMiddleware` comes from swift-authentication-hummingbird's `AuthenticationHummingbird`; it takes any `Authenticator<String, UserIdentity>`, sets the context's `identity`, and binds the `Principal<UserIdentity, String>` in `ServiceContext` that the tenant middleware and the propagating interceptor read. A target that builds the tiers links `Authentication` to name the authenticator protocol and `AuthenticationHummingbird` for the middleware — the executable in a monolith or a service, `API` in a gateway whose router builder takes the authenticator — and every surface target links `<Project>Authentication` for `UserIdentity`; the key, and `AuthenticationJWT`, reach only the executable.
+`BearerAuthenticationMiddleware` comes from swift-authentication-hummingbird's `AuthenticationHummingbird`; it takes any `Authenticator<String, UserIdentity>`, sets the context's `identity`, and binds the `Principal<UserIdentity, String>` in `OperationContext` that the tenant middleware and the propagating interceptor read. A target that builds the tiers links `Authentication` to name the authenticator protocol and `AuthenticationHummingbird` for the middleware — the executable in a monolith or a service, `API` in a gateway whose router builder takes the authenticator — and every surface target links `<Project>Authentication` for `UserIdentity`; the key, and `AuthenticationJWT`, reach only the executable.
 
 Tier 1 exists because a session-issuing route must never meet an authenticating middleware. Token refresh sends the refresh token in the `Authorization` header, and a refresh token is a database row rather than a signed one. An authenticating middleware applied to it verifies that value as a claim payload, fails, and returns `401` before the handler is reached — so the route cannot succeed at any point, for any client. Registering it in the tier with no authenticating middleware makes that structural.
 
@@ -160,7 +160,7 @@ Tier 2 is where a route that reads differently for a known caller belongs — a 
 
 ## The tenant on HTTP
 
-On gRPC the bound user becomes the tenant setting through `UserSettingsInterceptor`; on HTTP the same job is `UserSettingsMiddleware`, its HTTP counterpart in `<Project>Persistence`, added to the identifying tier right after the bearer middleware. It reads `ServiceContext.current?.user`, and when a user is bound runs the rest of the request under a `ServiceContext` carrying `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — so every transaction a use case begins during the request applies it and the tenant policy sees the caller. With no user bound it binds nothing, and a policy then admits no rows.
+On gRPC the bound user becomes the tenant setting through `UserSettingsInterceptor`; on HTTP the same job is `UserSettingsMiddleware`, its HTTP counterpart in `<Project>Persistence`, added to the identifying tier right after the bearer middleware. It reads `OperationContext.current.user`, and when a user is bound runs the rest of the request under an `OperationContext` carrying `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — so every transaction a use case begins during the request applies it and the tenant policy sees the caller. With no user bound it binds nothing, and a policy then admits no rows.
 
 A gateway has no database and no tenant middleware: the setting is applied where the transaction runs, by the service the token is forwarded to. A monolith or an HTTP-serving service with a tenant table applies it here, and the monolith is the place to notice that the token is verified exactly once — at the bearer middleware — because no process boundary is crossed between it and the tables.
 
@@ -300,7 +300,7 @@ let application = Application(
 )
 ```
 
-The application publishes no host port of its own; the address comes from the ingress that proxies to it (*Deployment* below). On Vapor 4 the same sections build a `Vapor.Application`, register the tiers as route groups, and run under `ServiceContext.withValue(req.serviceContext)` where a route calls out, as *The Vapor alternative* below describes.
+The application publishes no host port of its own; the address comes from the ingress that proxies to it (*Deployment* below). On Vapor 4 the same sections build a `Vapor.Application`, register the tiers as route groups, and run under `OperationContext.withContext(req.operationContext)` where a route calls out, as *The Vapor alternative* below describes.
 
 
 With Temporal, the serving process also builds one long-lived `TemporalClient` and injects workflow-client adapters into the use cases, exactly as a gRPC root does. A process serving both transports has one root, one set of use cases, and one `ServiceGroup` holding the application and the gRPC server.
@@ -327,17 +327,17 @@ A surface on Vapor 4 keeps every rule above and changes three mechanics, in a ga
 
 The middleware is swift-authentication-vapor's `BearerAuthenticationMiddleware`, an `AsyncMiddleware` over an identity that is `Authenticatable & Sendable`; `UserIdentity` needs that conformance declared in the surface's target. It logs the identity in to `request.auth`, so `guardMiddleware()` and `req.auth.require(UserIdentity.self)` are the requiring tier, and the admin check is a route-group middleware rather than a context conversion, since Vapor has no request-context chain.
 
-Vapor 4 bridges its responder chain through event-loop futures, so a task-local bound in middleware does not reach a route. The middleware therefore also writes the principal into `request.serviceContext`, and that is where a route reads it. The Vapor form of `UserSettingsMiddleware`, in `<Project>Persistence` beside the Hummingbird one, follows the same path: it reads the principal from `request.serviceContext` and writes `postgresSettings = .user(identity)` back into it, rather than binding a task-local nothing downstream would see. The org layer ships the Hummingbird middleware by default and adds the Vapor one when the project uses Vapor. A use case whose transaction must carry the tenant, or an outgoing gRPC call that must carry the caller's token, then runs under that context:
+Vapor 4 bridges its responder chain through event-loop futures, so a task-local bound in middleware does not reach a route. AuthenticationVapor provides `request.operationContext` in request storage; the bearer middleware adds the principal there, and that is where a route reads it. The Vapor form of `UserSettingsMiddleware`, in `<Project>Persistence` beside the Hummingbird one, follows the same path: it reads the principal from `request.operationContext` and writes `postgresSettings = .user(identity)` back into it, rather than binding a task-local nothing downstream would see. The org layer ships the Hummingbird middleware by default and adds the Vapor one when the project uses Vapor. A use case whose transaction must carry the tenant, or an outgoing gRPC call that must carry the caller's token, then runs under that context:
 
 ```swift
 app.get("orders") { req in
-    try await ServiceContext.withValue(req.serviceContext) {
+    try await OperationContext.withContext(req.operationContext) {
         try await listOrdersUseCase(subject: try req.auth.require(UserIdentity.self))
     }
 }
 ```
 
-In a module's surface, a controller is a `RouteCollection` holding the module's use-case protocols, with one `boot(routes:)` that registers into the groups the composition root hands it, and the `ServiceContext.withValue` wrapper sits in the handler, once, around the use-case call. Conversions stay in `Schemas/Requests/` and `Schemas/Responses/` as `X+Schema.swift`, and problem details come from a custom `ErrorMiddleware` registered first on the application, mapping the use case's typed errors and `Abort` to `application/problem+json` exactly as the Hummingbird `ErrorMiddleware` does. A gateway's controller is the same collection over generated client protocols with `X+RPC.swift` conversions.
+In a module's surface, a controller is a `RouteCollection` holding the module's use-case protocols, with one `boot(routes:)` that registers into the groups the composition root hands it, and the `OperationContext.withContext` wrapper sits in the handler, once, around the use-case call. Conversions stay in `Schemas/Requests/` and `Schemas/Responses/` as `X+Schema.swift`, and problem details come from a custom `ErrorMiddleware` registered first on the application, mapping the use case's typed errors and `Abort` to `application/problem+json` exactly as the Hummingbird `ErrorMiddleware` does. A gateway's controller is the same collection over generated client protocols with `X+RPC.swift` conversions.
 
 Tiers are route groups: session-issuing routes on the bare application, an identifying group with the bearer middleware and the settings middleware, and a guarded group with `UserIdentity.guardMiddleware()` on top; the admin group adds a middleware that requires `.admin` from `req.auth` and answers `403`. As on Hummingbird, the group a route is registered in decides what runs.
 

@@ -50,9 +50,9 @@ Login, refresh, registration, and provider webhooks never require a user's acces
 
 ## Where the caller lives
 
-The bearer transport binds `Principal<UserIdentity, String>` under `PrincipalKey` in `ServiceContext`. The credential is retained for outgoing propagation. The organization may expose this as `ServiceContext.user`; do not create another task-local carrier.
+The bearer transport binds `Principal<UserIdentity, String>` under `PrincipalKey` in `OperationContext`. The credential is retained for outgoing propagation. The organization may expose this as `OperationContext.user`; do not create another task-local carrier.
 
-Handlers pass the identity to use cases as `subject:`. Core never reads `ServiceContext`. Log the local process using the logger's service label and the verified user through `.user`; do not invent a remote process identity from request metadata.
+Handlers pass the identity to use cases as `subject:`. Core never reads `OperationContext`. Log the local process using the logger's service label and the verified user through `.user`; do not invent a remote process identity from request metadata.
 
 Where tenant tables exist, the user settings interceptor or middleware follows bearer authentication and binds transaction-local `app.caller_user_id`. See [persistence.md](persistence.md).
 
@@ -93,7 +93,7 @@ interceptorPipeline: [
 ```swift
 /// The interceptor identifies a user without requiring one; the caller's own RPCs require one.
 private func requireUser() throws -> UserIdentity {
-    guard let user = ServiceContext.current?.user else {
+    guard let user = OperationContext.current.user else {
         throw RPCError(code: .unauthenticated, message: "Authentication is required.")
     }
     return user.identity

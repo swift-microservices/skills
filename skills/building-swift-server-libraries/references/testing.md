@@ -20,7 +20,7 @@ Name a suite for the type and a test for the behavior, with the display string s
 Each public guarantee has a test a plausible regression would fail, and each test is a guarantee a consumer relies on:
 
 - the shape consumers write against: a use case takes `any Database<Scope>` and is handed its scope, so a change to the protocol is a change to that test first;
-- every documented branch: no credential continues unbound; a refused credential answers the transport's unauthenticated error with its stable message; an accepted one binds the principal in `ServiceContext` and in the framework's own state;
+- every documented branch: no credential continues unbound; a refused credential answers the transport's unauthenticated error with its stable message; an accepted one binds the principal in `OperationContext` and in the framework's own state;
 - error propagation: the error a consumer catches is the one its operation threw, not a wrapper;
 - parsing tables: header and metadata parsing proven by a table of inputs and expected outputs (`Metadata.bearer`: first entry, case-insensitive scheme, empty token as absent, replacement on write).
 
@@ -32,7 +32,7 @@ A package that owns an API taking a caller-isolated callback — a `Database`, a
 
 ## Bindings and interceptors
 
-Test a binding through the framework's own in-memory harness and nothing else: call a gRPC interceptor's `intercept` directly with a hand-built request and a closure for `next`; drive a Hummingbird middleware with HummingbirdTesting's router framework; drive a Vapor middleware with VaporTesting's in-memory application. Assert what the continuation observed (`ServiceContext.current`, the context's `identity`, `request.auth`), what the caller received, and that both carriers agree. Where a framework does not carry the task-local to the route (Vapor 4), do not write a test that assumes it does.
+Test a binding through the framework's own in-memory harness and nothing else: call a gRPC interceptor's `intercept` directly with a hand-built request and a closure for `next`; drive a Hummingbird middleware with HummingbirdTesting's router framework; drive a Vapor middleware with VaporTesting's in-memory application. Assert what the continuation observed (`OperationContext.current`, the context's `identity`, `request.auth`, `request.operationContext`), what the caller received, and that both carriers agree. Where a framework does not carry the task-local to the route (Vapor 4), verify request storage and the route's explicit `OperationContext.withContext` binding.
 
 ## Real providers
 

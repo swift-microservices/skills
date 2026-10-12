@@ -15,7 +15,7 @@ The swift-microservices packages know nothing of an organization. `<project>-cor
 
 | Product | Holds | Linked by |
 | --- | --- | --- |
-| `<Project>Authentication` | `UserIdentity` (the JWT payload), `UserRole`, `ServiceContext.user`, the `.user` logging metadata provider, and the EdDSA `JWTIssuer`/`JWTAuthenticator` initializers | every Core, transport target, and executable |
+| `<Project>Authentication` | `UserIdentity` (the JWT payload), `UserRole`, `OperationContext.user`, the `.user` logging metadata provider, and the EdDSA `JWTIssuer`/`JWTAuthenticator` initializers | every Core, transport target, and executable |
 | `<Project>Persistence` | `PostgresSettings.user(_:)`, `UserSettingsInterceptor`, `UserSettingsMiddleware` | the executable of a process with a database and tenant tables |
 | `<Project>Testing` | `MockDatabase<Scope>`, `MockUserAuthenticator` | test targets only |
 
@@ -26,7 +26,7 @@ Each product is its own dependency set, so a domain target that links `<Project>
 `UserIdentity` is the organization's `JWTPayload`: `sub` is the user's UUID (`userId`), plus `role`, `iss`, `iat`, `exp`, and an audience when the deployment uses one. Its `verify(using:)` enforces the claims the deployment depends on, expiry at least; no business state, entitlements, or secrets ride in the token. `UserRole` is an open string with `.user` and `.admin` constants, so an unknown role is never read as an administrator.
 
 ```swift
-extension ServiceContext {
+extension OperationContext {
     /// The verified user bound by the bearer interceptor or middleware.
     public var user: Principal<UserIdentity, String>? {
         get { self[PrincipalKey<UserIdentity, String>.self] }
@@ -36,7 +36,7 @@ extension ServiceContext {
 
 extension Logger.MetadataProvider {
     /// Adds `user_id` to every log line inside a request with a verified user.
-    public static let user = Logger.MetadataProvider { /* reads ServiceContext.current?.user */ }
+    public static let user = Logger.MetadataProvider { /* reads OperationContext.current.user */ }
 }
 
 extension JWTAuthenticator where Payload == UserIdentity {
@@ -54,7 +54,7 @@ Loading key files and reading configuration stay in each executable; the conveni
 
 ## `<Project>Persistence`
 
-`PostgresSettings.user(_:)` turns a verified user into the one setting the tenant policies read, `app.caller_user_id`, lowercased. `UserSettingsInterceptor` (a GRPCCore `ServerInterceptor`) and `UserSettingsMiddleware<Context: RequestContext>` (a Hummingbird `RouterMiddleware`) read `ServiceContext.current?.user`, and when a user is bound run the continuation under a `ServiceContext` carrying `postgresSettings = .user(user.identity)`; with no user they continue unchanged, which the policies treat as no rows. Both follow the bearer binding: the interceptor on every `<Entity>Service` descriptor whose module has tenant tables and never an internal one, the middleware in the identifying tier; and both match their framework's `@concurrent` continuation requirement. A project on Vapor adds the Vapor form, which reads and writes `request.serviceContext`. Where the tenant is an organization rather than a user, the setting and the helper name that id instead.
+`PostgresSettings.user(_:)` turns a verified user into the one setting the tenant policies read, `app.caller_user_id`, lowercased. `UserSettingsInterceptor` (a GRPCCore `ServerInterceptor`) and `UserSettingsMiddleware<Context: RequestContext>` (a Hummingbird `RouterMiddleware`) read `OperationContext.current.user`, and when a user is bound run the continuation under an `OperationContext` carrying `postgresSettings = .user(user.identity)`; with no user they continue unchanged, which the policies treat as no rows. Both follow the bearer binding: the interceptor on every `<Entity>Service` descriptor whose module has tenant tables and never an internal one, the middleware in the identifying tier; and both match their framework's `@concurrent` continuation requirement. A project on Vapor adds the Vapor form, which reads and writes `request.operationContext`. Where the tenant is an organization rather than a user, the setting and the helper name that id instead.
 
 ## `<Project>Testing`
 

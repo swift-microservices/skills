@@ -56,15 +56,15 @@ These are the packages the architecture is built on, with their version floors. 
 | `vapor` | `4.122.0` | `Vapor`, only when the HTTP surface is on Vapor instead of Hummingbird; `VaporTesting` for its tests |
 | `swift-temporal-sdk` | `1.0.0` | `Temporal`, only with durable orchestration |
 | `jwt-kit` | `5.7.1` | `JWTKit`: the executable, for the EdDSA key types |
-| `swift-service-context` | `1.3.0` | `ServiceContextModule`, wherever `ServiceContext.current` is read: the transport targets and the executable |
+| `swift-operation-context` | `0.1.0` | `OperationContext`, wherever `OperationContext.current` is read: the transport targets and the executable |
 | `swift-persistence` | `0.2.0` | `Persistence`: `Database<Scope>`, linked by every Core |
-| `swift-persistence-postgres` | `0.2.1` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
-| `swift-authentication` | `0.3.0` | `Authentication`: the `Authenticator` protocol a target names to take any verifier; authenticators return an identity or throw |
-| `swift-authentication-jwt` | `0.3.0` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module; both take a `JWTKeyCollection`, and `<Project>Authentication` adds the EdDSA `init(publicKey:)` and `init(privateKey:)` conveniences |
+| `swift-persistence-postgres` | `0.3.0` | `PersistencePostgres`: `PostgresDatabase`, `PostgresScope`, `PostgresSettings`, `PostgresClient.withClient` |
+| `swift-authentication` | `0.4.0` | `Authentication`: the `Authenticator` protocol a target names to take any verifier; authenticators return an identity or throw |
+| `swift-authentication-jwt` | `0.3.2` | `AuthenticationJWT`: `JWTAuthenticator<UserIdentity>` in the executable, `JWTIssuer<UserIdentity>` in the authenticating module; both take a `JWTKeyCollection`, and `<Project>Authentication` adds the EdDSA `init(publicKey:)` and `init(privateKey:)` conveniences |
 | `swift-nio-extras` | `1.35.1` | `NIOCertificateReloading` for `TimedCertificateReloader`, linked directly by the executable |
-| `swift-authentication-grpc` | `0.4.0` | `AuthenticationGRPC`: `BearerAuthenticationInterceptor`, `BearerPropagationInterceptor`, and `Metadata.bearer`; processes are proved by transport mTLS, not by an interceptor |
-| `swift-authentication-hummingbird` | `0.3.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
-| `swift-authentication-vapor` | `0.3.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
+| `swift-authentication-grpc` | `0.5.0` | `AuthenticationGRPC`: `BearerAuthenticationInterceptor`, `BearerPropagationInterceptor`, and `Metadata.bearer`; processes are proved by transport mTLS, not by an interceptor |
+| `swift-authentication-hummingbird` | `0.4.0` | `AuthenticationHummingbird`: `BearerAuthenticationMiddleware` for Hummingbird |
+| `swift-authentication-vapor` | `0.4.0` | `AuthenticationVapor`: `BearerAuthenticationMiddleware` for Vapor 4 |
 | `<project>-core` | first compatible tag | `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` |
 | `<project>-protos` | first compatible tag | `<Module>Protos`, one product per module with a gRPC contract |
 | `swift-container-plugin` | `1.3.0` | `build-container-image` command plugin, only when the project builds images with it |
@@ -93,13 +93,13 @@ dependencies: [
     .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []), // with HTTP
     .package(url: "https://github.com/apple/swift-temporal-sdk.git", from: "1.0.0"),          // only with Temporal
     .package(url: "https://github.com/vapor/jwt-kit.git", from: "5.7.1"),
-    .package(url: "https://github.com/apple/swift-service-context.git", from: "1.3.0"),
+    .package(url: "https://github.com/swift-microservices/swift-operation-context.git", from: "0.1.0"),
     .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
-    .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.1"),
-    .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.3.0"),          // with HTTP
-    .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.3.0"),
-    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.4.0"),     // with gRPC
-    .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.3.0"), // with HTTP
+    .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.3.0"),
+    .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.4.0"),          // with HTTP
+    .package(url: "https://github.com/swift-microservices/swift-authentication-jwt.git", from: "0.3.2"),
+    .package(url: "https://github.com/swift-microservices/swift-authentication-grpc.git", from: "0.5.0"),     // with gRPC
+    .package(url: "https://github.com/swift-microservices/swift-authentication-hummingbird.git", from: "0.4.0"), // with HTTP
     .package(url: "https://github.com/<organization>/<project>-core.git", from: "0.1.0"),
     .package(url: "https://github.com/<organization>/<project>-protos.git", from: "0.1.0"),   // with gRPC
     .package(url: "https://github.com/apple/swift-container-plugin.git", from: "1.3.0"),    // when images are built with the plugin
@@ -343,7 +343,7 @@ The same block in every shape; the executable that links them differs.
         "<Module>Core",
         .product(name: "GRPCCore", package: "grpc-swift-2"),
         .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-        .product(name: "ServiceContextModule", package: "swift-service-context"),
+        .product(name: "OperationContext", package: "swift-operation-context"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Module>Protos", package: "<project>-protos"),       // the generated code links GRPCProtobuf itself
     ],
@@ -391,7 +391,7 @@ A gRPC monolith keeps its contracts in the package (see *Canonical proto package
         .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
         .product(name: "SwiftProtobuf", package: "swift-protobuf"),
         .product(name: "Logging", package: "swift-log"),
-        .product(name: "ServiceContextModule", package: "swift-service-context"),
+        .product(name: "OperationContext", package: "swift-operation-context"),
         .product(name: "<Project>Authentication", package: "<project>-core"),
     ],
     swiftSettings: swiftSettings,
@@ -436,7 +436,7 @@ The module blocks above, once per module, plus the shared HTTP target and one ex
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Project>Persistence", package: "<project>-core"),           // only when any module has tenant tables
         .product(name: "JWTKit", package: "jwt-kit"),
-        .product(name: "ServiceContextModule", package: "swift-service-context"),   // only when the executable itself reads ServiceContext
+        .product(name: "OperationContext", package: "swift-operation-context"),   // only when the executable itself reads OperationContext
         .product(name: "Logging", package: "swift-log"),
         .product(name: "LoggingLoki", package: "swift-log-loki"),
         .product(name: "PostgresMigrations", package: "postgres-migrations"),
@@ -478,7 +478,7 @@ The module blocks above, once, plus one executable:
         .product(name: "<Project>Authentication", package: "<project>-core"),
         .product(name: "<Project>Persistence", package: "<project>-core"),           // only a module with tenant tables
         .product(name: "JWTKit", package: "jwt-kit"),
-        .product(name: "ServiceContextModule", package: "swift-service-context"),   // only when the executable itself reads ServiceContext
+        .product(name: "OperationContext", package: "swift-operation-context"),   // only when the executable itself reads OperationContext
         .product(name: "Logging", package: "swift-log"),
         .product(name: "LoggingLoki", package: "swift-log-loki"),
         .product(name: "PostgresMigrations", package: "postgres-migrations"),

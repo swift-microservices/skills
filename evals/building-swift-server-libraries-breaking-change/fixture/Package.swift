@@ -6,38 +6,39 @@
 import PackageDescription
 
 let swiftSettings: [SwiftSetting] = [
-    .enableUpcomingFeature("ExistentialAny"),
-    .enableUpcomingFeature("MemberImportVisibility"),
-    .enableUpcomingFeature("InternalImportsByDefault"),
-    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+  .enableUpcomingFeature("ExistentialAny"),
+  .enableUpcomingFeature("MemberImportVisibility"),
+  .enableUpcomingFeature("InternalImportsByDefault"),
+  .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
 ]
 
 let package = Package(
-    name: "swift-authentication",
-    platforms: [
-        .macOS(.v15)
-    ],
-    products: [
-        .library(name: "Authentication", targets: ["Authentication"])
-    ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-service-context.git", from: "1.3.0")
-    ],
-    targets: [
-        .target(
-            name: "Authentication",
-            dependencies: [
-                .product(name: "ServiceContextModule", package: "swift-service-context")
-            ],
-            swiftSettings: swiftSettings
-        ),
-        .testTarget(
-            name: "AuthenticationTests",
-            dependencies: [
-                .target(name: "Authentication")
-            ],
-            swiftSettings: swiftSettings
-        ),
-    ],
-    swiftLanguageModes: [.v6]
+  name: "swift-authentication",
+  platforms: [
+    .macOS(.v15)
+  ],
+  products: [
+    .library(name: "Authentication", targets: ["Authentication"])
+  ],
+  dependencies: [
+    .package(
+      url: "https://github.com/swift-microservices/swift-operation-context.git", from: "0.1.0")
+  ],
+  targets: [
+    .target(
+      name: "Authentication",
+      dependencies: [
+        .product(name: "OperationContext", package: "swift-operation-context")
+      ],
+      swiftSettings: swiftSettings
+    ),
+    .testTarget(
+      name: "AuthenticationTests",
+      dependencies: [
+        .target(name: "Authentication")
+      ],
+      swiftSettings: swiftSettings
+    ),
+  ],
+  swiftLanguageModes: [.v6]
 )

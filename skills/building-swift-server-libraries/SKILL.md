@@ -1,6 +1,6 @@
 ---
 name: building-swift-server-libraries
-description: Builds or changes a reusable Swift server library package the swift-microservices way, such as swift-persistence, a swift-persistence-<store> driver, a swift-authentication-<technology> binding, or an organization's <project>-core. One concept per package cut by its dependency set, one product, low version floors, tagged SemVer releases with labels, a small documented public API with caller-isolated scoped callbacks and ServiceContext keys, no logging bootstrap or environment reading, swift-testing with isolation contract tests and real-provider driver tests, README, AGENTS.md profile, DocC, and the library CI profile. Use when creating a Swift library package for server use, adding public API, a driver, a binding, or a product to one, raising its dependency floors, preparing a release, or editing a library's Package.swift, Sources, Tests, README, or AGENTS.md.
+description: Builds or changes a reusable Swift server library package the swift-microservices way, such as swift-persistence, a swift-persistence-<store> driver, a swift-authentication-<technology> binding, or an organization's <project>-core. One concept per package cut by its dependency set, one product, low version floors, tagged SemVer releases with labels, a small documented public API with caller-isolated scoped callbacks and OperationContext keys, no logging bootstrap or environment reading, swift-testing with isolation contract tests and real-provider driver tests, README, AGENTS.md profile, DocC, and the library CI profile. Use when creating a Swift library package for server use, adding public API, a driver, a binding, or a product to one, raising its dependency floors, preparing a release, or editing a library's Package.swift, Sources, Tests, README, or AGENTS.md.
 ---
 
 # Building Swift server libraries
@@ -16,7 +16,7 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 | Task | Read |
 | --- | --- |
 | Every task | [package.md](references/package.md) — the family, one concept per dependency set, naming, the manifest, floors, platforms, versions and releases |
-| Any public declaration | [api.md](references/api.md) — access and imports, protocol-shaped surfaces, errors, scoped callbacks and isolation, `ServiceContext` keys, logging, configuration, lifecycle, documentation |
+| Any public declaration | [api.md](references/api.md) — access and imports, protocol-shaped surfaces, errors, scoped callbacks and isolation, `OperationContext` keys, logging, configuration, lifecycle, documentation |
 | Tests | [testing.md](references/testing.md) — what a library test proves, isolation contract tests, bindings, real providers |
 | README, `AGENTS.md`, DocC, `.spi.yml`, headers, formatter | [repository.md](references/repository.md) |
 | `<project>-core` or `<project>-protos` | [organization-layer.md](references/organization-layer.md) |
@@ -47,7 +47,7 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 7. `public` only for what consumers use; `public import` exactly where an imported type appears in public API. Every public type and protocol is `Sendable` where meaningful; mutable shared state lives in an actor or behind a `Mutex`.
 8. Shape substitution points as protocols with primary associated types, and make concrete types generic over the consumer's own types. A requirement returns what it promises or throws; it never returns an optional to mean "declined".
 9. Keep a scoped callback plain, nonescaping, and caller-isolated, `(Scope) async throws -> T` with `T: Sendable`, with neither `@Sendable` nor `@concurrent`, in the requirement, every implementation, and every double; forward with `isolation: #isolation`. Match a framework's `@concurrent` continuation requirement exactly where one is imposed.
-10. Carry task-scoped values in a `ServiceContextKey` with a stable `nameOverride` and a typed accessor, never a `@TaskLocal` of the library's own. A binding sets it with `ServiceContext.withValue` and keeps the framework's own state in step.
+10. Use swift-operation-context for shared task-scoped values: declare an `OperationContextKey` with a Sendable value and a typed accessor. A binding copies `OperationContext.current`, sets its value, and scopes the continuation with `OperationContext.withContext`, keeping the framework's own state in step.
 11. Let errors reach the caller unchanged; translate only at a transport boundary, to the framework's unauthenticated error with a stable message.
 12. Take a `Logger` as the last initializer parameter, with no default; only a trailing operation closure follows it. Never bootstrap logging, read the environment, construct a configuration provider, open fixed paths, or own global lifecycle. A convenience `init(config:)` reads relative keys and delegates to the typed initializer; a long-lived runnable conforms to `Service`.
 13. Document every public declaration with a one-line summary, and keep a DocC catalog that builds without warnings, with articles for contracts a signature cannot state.
@@ -68,7 +68,7 @@ Copy the checklist that matches the task and check items off as you go.
 Create a library:
 - [ ] 1. Concept and dependency set: confirm it is generic, not already a package, and needs exactly the dependencies its name promises
 - [ ] 2. Manifest: name, header, settings array on every target, platforms, one product, floors, explicit traits
-- [ ] 3. API: protocols with primary associated types, Sendable types, caller-isolated callbacks, ServiceContext keys, Logger last, documentation on every declaration
+- [ ] 3. API: protocols with primary associated types, Sendable types, caller-isolated callbacks, OperationContext keys, Logger last, documentation on every declaration
 - [ ] 4. Tests: one per guarantee; isolation contract tests for scoped callbacks; real-provider tests and scripts/test.sh for a driver
 - [ ] 5. Repository: README, AGENTS.md profile, DocC catalog, .spi.yml, .swift-format, header template, .licenseignore, .gitignore with Package.resolved
 - [ ] 6. CI from the library profile; then swift build, swift test (or scripts/test.sh), and git ls-files -z '*.swift' | xargs -0 swift-format lint --strict

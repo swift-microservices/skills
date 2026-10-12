@@ -13,7 +13,7 @@
 
 ## One concept, one dependency set
 
-A reusable library holds one concept and is cut by what it links, so a target that imports it acquires exactly the technology its name promises and nothing behind it. `Persistence` depends on nothing, not even Foundation, so a domain target can link the transaction boundary without a driver; the driver is `PersistencePostgres` in its own package. `Authentication` depends only on swift-service-context, so every proof and every transport binding can share its vocabulary without sharing each other's dependencies.
+A reusable library holds one concept and is cut by what it links, so a target that imports it acquires exactly the technology its name promises and nothing behind it. `Persistence` depends on nothing, not even Foundation, so a domain target can link the transaction boundary without a driver; the driver is `PersistencePostgres` in its own package. `Authentication` depends only on swift-operation-context, so every proof and every transport binding can share its vocabulary without sharing each other's dependencies.
 
 The test of where a type belongs is what it would make a consumer link. A Postgres type in the abstraction package drags PostgresNIO into every domain target; a Hummingbird middleware in the JWT package drags a server framework into every issuer. When a new type needs a dependency the package does not already have, it almost always belongs in another package.
 
@@ -23,13 +23,14 @@ Keep the generic machinery generic: a swift-microservices library knows nothing 
 
 | Package | Product | Holds | Depends on |
 | --- | --- | --- | --- |
+| swift-operation-context | `OperationContext` | `OperationContext`, `OperationContextKey`: typed, scoped operation values | Swift standard library |
 | swift-persistence | `Persistence` | `Database<Scope>`, the transaction boundary | nothing |
-| swift-persistence-postgres | `PersistencePostgres` | `PostgresDatabase`, `PostgresScope`, `PostgresSettings` and its `ServiceContext` key, `PostgresClient.withClient` | swift-persistence, PostgresNIO, swift-log, swift-service-context |
-| swift-authentication | `Authentication` | `Authenticator`, `CredentialIssuer`, `Principal`, `PrincipalKey` | swift-service-context |
+| swift-persistence-postgres | `PersistencePostgres` | `PostgresDatabase`, `PostgresScope`, `PostgresSettings` and its `OperationContext` key, `PostgresClient.withClient` | swift-persistence, PostgresNIO, swift-log, swift-operation-context |
+| swift-authentication | `Authentication` | `Authenticator`, `CredentialIssuer`, `Principal`, `PrincipalKey` | swift-operation-context |
 | swift-authentication-jwt | `AuthenticationJWT` | `JWTAuthenticator<Payload>`, `JWTIssuer<Payload>` over a `JWTKeyCollection` | swift-authentication, jwt-kit |
-| swift-authentication-grpc | `AuthenticationGRPC` | `BearerAuthenticationInterceptor`, `BearerPropagationInterceptor`, `Metadata.bearer` | swift-authentication, grpc-swift-2, swift-service-context |
-| swift-authentication-hummingbird | `AuthenticationHummingbird` | `BearerAuthenticationMiddleware<Context>` | swift-authentication, Hummingbird (`traits: []`), HummingbirdAuth, swift-service-context |
-| swift-authentication-vapor | `AuthenticationVapor` | `BearerAuthenticationMiddleware<Identity>` for Vapor 4 | swift-authentication, Vapor, swift-service-context |
+| swift-authentication-grpc | `AuthenticationGRPC` | `BearerAuthenticationInterceptor`, `BearerPropagationInterceptor`, `Metadata.bearer` | swift-authentication, grpc-swift-2, swift-operation-context |
+| swift-authentication-hummingbird | `AuthenticationHummingbird` | `BearerAuthenticationMiddleware<Context>` | swift-authentication, Hummingbird (`traits: []`), HummingbirdAuth, swift-operation-context |
+| swift-authentication-vapor | `AuthenticationVapor` | `BearerAuthenticationMiddleware<Identity>` and `Request.operationContext` for Vapor 4 | swift-authentication, Vapor, swift-operation-context |
 | swift-openapi-token-authentication | `OpenAPITokenAuthentication` | a client-side OpenAPI `ClientMiddleware` with an access/refresh token session, for apps and SDKs calling an HTTP surface | swift-openapi-runtime (`traits: []`), swift-http-types |
 
 An abstraction package and its drivers or bindings are separate packages that depend on the abstraction by tag. A binding package binds a principal or a setting on its transport and decides nothing: authorization belongs to the owning use case, and a policy name belongs to the organization layer.
@@ -82,7 +83,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/swift-microservices/swift-persistence.git", from: "0.2.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
-        .package(url: "https://github.com/apple/swift-service-context.git", from: "1.3.0"),
+        .package(url: "https://github.com/swift-microservices/swift-operation-context.git", from: "0.1.0"),
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.1"),
     ],
     targets: [
@@ -91,7 +92,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Persistence", package: "swift-persistence"),
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "ServiceContextModule", package: "swift-service-context"),
+                .product(name: "OperationContext", package: "swift-operation-context"),
                 .product(name: "PostgresNIO", package: "postgres-nio"),
             ],
             swiftSettings: swiftSettings
