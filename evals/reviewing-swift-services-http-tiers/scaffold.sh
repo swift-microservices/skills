@@ -18,7 +18,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [.executable(name: "acme", targets: ["Acme"])],
     dependencies: [
-        .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: ["ConfigurationSupport"]),
+        .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.28.0", traits: ["ConfigurationSupport"]),
         .package(url: "https://github.com/hummingbird-project/hummingbird-auth.git", from: "2.5.0"),
         .package(url: "https://github.com/apple/swift-openapi-generator.git", from: "1.13.0"),
         .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []),

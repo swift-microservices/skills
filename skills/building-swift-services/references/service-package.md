@@ -47,7 +47,7 @@ These are the packages the architecture is built on, with their version floors. 
 | `grpc-swift-extras` | `2.2.0` | `GRPCServiceLifecycle` adapters: with gRPC |
 | `grpc-swift-protobuf` | `2.4.0` | `GRPCProtobuf` and `GRPCProtobufGenerator`: with gRPC |
 | `swift-protobuf` | `1.32.0` | `SwiftProtobuf` messages and well-known types: with gRPC |
-| `hummingbird` | `2.27.0` | `Hummingbird` for the HTTP targets and the executable; `HummingbirdTesting` for HTTP tests; disable `FullFoundation` |
+| `hummingbird` | `2.28.0` | `Hummingbird` for the HTTP targets and the executable; `HummingbirdTesting` for HTTP tests; disable `FullFoundation` |
 | `hummingbird-auth` | `2.5.0` | `HummingbirdAuth` for `AuthRequestContext` and `IsAuthenticatedMiddleware`; `HummingbirdBcrypt` only in a `<Module>Bcrypt` adapter target |
 | `swift-openapi-generator` | `1.13.0` | The `OpenAPIGenerator` plugin on every HTTP target that owns a document |
 | `swift-openapi-runtime` | `1.12.1` | `OpenAPIRuntime` beside the generated types; disable `FullFoundation` |
@@ -87,7 +87,7 @@ dependencies: [
     .package(url: "https://github.com/grpc/grpc-swift-extras.git", from: "2.2.0"),            // with gRPC
     .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),          // with gRPC
     .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.32.0"),             // with gRPC
-    .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: ["ConfigurationSupport"]), // with HTTP
+    .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.28.0", traits: ["ConfigurationSupport"]), // with HTTP
     .package(url: "https://github.com/hummingbird-project/hummingbird-auth.git", from: "2.5.0"), // with HTTP, or a Bcrypt adapter
     .package(url: "https://github.com/apple/swift-openapi-generator.git", from: "1.13.0"),    // with HTTP
     .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []), // with HTTP

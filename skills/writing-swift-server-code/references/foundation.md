@@ -64,10 +64,10 @@ Match the documented wire format instead of accepting unrelated date representat
 
 Check the latest compatible releases and their trait defaults before choosing versions: upstream releases, tagged manifests, and toolchain and platform compatibility.
 
-Some libraries have a `FullFoundation` trait, which may be enabled by default: [Hummingbird 2.27.0](https://github.com/hummingbird-project/hummingbird/blob/2.27.0/Package.swift) and [swift-openapi-runtime 1.12.1](https://github.com/apple/swift-openapi-runtime/blob/1.12.1/Package.swift) are examples. Inspect the manifest of the version being resolved; neither the trait's presence, its name, nor its default is universal. For these versions, disable default traits with `traits: []` when no optional feature is needed:
+Some libraries have a `FullFoundation` trait, which may be enabled by default: [Hummingbird 2.28.0](https://github.com/hummingbird-project/hummingbird/blob/2.28.0/Package.swift) and [swift-openapi-runtime 1.12.1](https://github.com/apple/swift-openapi-runtime/blob/1.12.1/Package.swift) are examples. Inspect the manifest of the version being resolved; neither the trait's presence, its name, nor its default is universal. For these versions, disable default traits with `traits: []` when no optional feature is needed:
 
 ```swift
-.package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.27.0", traits: []),
+.package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.28.0", traits: []),
 .package(url: "https://github.com/apple/swift-openapi-runtime.git", from: "1.12.1", traits: []),
 ```
 
