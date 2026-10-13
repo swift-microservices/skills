@@ -27,9 +27,9 @@ let package = Package(
         .library(name: "AcmePersistence", targets: ["AcmePersistence"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.3.0"),
-        .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.2.1"),
-        .package(url: "https://github.com/apple/swift-service-context.git", from: "1.3.0"),
+        .package(url: "https://github.com/swift-microservices/swift-authentication.git", from: "0.4.0"),
+        .package(url: "https://github.com/swift-microservices/swift-persistence-postgres.git", from: "0.3.0"),
+        .package(url: "https://github.com/swift-microservices/swift-operation-context.git", from: "0.1.0"),
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.4.0"),
     ],
     targets: [
@@ -37,7 +37,7 @@ let package = Package(
             name: "AcmeAuthentication",
             dependencies: [
                 .product(name: "Authentication", package: "swift-authentication"),
-                .product(name: "ServiceContextModule", package: "swift-service-context"),
+                .product(name: "OperationContext", package: "swift-operation-context"),
             ],
             swiftSettings: swiftSettings
         ),
@@ -47,7 +47,7 @@ let package = Package(
                 "AcmeAuthentication",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "PersistencePostgres", package: "swift-persistence-postgres"),
-                .product(name: "ServiceContextModule", package: "swift-service-context"),
+                .product(name: "OperationContext", package: "swift-operation-context"),
             ],
             swiftSettings: swiftSettings
         ),
@@ -59,7 +59,7 @@ let package = Package(
                 .product(name: "Authentication", package: "swift-authentication"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "PersistencePostgres", package: "swift-persistence-postgres"),
-                .product(name: "ServiceContextModule", package: "swift-service-context"),
+                .product(name: "OperationContext", package: "swift-operation-context"),
             ],
             swiftSettings: swiftSettings
         ),
@@ -89,15 +89,15 @@ public struct UserIdentity: Sendable, Equatable {
     }
 }
 SWIFT
-cat > Sources/AcmeAuthentication/ServiceContext+User.swift <<'SWIFT'
+cat > Sources/AcmeAuthentication/OperationContext+User.swift <<'SWIFT'
 // Copyright (c) 2026 Acme
 // SPDX-License-Identifier: LicenseRef-Proprietary
 // See LICENSE for license information.
 
 public import Authentication
-public import ServiceContextModule
+public import OperationContext
 
-extension ServiceContext {
+extension OperationContext {
     /// The verified user the bearer interceptor or middleware bound, if any.
     public var user: Principal<UserIdentity, String>? {
         get { self[PrincipalKey<UserIdentity, String>.self] }
@@ -128,7 +128,7 @@ cat > Sources/AcmePersistence/UserSettingsInterceptor.swift <<'SWIFT'
 import AcmeAuthentication
 public import GRPCCore
 import PersistencePostgres
-import ServiceContextModule
+import OperationContext
 
 /// Turns the bound user into the setting every transaction of the call begins with.
 ///
@@ -147,13 +147,14 @@ public struct UserSettingsInterceptor: ServerInterceptor {
                 _ context: ServerContext
             ) async throws -> StreamingServerResponse<Output>
     ) async throws -> StreamingServerResponse<Output> {
-        guard var serviceContext = ServiceContext.current, let user = serviceContext.user else {
+        var operationContext = OperationContext.current
+        guard let user = operationContext.user else {
             return try await next(request, context)
         }
 
-        serviceContext.postgresSettings = .user(user.identity)
+        operationContext.postgresSettings = .user(user.identity)
 
-        return try await ServiceContext.withValue(serviceContext) {
+        return try await OperationContext.withContext(operationContext) {
             try await next(request, context)
         }
     }
@@ -176,7 +177,7 @@ policies read, and its bindings. It is a library consumed by tag.
 
 | Product | Holds | Linked by |
 | --- | --- | --- |
-| `AcmeAuthentication` | User identity and `ServiceContext.user` | Domain targets, adapters, composition roots |
+| `AcmeAuthentication` | User identity and `OperationContext.user` | Domain targets, adapters, composition roots |
 | `AcmePersistence` | The user Postgres setting and its transport bindings | Processes with a database |
 
 Domain targets do not acquire transport dependencies. Composition, configuration, and

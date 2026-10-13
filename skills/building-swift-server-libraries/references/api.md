@@ -6,7 +6,7 @@
 - Small, protocol-shaped surfaces
 - Errors
 - Scoped callbacks and isolation
-- ServiceContext keys
+- OperationContext keys
 - Logging, configuration, and lifecycle
 - Documentation
 - What a library never does
@@ -16,7 +16,7 @@ A library's public API is a contract every consumer compiles against and every r
 ## Access and imports
 
 - `public` only for what consumers use; everything else `internal` or `private`. A library has no `package`-access consumers outside itself.
-- Plain imports are internal under `InternalImportsByDefault`. Write `public import` exactly where an imported type appears in public API (`public import ServiceContextModule` beside a `ServiceContextKey`, `public import JWTKit` beside a `JWTPayload` constraint); `public import` does not re-export names, so a consumer still imports the modules it names. Under the conditional Foundation import, both branches carry the same access.
+- Plain imports are internal under `InternalImportsByDefault`. Write `public import` exactly where an imported type appears in public API (`public import OperationContext` beside an `OperationContextKey`, `public import JWTKit` beside a `JWTPayload` constraint); `public import` does not re-export names, so a consumer still imports the modules it names. Under the conditional Foundation import, both branches carry the same access.
 - Module-qualify a name that collides with the framework's own: the Vapor binding writes `Authentication.Authenticator` because Vapor has one too.
 - Make every public type and protocol `Sendable` where it is meaningful; a public reference type with mutable state is an actor or holds it behind a `Mutex`.
 
@@ -68,17 +68,16 @@ Document what the isolation does not do: other work on an actor may run while th
 
 Where a framework protocol requires `@concurrent` on a continuation (`next` in a GRPCCore interceptor or a Hummingbird `RouterMiddleware`, an OpenAPI `ClientMiddleware`), match the requirement exactly; that is the one place `@concurrent` appears in a library's public API.
 
-## ServiceContext keys
+## OperationContext keys
 
-A value that travels with a task, such as a bound principal or the settings a transaction applies, is a `ServiceContextKey` the library declares, with a stable `nameOverride` and a typed accessor:
+A value that travels with a task, such as a bound principal or the settings a transaction applies, is an `OperationContextKey` the library declares, with a Sendable value and a typed accessor:
 
 ```swift
-public enum PostgresSettingsKey: ServiceContextKey {
+public enum PostgresSettingsKey: OperationContextKey {
     public typealias Value = PostgresSettings
-    public static let nameOverride: String? = "postgres-settings"
 }
 
-extension ServiceContext {
+extension OperationContext {
     public var postgresSettings: PostgresSettings? {
         get { self[PostgresSettingsKey.self] }
         set { self[PostgresSettingsKey.self] = newValue }
@@ -86,7 +85,19 @@ extension ServiceContext {
 }
 ```
 
-Never declare a `@TaskLocal` of the library's own: `ServiceContext` is the one carrier, it crosses the frameworks' boundaries, and the logging metadata providers read it. A binding sets the value with `ServiceContext.withValue` around the continuation and keeps any parallel state (a Hummingbird context's `identity`, Vapor's `request.auth` and `request.serviceContext`) in step with it. The organization layer adds named accessors over generic keys (`ServiceContext.user` over `PrincipalKey<UserIdentity, String>`).
+Use `OperationContext` from swift-operation-context for shared operation values. A key's type identifies its slot, including generic specialization; its `Value` must be `Sendable`. `OperationContext.current` is nonoptional and defaults to an empty context, while individual values remain optional. Copy the current context to preserve enclosing values, set the key, and scope the continuation:
+
+```swift
+var context = OperationContext.current
+context.postgresSettings = settings
+return try await OperationContext.withContext(context) {
+    try await operation()
+}
+```
+
+`withContext` replaces the whole context for the closure and restores the previous binding on return or throw. Prefer structured child tasks (`async let` and task groups), which inherit the binding and finish within the operation. `Task {}` inherits it but can outlive the scope; detached tasks and callbacks need an explicitly captured context rebound around their work. Network propagation requires explicit encoding and validation by the transport.
+
+Bindings keep the framework's identity state in step: Hummingbird's context `identity`, or Vapor's `request.auth` and `request.operationContext`. AuthenticationVapor provides `request.operationContext` through request storage; routes bind it around work that reads task-local values. The organization layer adds named accessors over generic keys (`OperationContext.user` over `PrincipalKey<UserIdentity, String>`) and logging metadata providers that explicitly read those values. Context storage does not authenticate, authorize, apply database settings, or configure logging by itself.
 
 ## Logging, configuration, and lifecycle
 

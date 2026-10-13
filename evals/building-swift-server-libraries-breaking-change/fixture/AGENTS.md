@@ -3,7 +3,7 @@
 ## What this package is
 
 - One product, `Authentication`: `Authenticator`, `Principal`, and `PrincipalKey`. It depends only
-  on swift-service-context.
+  on swift-operation-context.
 - `authenticate` returns an identity, returns `nil` to decline, or throws for an invalid credential.
 
 ## What does not belong here

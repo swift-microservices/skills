@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // See LICENSE for license information.
 
-public import ServiceContextModule
+public import OperationContext
 
 /// A proven identity and the credential that proved it.
 public struct Principal<Identity: Sendable, Credential: Sendable>: Sendable {
@@ -19,9 +19,7 @@ public struct Principal<Identity: Sendable, Credential: Sendable>: Sendable {
     }
 }
 
-/// The `ServiceContext` key a transport binds a principal under.
-public enum PrincipalKey<Identity: Sendable, Credential: Sendable>: ServiceContextKey {
+/// The `OperationContext` key a transport binds a principal under.
+public enum PrincipalKey<Identity: Sendable, Credential: Sendable>: OperationContextKey {
     public typealias Value = Principal<Identity, Credential>
-
-    public static var nameOverride: String? { "principal" }
 }
