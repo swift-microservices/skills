@@ -5,7 +5,7 @@ How HTTP is put on the system: the target that owns it, the OpenAPI document, th
 - **A module's HTTP transport.** Each module has an `<Module>HTTP` target whose controllers call the module's use-case protocols directly; a monolith's one executable mounts every module's controllers on one router, and a service mounts its own.
 - **A gateway in front of services.** A package of its own, `<organization>-api`, whose controllers call generated gRPC client protocols and forward the caller's token on each upstream's `<Entity>Service` descriptors. Its package, manifest, and composition root are in [gateway.md](gateway.md); every rule below applies to it too.
 
-Hummingbird is the default framework; the Vapor section at the end covers what changes on Vapor 4.
+Use Hummingbird 2.28.0 or later as the default framework; the Vapor section at the end covers what changes on Vapor 4.
 
 ## Contents
 
