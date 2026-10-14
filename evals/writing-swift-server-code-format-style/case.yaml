@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: writing-swift-server-code-format-style
+context:
+  scaffold_script: scaffold.sh

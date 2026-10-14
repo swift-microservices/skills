@@ -5,7 +5,7 @@ allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]
 tags: [writing, swift-settings, concurrency]
 ---
 
-Use the writing-swift-server-code skill to create a small Swift 6.3 server utility package in the current directory with the organization's Swift settings. It exports a reusable library and a command-line application; add no infrastructure or dependencies.
+Create a small Swift 6.3 server utility package in the current directory with the organization's Swift settings. It exports a reusable library and a command-line application; add no infrastructure or dependencies.
 
 - UtilityCore: `public struct Record: Sendable, Equatable` with `public let value: Int` and `public init(value:)`, and `public protocol OperationRunner: Sendable` whose `run(_:)` takes an async throwing operation returning a Sendable value and rethrows its error.
 - UtilityAdapter (library product `UtilityAdapter`): `public struct InlineRunner: OperationRunner` with `public init()`, its `run(_:)`, and `public func record(value: Int) -> Record`. InlineRunner is a sequential scoped operation: the closure runs on the caller's actor and can mutate caller-owned non-Sendable state.

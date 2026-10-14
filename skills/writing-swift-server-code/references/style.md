@@ -2,12 +2,12 @@
 
 ## Contents
 
-- File form
-- Layout
-- Access and concurrency
-- APIs and errors
-- Conformances and conversions
-- Formatting verification
+- [File form](#file-form)
+- [Layout](#layout)
+- [Access and concurrency](#access-and-concurrency)
+- [APIs and errors](#apis-and-errors)
+- [Conformances and conversions](#conformances-and-conversions)
+- [Formatting verification](#formatting-verification)
 
 Match existing files before applying these defaults. Preserve user-authored formatting in unrelated code.
 
