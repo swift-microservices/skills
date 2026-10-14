@@ -4,15 +4,15 @@ Use this reference when an interaction is a fact rather than a request: somethin
 
 ## Contents
 
-- When an event is the mechanism
-- The event
-- The transactional outbox
-- The consumer
-- The projection
-- What not to do
-- The module grammar
-- In a monolith
-- The consistency record
+- [When an event is the mechanism](#when-an-event-is-the-mechanism)
+- [The event](#the-event)
+- [The transactional outbox](#the-transactional-outbox)
+- [The consumer](#the-consumer)
+- [The projection](#the-projection)
+- [What not to do](#what-not-to-do)
+- [The module grammar](#the-module-grammar)
+- [In a monolith](#in-a-monolith)
+- [The consistency record](#the-consistency-record)
 
 ## When an event is the mechanism
 
