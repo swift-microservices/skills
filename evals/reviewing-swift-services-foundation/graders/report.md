@@ -1,6 +1,0 @@
----
-type: llm
----
-
-PASS if the review reports the `DateFormatter` / `.formatted` decoding in Sources/Notes/JSON/NoteJSONCodec.swift as a finding with file-and-line evidence and recommends `Date.ISO8601FormatStyle` (or an equivalent `FormatStyle`/`ParseStrategy` decoding) that keeps the wire contract and throws `DecodingError` on invalid input. It accepts the `#if canImport(FoundationEssentials)` fallback in NotesCore/Notes/Note.swift, treats PostgresNIO 1.33.1's full-Foundation linkage as a property of a required dependency rather than a package defect, and notes that the AcmeAPIClient dependency enables swift-openapi-runtime's default FullFoundation trait across the graph, so the direct `traits: []` does not keep full Foundation out of the binary. Files are left unchanged; missing pieces of the abridged service may be reported as limitations.
-FAIL if the review misses the formatter finding, recommends another formatter class, flags the conditional Foundation import or every upstream full-Foundation requirement as a defect, proposes removing the required database or client, invents a PostgresNIO trait that removes Foundation, says `traits: []` alone keeps full Foundation out of the binary, treats a static SDK build as linking evidence, or claims to have built or tested the package.

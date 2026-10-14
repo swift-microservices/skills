@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: reviewing-swift-services-not-a-service
+context:
+  scaffold_script: scaffold.sh

@@ -1,9 +1,10 @@
 ---
 max_turns: 30
-allowed_tools: [Read, Glob, Grep, Skill, Bash]
+allowed_tools: [Read, Glob, Grep, Skill]
+timeout_seconds: 600
 tags: [reviewing]
 ---
 
 /swift-microservices:reviewing-swift-services .
 
-Audit the supplied manifest, Core/use-case, scope, and row-level-policy excerpts for convention violations, read-only. This is an intentionally abridged fixture: transport, runnable composition, the role and table migration types (the migration list is supplied), repository implementation, the administrators' use cases and the `PostgresNotesInternalScope` they run on, use-case input/error/protocol definitions, tests, delivery, and the lockfile are omitted. Do not report their intentional absence as service defects or claim the fixture is a complete runnable service. The Acme dependency is fictional; report build limitations honestly. Check the declarations and dependencies actually supplied, distinguish those checks from runtime guarantees, and list what passes.
+Audit the supplied manifest, Core/use-case, scope, and row-level-policy excerpts for convention violations, read-only. This is an intentionally abridged fixture: transport, runnable composition, the role and table migration types (the migration list is supplied), repository implementation, the administrators' use cases and the `PostgresNotesInternalScope` they run on, use-case input/error/protocol definitions, tests, delivery, and the lockfile are omitted. Do not report their intentional absence as service defects or claim the fixture is a complete runnable service. The Acme dependency is fictional, so do not build or resolve packages; report that limitation. Check the declarations and dependencies actually supplied, distinguish those checks from runtime guarantees, and list what passes.
