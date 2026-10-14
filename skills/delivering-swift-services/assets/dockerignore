@@ -1,0 +1,38 @@
+# Copy to .dockerignore beside the Containerfile.
+
+# Version control and automation
+.git
+.github
+.gitignore
+
+# Local Swift build and IDE state
+.build
+.swiftpm
+.vscode
+.idea
+DerivedData
+Packages
+xcuserdata
+**/.DS_Store
+
+# Secrets, keys, and local configuration (test fixtures a manifest declares stay included)
+.env
+.env.*
+**/.env
+**/.env.*
+.netrc
+secrets
+state
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.token
+
+# Files not needed to compile the package
+Containerfile
+.dockerignore
+Makefile
+compose.yaml
+README.md
+AGENTS.md
+CLAUDE.md

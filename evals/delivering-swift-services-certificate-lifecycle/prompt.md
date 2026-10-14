@@ -1,5 +1,5 @@
 ---
-max_turns: 30
+max_turns: 40
 timeout_seconds: 900
 allowed_tools: [Read, Glob, Grep, Write, Edit, Skill]
 tags: [delivering, mtls, dokploy]

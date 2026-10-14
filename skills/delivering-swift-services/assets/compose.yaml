@@ -1,0 +1,183 @@
+# The suite: the whole stack from published images, never built here. Copy to the workspace root
+# as compose.yaml beside ca-compose.yaml, and env.example as .env.example. Repeat the <service>
+# blocks per service; drop the worker and Temporal parts for a service without a worker. Render
+# with `docker compose config` before `up`. Only the edge proxy publishes a host port.
+
+name: <project>
+
+x-tls: &tls
+  TLS_CERTIFICATE_PATH: /run/tls/cert.pem
+  TLS_PRIVATE_KEY_PATH: /run/tls/key.pem
+  TLS_TRUST_ROOTS_PATH: /run/tls/ca.pem
+
+x-jwt-verification: &jwt-verification
+  JWT_PUBLIC_KEY_PATH: /run/secrets/jwt-public
+
+x-temporal: &temporal
+  TEMPORAL_HOST: ${TEMPORAL_HOST:?set the Temporal frontend's private name}
+  TEMPORAL_PORT: "7233"
+  TEMPORAL_TLS_CERTIFICATE_PATH: /run/temporal-tls/cert.pem
+  TEMPORAL_TLS_PRIVATE_KEY_PATH: /run/temporal-tls/key.pem
+  TEMPORAL_TLS_TRUST_ROOTS_PATH: /run/temporal-tls/ca.pem
+
+x-observability: &observability
+  LOKI_URL: http://loki:3100
+
+# Key material is a file; configuration carries its path. Compose refuses to start a service
+# whose secret file is missing.
+secrets:
+  jwt-public:
+    file: ${JWT_KEY_DIRECTORY:?set the directory generate-jwt-keys.sh wrote}/jwt-public.pem
+  jwt-private:
+    file: ${JWT_KEY_DIRECTORY:?set the directory generate-jwt-keys.sh wrote}/jwt-private.pem
+  origin-certificate:   # the edge proxy's certificate for the public hostname, e.g. a Cloudflare Origin CA one
+    file: ${ORIGIN_CERTIFICATE_DIRECTORY:?set the directory holding the origin pair}/origin.pem
+  origin-key:
+    file: ${ORIGIN_CERTIFICATE_DIRECTORY:?set the directory holding the origin pair}/origin-key.pem
+
+networks:
+  internal: {}
+
+volumes:
+  <service>-postgres-data: {}
+  <service>-tls: {}
+  <service>-temporal-tls: {}
+  <service>-worker-tls: {}
+  <service>-worker-temporal-tls: {}
+  api-tls: {}
+  loki-data: {}
+
+services:
+  <service>-postgres:
+    image: postgres:18.0
+    environment:
+      POSTGRES_DB: <project>_<service>
+      POSTGRES_USER: ${<SERVICE>_OWNER:?set the database owner}
+      POSTGRES_PASSWORD: ${<SERVICE>_OWNER_PASSWORD:?set the database owner's password}
+    volumes:
+      - <service>-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+    restart: unless-stopped
+
+  <service>:
+    image: ${REGISTRY:?set the registry}/<organization>-<service>:${<SERVICE>_IMAGE_TAG:?set a published SHA or branch tag}
+    command: ["serve", "--migrate-database"]
+    environment:
+      <<: [*tls, *jwt-verification, *temporal, *observability]   # *temporal only with a worker
+      POSTGRES_HOST: <service>-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: <project>_<service>
+      POSTGRES_USER: ${<SERVICE>_OWNER:?set the database owner}                   # migrations only
+      POSTGRES_PASSWORD: ${<SERVICE>_OWNER_PASSWORD:?set the database owner's password}
+      POSTGRES_SERVICE_USER: ${<SERVICE>_SERVICE_ROLE:?set the service role}
+      POSTGRES_SERVICE_PASSWORD: ${<SERVICE>_SERVICE_PASSWORD:?set the service role's password}
+      POSTGRES_INTERNAL_USER: ${<SERVICE>_INTERNAL_ROLE:?set the internal role}
+      POSTGRES_INTERNAL_PASSWORD: ${<SERVICE>_INTERNAL_PASSWORD:?set the internal role's password}
+      POSTGRES_WORKER_USER: ${<SERVICE>_WORKER_ROLE:?set the worker role}          # its migration creates the role
+      POSTGRES_WORKER_PASSWORD: ${<SERVICE>_WORKER_PASSWORD:?set the worker role's password}
+      TEMPORAL_CLIENT_NAMESPACE: ${TEMPORAL_NAMESPACE:?set the Temporal namespace}
+      TEMPORAL_TASK_QUEUE: <service>
+    secrets: [jwt-public]   # the authenticating service alone adds jwt-private and JWT_PRIVATE_KEY_PATH
+    volumes:
+      - <service>-tls:/run/tls:ro
+      - <service>-temporal-tls:/run/temporal-tls:ro
+    depends_on:
+      <service>-postgres:
+        condition: service_healthy
+    networks: [internal]
+    restart: unless-stopped
+
+  <service>-worker:
+    image: ${REGISTRY:?set the registry}/<organization>-<service>:${<SERVICE>_IMAGE_TAG:?set a published SHA or branch tag}
+    command: ["worker", "run"]
+    # Longer than the longest Activity takes to finish; the worker drains, then exits 0.
+    stop_grace_period: ${<SERVICE>_WORKER_STOP_GRACE_PERIOD:?set the worker's drain budget}
+    environment:
+      <<: [*tls, *temporal, *observability]   # *tls only when its Activities call another service
+      POSTGRES_HOST: <service>-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: <project>_<service>
+      POSTGRES_WORKER_USER: ${<SERVICE>_WORKER_ROLE:?set the worker role}
+      POSTGRES_WORKER_PASSWORD: ${<SERVICE>_WORKER_PASSWORD:?set the worker role's password}
+      TEMPORAL_WORKER_NAMESPACE: ${TEMPORAL_NAMESPACE:?set the Temporal namespace}
+      TEMPORAL_WORKER_TASKQUEUE: <service>
+    volumes:
+      - <service>-worker-tls:/run/tls:ro
+      - <service>-worker-temporal-tls:/run/temporal-tls:ro
+    depends_on:
+      <service>-postgres:
+        condition: service_healthy
+      <service>:
+        condition: service_started   # its migrations create the worker role; restarts until they have
+    networks: [internal]
+    restart: unless-stopped
+
+  # The edge: the project's reverse proxy, the only service with a host port. It presents the origin
+  # certificate Cloudflare verifies (Full (Strict)) and reaches the gateway's client-facing listener
+  # over TLS, verifying the gateway's leaf against the stack's root. On Dokploy the platform's
+  # Traefik replaces this service. config/traefik/api.yaml is environment.md's dynamic
+  # configuration with url https://api:8080, serverName api, rootCAs [/run/secrets/ca-root], and
+  # the origin pair at /run/secrets/origin-certificate and /run/secrets/origin-key.
+  proxy:
+    image: traefik:v3.5.3
+    command:
+      - --entrypoints.websecure.address=:443
+      - --providers.file.directory=/etc/traefik/dynamic
+    ports:
+      - "443:443"
+    secrets: [ca-root, origin-certificate, origin-key]
+    volumes:
+      - ./config/traefik:/etc/traefik/dynamic:ro
+    networks: [internal]
+    restart: unless-stopped
+
+  # The gateway: a client-facing listener on 8080, server TLS with its leaf from the stack's CA
+  # (a DNS SAN `api`), no client certificate; its upstream clients keep mTLS. No host port.
+  api:
+    image: ${REGISTRY:?set the registry}/<organization>-api:${API_IMAGE_TAG:?set a published SHA or branch tag}
+    command: ["serve"]
+    environment:
+      <<: [*tls, *jwt-verification, *observability]
+      GRPC_<SERVICE>_HOST: <service>
+      GRPC_<SERVICE>_PORT: "50051"
+    secrets: [jwt-public]
+    volumes:
+      - api-tls:/run/tls:ro
+    depends_on:
+      <service>:
+        condition: service_started
+    networks: [internal]
+    restart: unless-stopped
+
+  # Alternative edge for a private deployment: a tailnet sidecar owning the gateway's address, with
+  # the gateway in its network namespace (`network_mode: service:api-tailscale` on api, no proxy).
+  # Caveat: Tailscale serve's https+insecure:// skips verification and https:// verifies only
+  # against the sidecar's system roots, so it meets the TLS contract only when the stack's root is
+  # added to the sidecar's trust store and the gateway's leaf names localhost. Never proxy to http://.
+  # api-tailscale:
+  #   image: tailscale/tailscale:v1.102.5
+  #   hostname: <project>-api
+  #   environment:
+  #     TS_AUTHKEY: ${TS_AUTHKEY:-}   # first registration only; the state directory re-registers
+  #     TS_SERVE_CONFIG: /config/serve-api.json
+  #     TS_STATE_DIR: /var/lib/tailscale
+  #   volumes:
+  #     - ./state/api:/var/lib/tailscale
+  #     - ./config:/config:ro
+  #     - /dev/net/tun:/dev/net/tun
+  #   cap_add: [net_admin, sys_module]
+  #   networks: [internal]
+  #   restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.0.0
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - loki-data:/loki
+    networks: [internal]
+    restart: unless-stopped
