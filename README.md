@@ -4,13 +4,13 @@ Agent skills for building Swift systems the [swift-microservices](https://github
 
 | Skill | Use it when |
 | --- | --- |
-| `designing-swift-systems` | choosing the shape (a modular monolith or microservices) and the transport (HTTP, gRPC, or both), cutting modules, communication, events and projections, consistency, and when a module becomes a service |
+| `designing-swift-systems` | choosing the shape (a modular monolith or microservices) and the transport (HTTP, gRPC, or both), cutting modules, communication, events and projections, consistency, when a module becomes a service, and the ordered bootstrap of a complete stack from an empty repository |
 | `building-swift-services` | creating or changing a monolith, a module, or a service: Core, Postgres with row-level security, gRPC contracts and adapters, identity, configuration, the composition root, and the tests |
-| `building-swift-http-surfaces` | putting HTTP on a module or service, or a gateway in front of services: the OpenAPI document, contexts, router tiers, controllers, problem details, Vapor 4 |
+| `building-swift-http-surfaces` | putting HTTP on a module or service, or a gateway in front of services: the OpenAPI document, contexts, router tiers, controllers, problem details, Vapor 4, and the client SDK generated from the gateway's document |
 | `building-swift-server-libraries` | creating or changing a reusable library: a swift-microservices package, a driver or binding, or an organization's `<project>-core` |
 | `writing-swift-server-code` | the Swift inside any of them: Swift 6 settings, concurrency, FoundationEssentials and modern formatting, dependency traits, style and formatting |
 | `orchestrating-temporal-workflows` | workflows, Activities, signals, queries, and workers |
-| `delivering-swift-services` | standard library/service CI, images, Compose, secrets, certificates, service CI, per-commit publishing, migrations in the pipeline |
+| `delivering-swift-services` | standard library and service CI, images, per-commit publishing, Compose, secrets, the stack's CA and certificate lifecycle, migrations in the pipeline |
 | `reviewing-swift-services` | auditing an existing service, monolith, or gateway against the rules, read-only, on request |
 
 A task often loads more than one: building a module's HTTP routes uses `building-swift-services` and `building-swift-http-surfaces`, and every code change follows `writing-swift-server-code`. Each topic still has exactly one home; skills link to each other's references rather than restating them.
@@ -49,9 +49,10 @@ Start a new Codex thread after installing or updating the plugin so it can load 
 .claude-plugin/plugin.json        Claude Code plugin manifest
 .claude-plugin/marketplace.json   Claude Code marketplace manifest
 .codex-plugin/plugin.json         Codex plugin manifest
-skills/<skill>/SKILL.md           instructions, under 500 lines, loaded when the skill triggers
+skills/<skill>/SKILL.md           the router: principles, rules, references, gates, under ~5,000 tokens
 skills/<skill>/references/*.md    detail, one level deep, loaded as needed
-evals/<skill>-<case>/             claude plugin eval cases: a prompt and its graders
+skills/<skill>/assets/            files a skill copies into a project, such as CI workflows and the formatter
+evals/<skill>-<case>/             claude plugin eval cases: a prompt, its graders, and an optional scaffold
 .github/scripts/validate.sh       the structural and manifest checks CI runs
 .github/scripts/create-release.sh label-based releases with synchronized plugin versions
 ```
@@ -59,15 +60,21 @@ evals/<skill>-<case>/             claude plugin eval cases: a prompt and its gra
 ## Development
 
 ```sh
-bash .github/scripts/validate.sh   # frontmatter, line budgets, links, plugin versions
+bash .github/scripts/validate.sh   # frontmatter, token budgets, links, contents, eval cases, plugin versions
 claude --plugin-dir .              # try the skills in a session
 claude plugin validate .           # Claude Code's own structural check
 claude plugin eval .               # run every eval case with and without the plugin
 ```
 
+Each skill has at least three positive cases and one near-miss negative named `<skill>-not-for-<case>` whose `skill-not-fired` grader asserts the skill stays unloaded; `reviewing-swift-services` is user-invoked and has no negative. Prompts that test triggering never name the skill.
+
+`reviewing-swift-services` sets `disable-model-invocation`, so its cases invoke it with the `/swift-microservices:reviewing-swift-services` slash command. Without the plugin that command does not exist, so the no-plugin arm measures nothing: run those cases with `--ablation none` (for example `claude plugin eval . --case reviewing-swift-services-clean --scaffold --ablation none`). The review runs in a forked agent, so their judges read the trace (`focus: trace`), and their `no-write` and `no-edit` graders score in both arms.
+
+Graders on long generated files (certificate plans, Compose stacks, workflows, composition roots) are split into short rubrics, but haiku still misjudges some of them; run with `--judge-model sonnet` when a result decides a change.
+
 Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`. Cases with a `scaffold.sh` need `--scaffold`, and cases that edit or build need `--allow-tools Bash Write Edit`; add `--keep-temp` to keep each run's workspace. The eval loader rejects any symbolic link under `evals/`, so keep SwiftPM `.build` directories out of `evals/results/`.
 
-`claude plugin eval` has no script grader. After a `writing-swift-server-code-swift-settings` run, check its kept workspace with `python3 evals/writing-swift-server-code-swift-settings/checks/verify.py <workspace>`: it asserts the tools version, the platform floor, and every target's settings, compiles independent actor and MainActor contract tests against the requested API, and runs the executable.
+`claude plugin eval` has no script grader, so every `evals/*/checks/verify.py` is a manual check you run on a kept workspace (`--keep-temp`) after the eval; nothing runs it for you. After a `writing-swift-server-code-swift-settings` run, check its kept workspace with `python3 evals/writing-swift-server-code-swift-settings/checks/verify.py <workspace>`: it asserts the tools version, the platform floor, and every target's settings, compiles independent actor and MainActor contract tests against the requested API, and runs the executable.
 
 Library CI evals cover an ordinary tested library, a real PostgreSQL provider, and a generated
 SDK with optional transport traits. Run the corresponding `delivering-swift-services-library-ci*`
@@ -82,8 +89,10 @@ Service CI evals cover a deployable executable and a server/worker command profi
 existing tests and explicit application style exceptions without adding infrastructure fixtures.
 Run `delivering-swift-services-service-ci*` with `--scaffold` and inspect kept workspaces with
 `python3 evals/delivering-swift-services-service-ci/checks/verify.py <workspace>`; add `--worker`
-for the worker case. This checks effective workflow and image-validation artifacts, not live
-publication/deployment or GitHub execution.
+for the worker case. It also runs the copied `check-image.sh` against a fake `docker`: the root-user refusal and its
+`ALLOW_ROOT_IMAGE=true` exception, the binary-path argument, and the worker command; with `--worker`
+it requires the worker deploy steps, and without it their absence. This checks effective workflow and
+image-validation artifacts, not live publication/deployment or GitHub execution.
 
 ## Contributing
 
