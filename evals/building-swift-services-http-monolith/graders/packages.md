@@ -1,5 +1,5 @@
 ---
 type: regex
 target: { source: file, path: acme-backend/Package.swift }
-pattern: 'swift-persistence-postgres[\s\S]*swift-authentication-hummingbird|swift-authentication-hummingbird[\s\S]*swift-persistence-postgres'
+pattern: '\.package\(\s*url:\s*"[^"]*/swift-persistence-postgres(?:\.git)?"[\s\S]*\.package\(\s*url:\s*"[^"]*/swift-authentication-hummingbird(?:\.git)?"|\.package\(\s*url:\s*"[^"]*/swift-authentication-hummingbird(?:\.git)?"[\s\S]*\.package\(\s*url:\s*"[^"]*/swift-persistence-postgres(?:\.git)?"'
 ---

@@ -4,14 +4,14 @@ Use this reference when deciding what a system is deployed as and how it is reac
 
 ## Contents
 
-- Two axes, chosen per system
-- The module
-- The monolith
-- One database, many modules
-- The transport
-- Where identity is verified
-- When a module becomes a service
-- The decision record
+- [Two axes, chosen per system](#two-axes-chosen-per-system)
+- [The module](#the-module)
+- [The monolith](#the-monolith)
+- [One database, many modules](#one-database-many-modules)
+- [The transport](#the-transport)
+- [Where identity is verified](#where-identity-is-verified)
+- [When a module becomes a service](#when-a-module-becomes-a-service)
+- [The decision record](#the-decision-record)
 
 ## Two axes, chosen per system
 
@@ -49,7 +49,7 @@ A module never imports another module's Core, Postgres, or transport target. Onl
 
 One package, one executable, every module inside, one composition root that constructs each module's database, use cases, and transport and owns them in one `ServiceGroup`.
 
-Modules talk through use-case protocols. A consumer module declares in its own Core the protocol it needs (`XUseCaseProtocol`, or a narrow client port with only the operations it calls); the composition root injects the producer module's use case. The call is local, but it is still a call across an ownership boundary: keep calls outside local transactions except the building skill's [bounded single-use-secret rotation read](../../building-swift-services/references/core.md#database-boundary), the producer's use case decides authorization against the caller it is handed, and the consumer stores what the producer returns rather than reaching into its tables. Design a cross-module call exactly as you would a remote one, minus the network.
+Modules talk through ports. A consumer module declares in its own Core, in its own types, the narrow port it needs (`<Entity>Client`, such as `AccountClient`, with only the operations it calls); the composition root satisfies it with a small executable-local adapter in `Sources/<Project>/Ports/<Producer><Port>.swift` that calls the producer module's use case, converts, and maps errors. The producer's use case never conforms to the consumer's port, so neither module names the other's types. The call is local, but it is still a call across an ownership boundary: keep calls outside local transactions except the building skill's [bounded single-use-secret rotation read](../../building-swift-services/references/core.md#database-boundary), the producer's use case decides authorization against the caller it is handed, and the consumer stores what the producer returns rather than reaching into its tables. Design a cross-module call exactly as you would a remote one, minus the network.
 
 Dependency direction between modules is drawn and cycles are rejected, the same as between services. Break a cycle by reconsidering ownership, extracting a third module, or turning one direction into a fact the other module reacts to.
 
@@ -73,11 +73,13 @@ Row-level security is the same in both shapes, applies only where end users own 
 
 A gRPC monolith keeps its `.proto` files in the package by default, since one package consumes them; they move to `<project>-protos` the day a second package does. Microservices start there.
 
-Publish nothing but the edge. Internal gRPC ports stay off the ingress; public TLS terminates at the ingress or the gateway.
+The organization layer follows the same rule. A one-package monolith keeps `<Project>Authentication`, `<Project>Persistence`, and `<Project>Testing` as targets in its own package; they move to a tagged `<project>-core` the day a second package needs them. Microservices start with `<project>-core`.
+
+Publish nothing but the edge. Public TLS terminates at the edge proxy; a client-facing listener (the gateway, or a monolith apps call directly) is server TLS from the proxy with no client certificate. Internal listeners stay off the edge and require mTLS; a monolith that another process also calls runs one of each.
 
 ## Where identity is verified
 
-mTLS admits internal peers. JWTs identify users, and user use cases decide what those users may do. Internal use cases accept input and enforce business invariants. Where the token is verified depends on the shape:
+mTLS admits internal peers; a client-facing listener admits anyone the edge forwards. JWTs identify users, and user use cases decide what those users may do. Internal use cases accept input and enforce business invariants. Where the token is verified depends on the shape:
 
 - **Monolith:** once, at the transport, because no process boundary is crossed. The HTTP middleware or the gRPC interceptor verifies the token with the issuer's public key and binds the caller; the tenant setting is bound beside it; every use case in every module reads the same bound caller.
 - **Microservices:** at every process that receives it. The gateway verifies; each service verifies again with the same public key; the token crosses a boundary only as the original bearer credential, forwarded by `BearerPropagationInterceptor<UserIdentity>` on `<Entity>Service` descriptors alone. No process trusts an identity a caller asserts, and no process mints a credential on a user's behalf. Processes prove themselves to each other by certificate over mTLS from the stack's CA.
@@ -96,7 +98,7 @@ A module has earned its own service when at least one of these is concrete, meas
 
 "It is a separate concept" is not a reason; the module boundary already gives that. One service per entity, table, endpoint, or team name is not a boundary.
 
-Turning a module into a service is three moves, not a program. Release its contract in `<project>-protos`. Give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are. In the consumer, keep the use-case protocol and swap the injected implementation for a gRPC client adapter conforming to the same protocol, constructed in the consumer's composition root over mTLS, applying bearer propagation only to `<Entity>Service` descriptors. What the consumer calls does not change; what answers does. Moving existing rows into the new database, and removing them from the old one, is the user's decision, planned and executed explicitly.
+Turning a module into a service is three moves, not a program. Release its contract in `<project>-protos`. Give the module its own package, database, executable, and role migrations, keeping its Core and Postgres targets as they are. In the consumer, keep the port and replace the executable-local adapter in `Ports/` with a gRPC client adapter conforming to the same port (in the consumer's `<Module>GRPC`), constructed in the consumer's composition root over mTLS, applying bearer propagation only to `<Entity>Service` descriptors. What the consumer calls does not change; what answers does. Moving existing rows into the new database, and removing them from the old one, is the user's decision, planned and executed explicitly.
 
 ## The decision record
 

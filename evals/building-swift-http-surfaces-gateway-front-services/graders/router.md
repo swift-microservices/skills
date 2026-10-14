@@ -4,9 +4,9 @@ focus: { source: file, path: acme-api/Sources/API/AcmeAPI.swift }
 ---
 
 PASS if all of these hold:
-- The authentication controller's routes (sign-in and refresh) are mounted in the first tier, before any group that adds `BearerAuthenticationMiddleware`.
+- A health route and the authentication controller's routes (sign-in and refresh) are registered in the first tier, on a group with no `BearerAuthenticationMiddleware`.
 - A second tier converts to `IdentityRequestContext` and adds `BearerAuthenticationMiddleware` over an authenticator of `UserIdentity`.
-- A third tier adds `IsAuthenticatedMiddleware` on top of the second.
-- `ErrorMiddleware` is added to the router before the tiers.
+- A third tier is taken from the second with `identified.group()` (or equivalent) and adds `IsAuthenticatedMiddleware`, rather than adding it to the second tier's group itself.
 
-FAIL if the authentication routes are mounted on a group with the bearer middleware, or the identifying tier uses a different middleware.
+FAIL if the authentication routes or the health route are mounted on a group with the bearer middleware, there is no health route, the identifying tier uses a different middleware, or `IsAuthenticatedMiddleware` is added directly to the identifying group. Error middleware may be added in the serve command rather than here.
+Grade only against these criteria; do not fail for issues they do not mention.

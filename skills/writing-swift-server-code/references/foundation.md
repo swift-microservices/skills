@@ -2,13 +2,13 @@
 
 ## Contents
 
-- The conditional import
-- Modern APIs
-- Machine-readable dates
-- Localization and linkage
-- Dependency traits that pull in Foundation
-- Upstream full-Foundation requirements
-- Proving what links
+- [The conditional import](#the-conditional-import)
+- [Modern APIs](#modern-apis)
+- [Machine-readable dates](#machine-readable-dates)
+- [Localization and linkage](#localization-and-linkage)
+- [Dependency traits that pull in Foundation](#dependency-traits-that-pull-in-foundation)
+- [Upstream full-Foundation requirements](#upstream-full-foundation-requirements)
+- [Proving what links](#proving-what-links)
 
 Use FoundationEssentials when Foundation types are needed and the standard library is insufficient, use the modern Swift-first APIs, and link only what is needed. These are separate questions: which APIs our code uses, and what the resolved dependency graph links. A full-Foundation dependency elsewhere in the graph does not change which APIs our own code uses.
 

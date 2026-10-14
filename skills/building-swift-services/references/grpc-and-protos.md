@@ -4,10 +4,10 @@ The gRPC transport of a module or a service: the contract package, the contract'
 
 ## Contents
 
-- Canonical proto package
-- Contract design
-- Producer adapter
-- Consumer adapter
+- [Canonical proto package](#canonical-proto-package)
+- [Contract design](#contract-design)
+- [Producer adapter](#producer-adapter)
+- [Consumer adapter](#consumer-adapter)
 
 ## Canonical proto package
 
@@ -43,7 +43,7 @@ package <organization>.catalog.v1;
 
 Keep `v1` even for the first release. Make compatible additions within `v1`; create `v2` for breaking API changes. Never reuse removed field numbers or rename package identity casually.
 
-Each target uses the `GRPCProtobufGenerator` plugin with this configuration:
+Each target uses the `GRPCProtobufGenerator` plugin with this configuration, `grpc-swift-proto-generator-config.json` beside the protos:
 
 ```json
 {
@@ -53,10 +53,13 @@ Each target uses the `GRPCProtobufGenerator` plugin with this configuration:
     "messages": true
   },
   "generatedSource": {
-    "accessLevel": "public"
+    "accessLevel": "public",
+    "accessLevelOnImports": true
   }
 }
 ```
+
+`accessLevelOnImports` defaults to false; without it the generated files import `GRPCCore` and `SwiftProtobuf` internally under `InternalImportsByDefault`, and the generated public types fail to compile. In-package protos in a monolith use `"accessLevel": "package"` with the same `accessLevelOnImports`.
 
 The proto package exports a `.library(name: "<Service>Protos", targets: ["<Service>Protos"])`. Its target directly depends on `GRPCCore`, `GRPCProtobuf`, and `SwiftProtobuf`. Keep an empty marker Swift file when SwiftPM needs a Swift source beside proto resources.
 
@@ -86,13 +89,21 @@ Treat `idempotency_key` as required through producer validation even though prot
 | administrators, on `<Entity>Service` | `requireAdministrator()` | `(subject:input:)`, which requires the administrator role again | the internal role (the service role where the module has no tenant tables) | yes |
 | another process, on `<Entity>InternalService` | nothing; transport mTLS admits the peer | `(input:)` | the internal role | yes |
 
-So a self-only operation's request carries no user id, not even one checked against the token: a person's own record is `GetProfile(google.protobuf.Empty)`, and a user field removed from such a request is `reserved`, never reused. An operation both a person and an administrator perform is two RPCs over two use cases. A module with no tenant tables has one scope, on the service role, and every one of its RPCs runs on it. When an administrator and a process perform the same operation, the internal RPC is named for what the process does — `GrantEntitlement` beside the administrator's `UpsertEntitlement`, `ResolveUser` beside `GetUserByID` — with its own request message and its own use case. An RPC that neither the gateway exposes nor a process calls is removed. The internal service stays its own descriptor because its handlers accept business input with no principal, which only the listener's mTLS trust may admit (see *Two RPC services* in [identity-and-access.md](identity-and-access.md)). There is no RPC that issues a token to a process, because a process is proved by its certificate.
+So a self-only operation's request carries no user id, not even one checked against the token: a person's own record is `GetProfile(google.protobuf.Empty)`, and a user field removed from such a request is `reserved`, never reused. An operation both a person and an administrator perform is two RPCs over two use cases. A module with no tenant tables has one scope, on the service role, and every one of its RPCs runs on it. When an administrator and a process perform the same operation, the internal RPC is named for what the process does — `GrantEntitlement` beside the administrator's `UpsertEntitlement`, `ResolveUser` beside `GetUserByID` — with its own request message and its own use case. An RPC that neither the gateway exposes nor a process calls is removed. The internal service stays its own descriptor because its handlers accept business input with no principal, which only an internal listener's mTLS trust may admit; it is never registered on a client-facing listener, which requires no client certificate ([identity-and-access.md](identity-and-access.md#validation-at-every-process-boundary)). There is no RPC that issues a token to a process, because a process is proved by its certificate.
 
 ## Producer adapter
 
-Implement the generated `SimpleServiceProtocol` in `<Module>GRPC`. Inject use-case protocol existentials, not databases or repositories:
+Implement the generated `SimpleServiceProtocol` in `<Module>GRPC`. Inject use-case protocol existentials, not databases or repositories. Every module that supplies a member the file uses is imported, and every type in the conformance's API is imported `package`:
 
 ```swift
+// Sources/CatalogGRPC/Items/ItemService.swift
+import Authentication                 // Principal.identity, read by requireUser()
+package import CatalogCore
+package import CatalogProtos          // from <project>-protos; omitted when this target generates in-package protos
+package import GRPCCore
+import OperationContext
+import <Project>Authentication        // UserIdentity, OperationContext.user
+
 package struct ItemService: <Organization>_Catalog_V1_ItemService.SimpleServiceProtocol {
     private let createItemUseCase: any CreateItemUseCaseProtocol
     private let listItemsUseCase: any ListItemsUseCaseProtocol
@@ -171,12 +182,12 @@ Do not mark a conversion extension `private` when another file in the GRPC targe
 
 ## Consumer adapter
 
-A consumer declares the port it needs in its own Core, and what is injected behind it is the shape's decision: in a monolith the composition root injects the producer module's use case itself, wrapped in a few lines, a local call; between services it injects this adapter, over a client. Keep the consumer's port, its error, and its local value in either case, so moving from the first to the second replaces only the concrete implementation:
+A consumer declares the port it needs in its own Core, and what is injected behind it is the shape's decision: in a monolith an executable-local adapter over the producer module's use case ([core.md](core.md#ports-to-other-modules)); between services this adapter, over a client. The port, its error, and its local value are the same in either case, so moving from the first to the second replaces only the concrete implementation:
 
 ```swift
 // Sources/OrdersGRPC/Clients/GRPCCatalogItemsClient.swift
 package struct GRPCCatalogItemsClient: CatalogItemsClient {
-    private let client: <Organization>_Catalog_V1_ItemService.ClientProtocol
+    private let client: any <Organization>_Catalog_V1_ItemService.ClientProtocol
 
     package init<Transport>(client: GRPCClient<Transport>) {
         self.client = <Organization>_Catalog_V1_ItemService.Client(wrapping: client)

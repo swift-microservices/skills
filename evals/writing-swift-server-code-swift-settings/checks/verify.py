@@ -14,7 +14,8 @@ manifest = json.loads(subprocess.check_output(
 expected = {"ExistentialAny", "MemberImportVisibility", "InternalImportsByDefault",
             "NonisolatedNonsendingByDefault"}
 assert manifest["toolsVersion"]["_version"].startswith("6.3"), manifest["toolsVersion"]
-assert manifest["swiftLanguageVersions"] == ["6"], manifest.get("swiftLanguageVersions")
+language_modes = manifest.get("swiftLanguageModes", manifest.get("swiftLanguageVersions"))
+assert language_modes == ["6"], language_modes
 assert [(p["platformName"], p["version"]) for p in manifest["platforms"]] == [("macos", "15.0")], manifest["platforms"]
 assert {t["name"] for t in manifest["targets"]} == {
     "UtilityCore", "UtilityAdapter", "UtilityExtensions", "UtilityApp", "UtilityTests"

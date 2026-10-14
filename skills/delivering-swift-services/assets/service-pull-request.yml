@@ -24,3 +24,5 @@ jobs:
     with:
       service_product: example-service
       image_repository: ghcr.io/example/example-service
+      # build_target: example-service  # only when the image is not the Containerfile's last stage
+      worker: true  # only when the executable has `worker run`

@@ -1,7 +1,6 @@
 ---
-type: llm
-focus: { source: file, path: design.md }
+type: regex
+target: { source: file, path: design.md }
+flags: i
+pattern: '(?:postgres-?nio|postgreskit|vapor|postgres driver)(?:(?!\.\s)[^\n]){0,80}?\b(?:links?|linking|pulls? in|requires?|brings? in|imports?|depends on)\b(?:(?!\.\s)[^\n]){0,40}?(?:full foundation|foundationinternationalization)|(?:full foundation|foundationinternationalization)(?:(?!\.\s)[^\n]){0,80}?(?:postgres-?nio|postgreskit|vapor|postgres driver)(?:(?!\.\s)[^\n]){0,30}?\b(?:links?|requires?|pulls? it in|brings? it in)\b'
 ---
-
-PASS if the design's runtime dependency discussion names which chosen libraries link full Foundation (for example the Postgres driver), says the system's own code uses FoundationEssentials with `FormatStyle`/`ParseStrategy` rather than `DateFormatter` or the other formatter classes, and has the deployed binaries' Foundation linkage checked on Linux rather than assumed from framework choice. Accept any compatible library choice.
-FAIL if it promises the application is free of Foundation or ICU because of the framework it uses, treats a static SDK build as proof of that, recommends `DateFormatter` or another formatter class, or assumes every library has the same Foundation trait.

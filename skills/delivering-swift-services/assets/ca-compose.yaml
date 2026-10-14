@@ -1,0 +1,135 @@
+# Certificate machinery for one environment: the worked example of the CA contract, Smallstep
+# step-ca. Copy beside compose.yaml (COMPOSE_FILE=compose.yaml:ca-compose.yaml in .env) and keep
+# one enroll/renew pair per credential directory: every serving process, every worker, and each
+# separate Temporal directory. Mount the certificate-*.sh assets unchanged from ./scripts.
+# Local development replaces this file with the local CA fragment in certificates.md.
+# The tags are examples of a pin: take the reviewed current release, by digest in production.
+
+x-step-cli: &step-cli
+  image: smallstep/step-cli:0.31.0
+  user: "${RENEWER_UID:?set the renewers' numeric UID}:${APP_GID:?set the images' numeric GID}"
+  networks: [internal]
+
+x-renewer-environment: &renewer-environment
+  CA_URL: https://ca:9000
+  CERT_DIR: /work
+  PRIVATE_DIR: /private
+  RENEW_BEFORE: ${RENEW_BEFORE:?set the remaining lifetime that triggers renewal}
+  CHECK_INTERVAL_SECONDS: ${RENEW_CHECK_INTERVAL_SECONDS:?set the seconds between renewal checks}
+
+secrets:
+  ca-password:
+    file: ${CA_PASSWORD_FILE:?set the file holding the intermediate key's password}
+  ca-root:
+    file: ${CA_ROOT_FILE:?set the root certificate, verified out of band}
+  <service>-enrollment-token:
+    file: ${ENROLLMENT_TOKEN_DIRECTORY:?set the directory of offline-minted tokens}/<service>.token
+
+volumes:
+  ca-pki:
+    external: true
+    name: ${CA_PKI_VOLUME:?set the primed volume holding ca.json, certificates, and the encrypted intermediate key}
+  ca-db: {}
+  <service>-tls: {}
+
+services:
+  # One-shot, before anything else: hands each fresh volume to the IDs that use it. The directory
+  # is owned by the renewer and group-readable by the images' GID; setgid keeps new files in it.
+  permission-init:
+    image: smallstep/step-cli:0.31.0
+    user: "0:0"
+    network_mode: none
+    restart: "no"
+    environment:
+      RENEWER_UID: ${RENEWER_UID:?set the renewers' numeric UID}
+      APP_GID: ${APP_GID:?set the images' numeric GID}
+      CA_UID: ${CA_UID:?set the CA's numeric UID}
+    entrypoint: ["/bin/sh", "-euc"]
+    command:
+      - |
+        for dir in /volumes/*-tls; do
+          chown "$$RENEWER_UID:$$APP_GID" "$$dir"
+          chmod 2750 "$$dir"
+        done
+        chown "$$CA_UID:$$CA_UID" /volumes/ca-db
+        chmod 0700 /volumes/ca-db
+    volumes:
+      - <service>-tls:/volumes/<service>-tls
+      - ca-db:/volumes/ca-db
+
+  # The online CA: intermediate signing only, the root key stays offline. No host port, and the
+  # platform resource holding it has auto-deploy disabled so a push never restarts or re-creates it.
+  ca:
+    image: smallstep/step-ca:0.30.2
+    user: "${CA_UID:?set the CA's numeric UID}:${CA_UID:?set the CA's numeric UID}"
+    entrypoint: ["/usr/local/bin/step-ca"]
+    command: ["/run/pki/config/ca.json", "--password-file", "/run/secrets/ca-password"]
+    secrets: [ca-password]
+    volumes:
+      - ca-pki:/run/pki:ro
+      - ca-db:/run/ca-db
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://ca:9000", "--root", "/run/pki/certs/root_ca.crt"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    depends_on:
+      permission-init:
+        condition: service_completed_successfully
+    networks:
+      internal:
+        aliases: [ca]
+    restart: unless-stopped
+
+  # One-shot first enrollment, run once per directory with a fresh token:
+  #   docker compose --profile enroll run --rm <service>-tls-enroll
+  # then delete the token file. On a platform, delete this one-shot after its logs verify.
+  <service>-tls-enroll:
+    <<: *step-cli
+    profiles: [enroll]
+    restart: "no"
+    entrypoint: ["/bin/sh", "/scripts/certificate-enroll.sh"]
+    environment:
+      WORKLOAD_NAME: <service>
+      CA_URL: https://ca:9000
+      CA_ROOT_FILE: /run/secrets/ca-root
+      TOKEN_FILE: /run/secrets/<service>-enrollment-token
+      CERT_DIR: /work
+    secrets: [ca-root, <service>-enrollment-token]
+    volumes:
+      - <service>-tls:/work
+      - ./scripts:/scripts:ro
+    depends_on:
+      ca:
+        condition: service_healthy
+
+  # Merged into compose.yaml's service: it starts once its renewer has published a leaf that
+  # verifies. Repeat for every process that mounts a credential directory.
+  <service>:
+    depends_on:
+      <service>-tls-renew:
+        condition: service_healthy
+
+  # The renewer: the only writer of the directory the application mounts read-only. Healthy while
+  # the published leaf verifies, so the application can wait for it at first start.
+  <service>-tls-renew:
+    <<: *step-cli
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/certificate-renew.sh"]
+    environment:
+      <<: *renewer-environment
+    tmpfs:
+      - /private:uid=${RENEWER_UID:?set the renewers' numeric UID},gid=${APP_GID:?set the images' numeric GID},mode=0700
+    volumes:
+      - <service>-tls:/work
+      - ./scripts:/scripts:ro
+    healthcheck:
+      test: ["CMD", "step", "certificate", "verify", "/work/cert.pem", "--roots", "/work/ca.pem"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      ca:
+        condition: service_healthy

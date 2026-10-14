@@ -3,5 +3,5 @@ type: llm
 focus: { source: file, path: .github/workflows/develop.yml }
 ---
 
-PASS if this workflow runs on `push` to `develop` in a concurrency group for that branch that does not cancel in progress, runs the checks, then publishes through `./.github/workflows/image.yml` with publishing on, `needs` the checks and `packages: write` on that job only, then deploys staging in a job that `needs` the publish job, with `DOKPLOY_URL`, `API_TOKEN`, and `APPLICATION_ID`.
-FAIL if deployment can start before publication, publication before the checks, or the workflow rebuilds the image outside the image workflow.
+PASS if this workflow runs on `push` to `develop`, publishes through `./.github/workflows/image.yml` with publishing on in a job that `needs` the checks and alone holds `packages: write`, then deploys staging in a job that `needs` the publish job, bound to `DOKPLOY_URL`, `API_TOKEN`, and `APPLICATION_ID` with no condition on whether a secret is set.
+FAIL if deployment can start before publication, publication before the checks, the deploy is skipped when a secret is missing, or the workflow builds the image outside the image workflow.

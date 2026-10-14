@@ -5,13 +5,7 @@ This is the recommended CI pipeline for modern Swift libraries and the required 
 contracts, SDKs, and adapters. Apply it as-is, adapting product names and documented capability
 exceptions. Repository `AGENTS.md` supplies the project profile and can override general decisions;
 record the reason and replacement coverage for each exception. Existing drift is not an exception.
-
-The design is mostly followed by Apple libraries, for example
-[swift-temporal-sdk](https://github.com/apple/swift-temporal-sdk/blob/main/.github/workflows/pull_request.yml)
-and [swift-configuration](https://github.com/apple/swift-configuration/blob/main/.github/workflows/pull_request.yml),
-with our Linux-only choice, stricter imports/Sendable checks, Foundation consumer checks, and
-package-specific additions. This is an ecosystem standard and recommendation, not a claim that
-Apple or Swift mandates every setting. Executable/application delivery lives in [delivery.md](delivery.md).
+Executable/application delivery lives in [delivery.md](delivery.md).
 
 ## Contents
 
@@ -21,6 +15,7 @@ Apple or Swift mandates every setting. Executable/application delivery lives in 
 - [Formatting and headers](#formatting-and-headers)
 - [Dependency resolution and workflow references](#dependency-resolution-and-workflow-references)
 - [Capability exceptions](#capability-exceptions)
+- [Private organization libraries](#private-organization-libraries)
 - [Validation and completion](#validation-and-completion)
 
 ## Events and gates
@@ -109,18 +104,15 @@ manifest flags that prevent downstream consumption.
 `.swift-format`, and preferably a deployable service's too: four-space indentation, 400-column
 lines, ordered imports, and its rule set. A repository without a formatter copies it as-is; a
 repository whose `AGENTS.md` records its own formatter keeps it and never mass-reformats to the
-sample. The sample derives from an Apple library formatter captured at commit
-`508797b5468dbc532f77c317bf9df0cb3231f5c1`, with the line length raised to 400; the checked-in
-asset is the sample, so later upstream changes require a deliberate update. Public documentation
-remains required even though the formatter does not enforce documentation on every declaration.
+sample. Public documentation remains required even though the formatter does not enforce documentation on every declaration.
 Format and strictly lint all tracked Swift, including manifests and CI consumers, with the CI
 formatter toolchain (currently 6.3, `format_check_container_image: swift:6.3-noble`). Generated build output is not tracked or hand-formatted.
 
-Enable compact license-header checking and preserve the repository's license/owner. MIT packages
-in this organization use:
+Enable compact license-header checking and preserve the repository's license/owner. An MIT
+package uses its recorded owner:
 
 ```swift
-// Copyright (c) 2026 Zaid Rahhawi
+// Copyright (c) 2026 <owner>
 // SPDX-License-Identifier: MIT
 // See LICENSE for license information.
 ```
@@ -194,7 +186,43 @@ Foundation import can affect both configurations; do not claim disabling a trans
 Foundation-free without a consumer linkage check.
 
 Add examples, C++ interoperability, or other SDKs only for capabilities the package supplies.
-Record exceptions in each repository's `AGENTS.md`, together with actual replacement coverage.
+Record each exception in the repository's `AGENTS.md`: the dependency or capability that forces
+it, the version it was observed at, the products and configurations it affects, and the actual
+replacement coverage; revisit it when that dependency's resolved version changes.
+
+## Private organization libraries
+
+A private library in an organization (its core package, protos, or SDK) keeps every gate above,
+but private repositories pay for hosted minutes and the shared reusable workflows cannot fetch
+private dependencies. The pattern:
+
+- One local reusable `.github/workflows/ci.yml`, called from `pull_request.yml` (with an input
+  enabling soundness, DocC, and static SDK jobs) and from `main.yml`. Jobs run on the
+  organization's self-hosted runner (`runs-on: [self-hosted, Linux, X64]`) with each toolchain
+  as the job's `container:`: the same four toolchains, test overrides, and release builds as the
+  compiler matrix. The runner's service account needs Docker; keep self-hosted runners off
+  public repositories.
+- Soundness and DocC run the upstream scripts from a checkout of `swiftlang/github-workflows`
+  pinned to the release's commit SHA; Foundation linking inlines the `vapor/ci` check with the
+  same excluded products; the label workflow keeps the shared checker and `pull-requests: read`.
+- Private dependencies resolve with a read-only credential scoped to the organization's
+  repositories (a GitHub App installation token or a fine-grained token with `contents: read`),
+  stored as a secret and written to `~/.netrc` inside the job. It never enters a manifest, a
+  remote URL, or the checkout's persisted credentials, and a missing secret fails the job:
+
+  ```yaml
+  - name: Authenticate private dependencies
+    env:
+      PACKAGES_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+    run: |
+      : "${PACKAGES_TOKEN:?set the PACKAGES_READ_TOKEN secret}"
+      umask 077
+      printf 'machine github.com\nlogin x-access-token\npassword %s\n' "$PACKAGES_TOKEN" > ~/.netrc
+  ```
+
+- No Swift Package Index: no `.spi.yml` and no documentation badge; DocC builds only in CI, and
+  consumers resolve tags with their own GitHub credentials. Record the runner, the credential,
+  and these replacements in `AGENTS.md`.
 
 ## Validation and completion
 

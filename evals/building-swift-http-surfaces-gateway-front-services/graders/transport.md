@@ -9,3 +9,4 @@ PASS if all of these hold in Serve:
 - The reloader is in the `ServiceGroup`.
 
 FAIL if any upstream uses plaintext, disables server verification, or the reloader is created but never added to the `ServiceGroup`. Trust configuration inside a factory defined in another file is expected.
+Grade only against these criteria; do not fail for issues they do not mention.

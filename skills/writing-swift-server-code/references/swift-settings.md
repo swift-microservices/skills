@@ -2,11 +2,11 @@
 
 ## Contents
 
-- Tools version and language mode
-- The shared settings array
-- What each setting means
-- Default isolation and diagnostics
-- Concurrency rules that are settled here
+- [Tools version and language mode](#tools-version-and-language-mode)
+- [The shared settings array](#the-shared-settings-array)
+- [What each setting means](#what-each-setting-means)
+- [Default isolation and diagnostics](#default-isolation-and-diagnostics)
+- [Concurrency rules that are settled here](#concurrency-rules-that-are-settled-here)
 
 These settings apply to every package the organization owns: a reusable library, a service, a monolith, a gateway, `<project>-core`, `<project>-protos`, and every Swift target inside them.
 
@@ -76,4 +76,4 @@ The rest of Swift Concurrency is the `swift-concurrency` skill's subject ([AvdLe
 - `@unchecked Sendable` only with a comment stating what guarantees the safety, never to quiet a diagnostic; on a server the race it hides is concurrent by default.
 - Structured concurrency: a task group, and one `ServiceGroup` owning every long-lived task. A detached task that nothing owns outlives the request that made it and ignores cancellation; it needs a stated reason.
 - Cancellation honoured wherever work can run long, which on a server is every worker loop and every stream.
-- An API that takes a scoped callback — a transaction, a runner, a client's `with…` method — keeps it a plain nonescaping `(Scope) async throws -> T` with `T: Sendable`, caller-isolated, with neither `@Sendable` nor `@concurrent`, in the protocol requirement, every implementation, and every test double alike. When forwarding to a dependency with an isolated parameter, pass `isolation: #isolation` as its API requires.
+- An API that takes a scoped callback — a transaction, a runner, a client's `with…` method — keeps it a plain nonescaping `(Scope) async throws -> T` with `T: Sendable`, caller-isolated, with neither `@Sendable` nor `@concurrent`, in the protocol requirement, every implementation, and every test double alike. When forwarding to a dependency with an isolated parameter, pass `isolation: #isolation` as its API requires. Test the contract from a custom actor and from a `@MainActor` caller, each with a closure that mutates a non-`Sendable` reference the caller owns and suspends (`await Task.yield()`) between mutations, plus a thrown error propagating out unchanged: a closure that never suspends cannot detect a hop ([isolation contract tests](../../building-swift-server-libraries/references/testing.md#isolation-contract-tests)).

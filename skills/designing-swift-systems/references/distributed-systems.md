@@ -4,15 +4,15 @@ Use this reference once the shape is microservices (shapes.md decides that): mor
 
 ## Contents
 
-- Design inputs and service boundaries
-- Communication selection
-- Contracts and compatibility
-- Data ownership and consistency
-- Reliability and failure semantics
-- Security and trust boundaries
-- Identity across processes
-- Observability and operations
-- Greenfield delivery sequence
+- [Design inputs and service boundaries](#design-inputs-and-service-boundaries)
+- [Communication selection](#communication-selection)
+- [Contracts and compatibility](#contracts-and-compatibility)
+- [Data ownership and consistency](#data-ownership-and-consistency)
+- [Reliability and failure semantics](#reliability-and-failure-semantics)
+- [Security and trust boundaries](#security-and-trust-boundaries)
+- [Identity across processes](#identity-across-processes)
+- [Observability and operations](#observability-and-operations)
+- [Greenfield delivery sequence](#greenfield-delivery-sequence)
 
 ## Design inputs and service boundaries
 
@@ -68,7 +68,7 @@ Design contracts before implementations:
 
 Evolve `v1` additively. Add fields using new numbers, preserve existing semantics, reserve removed numbers/names, and create `v2` for breaking behavior. Deploy compatible producers before consumers that require new fields or methods.
 
-Generated protobuf values are transport DTOs. Map them at service/client boundaries and keep each service's Core model independent. A consumer keeps its own use-case protocol and entity; the generated client is an implementation behind that protocol, which is why a consumer does not change when a module becomes a service.
+Generated protobuf values are transport DTOs. Map them at service/client boundaries and keep each service's Core model independent. A consumer keeps its own port and entity in its Core; the gRPC client adapter over the generated client is an implementation behind that port, which is why a consumer does not change when a module becomes a service.
 
 ## Data ownership and consistency
 
@@ -118,8 +118,9 @@ For mutations, define a request identity when clients may retry after an ambiguo
 
 Identify public, private, administrative, and data-sensitive boundaries. Keep internal service ports off the public ingress by default.
 
-- Terminate public TLS at the platform ingress or the gateway's sidecar.
-- Mutually authenticate internal gRPC connections against explicit CA trust and verify destination hostnames. Internal peers admitted by that trust can call internal RPCs; those use cases enforce business invariants. User operations additionally require verified user JWTs and owning-use-case authorization.
+- Terminate public TLS at the edge: the project's reverse proxy, with strict verification of the origin. The hop from the proxy to the process stays on the private network and is TLS with a server certificate the proxy verifies.
+- A client-facing listener — the gateway, or a monolith apps or partners call directly — requires no client certificate and identifies callers by bearer JWT alone; it carries only `<Entity>Service`. A process that other processes also call runs a second, internal listener for `<Entity>InternalService`.
+- Mutually authenticate every internal connection (internal descriptors, workers, service-to-service) against explicit CA trust and verify destination hostnames. Internal peers admitted by that trust can call internal RPCs; those use cases enforce business invariants. User operations additionally require verified user JWTs and owning-use-case authorization.
 - Keep mTLS admission separate from verified-user authorization. A private network does not substitute for TLS peer verification.
 - Keep key material (signing keys, TLS keys and certificates, enrollment credentials) as mounted files configured by path, never in source control or environment variables; database role passwords come from the environment, read as secrets, never from source control.
 - Mark secret configuration values with `isSecret: true`.
@@ -134,7 +135,7 @@ This is the rule that makes microservices different from a monolith, where the t
 
 **A token crosses a process boundary only as the original bearer credential.** The gateway and any service that calls a user-facing service forward the caller's token unchanged with `BearerPropagationInterceptor<UserIdentity>`, applied to that upstream's `<Entity>Service` descriptors alone; it forwards only when a principal is bound, so an anonymous call stays anonymous, and an internal service is reached by certificate. No process forwards an identity as metadata it asserts, no process trusts a `user_id` header, and no process mints a credential on a user's behalf: there is one issuer, the authenticating service, with the private key, and everyone else holds the public key.
 
-**Internal calls use transport trust.** Workers and services call internal descriptors over mTLS without a user token. The receiver accepts input directly, using its internal database scope. A user ID in that input names business data, not a principal to impersonate. Keep backend listeners private and gateway routes limited to `<Entity>Service` operations.
+**Internal calls use transport trust.** Workers and services call internal descriptors over mTLS without a user token. The receiver accepts input directly, using its internal database scope. A user ID in that input names business data, not a principal to impersonate. Keep internal listeners private, never on a client-facing listener, and gateway routes limited to `<Entity>Service` operations.
 
 **The tenant reaches the policy in each service on its own.** Each service's `UserSettingsInterceptor` binds `PostgresSettings.user(_:)` from the caller it verified, so the tenant policy in each database sees the user that service verified, not one a caller claimed.
 
@@ -159,13 +160,15 @@ Define alerts from user-impacting symptoms and service objectives, not every log
 
 ## Greenfield delivery sequence
 
+The ordered setup checklist, with the owning skill and the gate for each step, is [bootstrap.md](bootstrap.md); this sequence is the design view of it.
+
 1. Write the capability map, the shape decision record, the service ownership table, the interaction map, and the non-functional requirements.
 2. Challenge every proposed remote boundary against the reasons in shapes.md; merge services that lack one into a module of another, or into a monolith.
 3. Define the first vertical user journey and the contracts it needs.
 4. Create and release the shared proto package, `<project>-protos`, and the organization's core package, `<project>-core`, over the swift-microservices packages.
 5. Initialize each service package with `swift package init --type executable`, and the gateway package `<organization>-api` (the building-swift-http-surfaces skill) when browsers or REST clients are among the callers.
 6. Build the owning service from Core outward through Postgres, gRPC, composition, and environment, with the building-swift-services skill.
-7. Build consumers against their local use-case protocols and generated clients, verifying the token at each service and forwarding it on `<Entity>Service` descriptors alone.
+7. Build consumers against the ports in their own Core, satisfied by gRPC client adapters over the generated clients, verifying the token at each service and forwarding it on `<Entity>Service` descriptors alone.
 8. Add dedicated databases, migration jobs, private networking, certificates, secrets, lifecycle, and observability.
 9. Verify the first journey end to end, including dependency failure and retry/idempotency behavior.
 10. Add the next vertical capability; do not scaffold unused services or infrastructure in advance.

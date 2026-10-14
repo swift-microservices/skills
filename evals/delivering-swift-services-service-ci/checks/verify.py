@@ -148,8 +148,17 @@ def verify(root, worker=False):
             if event != 'PR':
                 need('checks' in j.get('needs', []) and j.get('permissions', {}).get('packages') == 'write', f'{event}: publication must wait for checks')
         if event != 'PR':
-            deploy = flow.get('jobs', {}).get('deploy', {})
-            need('publish' in deploy.get('needs', []), f'{event}: deployment must wait for publication')
+            publish_names = [name for name, j in flow.get('jobs', {}).items() if j.get('uses', '').endswith('/image.yml')]
+            deploy_jobs = [j for j in flow.get('jobs', {}).values() if 'APPLICATION_ID' in json.dumps(j.get('steps', []))]
+            need(bool(deploy_jobs), f'{event}: deployment missing')
+            for deploy in deploy_jobs:
+                needs = deploy.get('needs', [])
+                needs = [needs] if isinstance(needs, str) else needs
+                need(any(name in needs for name in publish_names), f'{event}: deployment must wait for publication')
+                need(not any('secrets.' in str(step.get('if', '')) for step in deploy.get('steps', [])) and 'secrets.' not in str(deploy.get('if', '')), f'{event}: deployment conditional on a secret')
+            secret = ('PROD_' if event == 'main' else '') + 'WORKER_APPLICATION_ID'
+            deploys_worker = any(f'secrets.{secret}' in json.dumps(j.get('steps', [])) for j in deploy_jobs)
+            need(deploys_worker is worker, f'{event}: worker deploy step ' + ('missing' if worker else 'present without a worker'))
     image = workflows.get('.github/workflows/image.yml', {})
     steps = [s for j in image.get('jobs', {}).values() for s in j.get('steps', [])]
     build = [s for s in steps if 'docker/build-push-action@' in s.get('uses', '')]
@@ -203,24 +212,40 @@ elif [[ $SCENARIO == worker-fails && $* == *'worker run --help'* ]]; then
 fi
 ''')
         docker.chmod(0o755)
+        def run(scenario, worker_flag, *extra, allow_root=None):
+            calls = root / f'{scenario}-{worker_flag}-{len(extra)}-{allow_root}.calls'
+            env = {k: v for k, v in os.environ.items() if k != 'ALLOW_ROOT_IMAGE'}
+            env.update(PATH=str(root) + os.pathsep + os.environ['PATH'], SCENARIO=scenario, CALLS=str(calls))
+            if allow_root is not None:
+                env['ALLOW_ROOT_IMAGE'] = allow_root
+            result = subprocess.run(['bash', str(script), 'example:ci', 'example-service', worker_flag, *extra],
+                                    env=env, capture_output=True, text=True, timeout=10)
+            return result.returncode == 0, (calls.read_text() if calls.exists() else '')
+
         for scenario, success in [('valid', True), ('static', True), ('missing', False),
                                   ('root', False), ('broken-ldd', False), ('worker-fails', False)]:
-            calls = root / f'{scenario}.calls'
-            env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
-                       SCENARIO=scenario, CALLS=str(calls))
-            result = subprocess.run(['bash', str(script), 'example:ci', 'example-service', 'true'],
-                                    env=env, capture_output=True, text=True, timeout=10)
-            if (result.returncode == 0) != success:
+            ok, calls = run(scenario, 'true')
+            if ok != success:
                 failures.append(f'Runtime helper mishandles {scenario}')
-            if success and (not calls.exists() or 'worker run --help' not in calls.read_text()):
+            if success and 'worker run --help' not in calls:
                 failures.append('Runtime helper does not execute worker command')
-        calls = root / 'no-worker.calls'
-        env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'],
-                   SCENARIO='valid', CALLS=str(calls))
-        result = subprocess.run(['bash', str(script), 'example:ci', 'example-service', 'false'],
-                                env=env, capture_output=True, text=True, timeout=10)
-        if result.returncode != 0 or 'worker run --help' in calls.read_text():
+        ok, calls = run('valid', 'false')
+        if not ok or 'worker run --help' in calls:
             failures.append('Runtime helper runs absent worker command')
+        # A recorded root-image exception is honored only when the job sets ALLOW_ROOT_IMAGE=true.
+        ok, _ = run('root', 'false', allow_root='true')
+        if not ok:
+            failures.append('Runtime helper ignores ALLOW_ROOT_IMAGE=true')
+        ok, _ = run('root', 'false', allow_root='false')
+        if ok:
+            failures.append('Runtime helper accepts root without ALLOW_ROOT_IMAGE=true')
+        # The binary path defaults to /app/<product> and is overridable (/<product> on a plugin image).
+        ok, calls = run('valid', 'false')
+        if '/app/example-service' not in calls:
+            failures.append('Runtime helper does not inspect /app/<product> by default')
+        ok, calls = run('valid', 'false', '/example-service')
+        if not ok or not any('ldd' in line and line.rstrip().endswith(' /example-service') for line in calls.splitlines()):
+            failures.append('Runtime helper ignores the binary path argument')
     return failures
 
 

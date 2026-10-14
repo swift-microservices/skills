@@ -2,27 +2,27 @@
 
 ## Contents
 
-- Command tree
-- Environment configuration
-- The serve composition root
-- Composing a monolith
-- The HTTP sections
-- The gRPC section
-- Lifecycle
-- The gateway composition root
-- Transport security factories
-- Temporal worker composition root
-- Migrations at boot
-- Operator commands
+- [Command tree](#command-tree)
+- [Environment configuration](#environment-configuration)
+- [The serve composition root](#the-serve-composition-root)
+- [A gRPC service with tenant tables](#a-grpc-service-with-tenant-tables)
+- [A monolith serving HTTP and gRPC](#a-monolith-serving-http-and-grpc)
+- [Two listeners: client-facing and internal](#two-listeners-client-facing-and-internal)
+- [Lifecycle](#lifecycle)
+- [The gateway composition root](#the-gateway-composition-root)
+- [Transport security factories](#transport-security-factories)
+- [Temporal worker composition root](#temporal-worker-composition-root)
+- [Migrations at boot](#migrations-at-boot)
+- [Operator commands](#operator-commands)
 
-The composition root is the one place that knows the shape. It composes one module or many, registers the transport targets the shape serves, and satisfies every cross-module port with a neighbor's use case or a gRPC client. Nothing below it knows which.
+The composition root is the one place that knows the shape. It composes one module or many, registers the transport targets the shape serves, and satisfies every cross-module port with an adapter over a neighbor's use case or a gRPC client. Nothing below it knows which.
 
 ## Command tree
 
-Name the executable target after the service or project by default; use a collision-safe name such as `AuthenticationServer` when a dependency already owns the default, and record it in `AGENTS.md`. The root command defaults to serving. Migrations run before the process serves; by default they are a `serve` flag applied in-process before the server binds, and a platform that orders jobs runs them as a `migrate` subcommand one-shot instead, while replicas that start together and migrate at boot serialize the apply with an advisory lock; the project records which (see *Migrations at boot* below).
+Name the executable target after the service or project; use a collision-safe name such as `AuthenticationServer` when a dependency already owns the default, and record it in `AGENTS.md`. The root command defaults to serving. Migrations run before the process serves: by default a `serve` flag applied in-process before the server binds; a platform that orders jobs runs them as a `migrate` subcommand one-shot instead; replicas that migrate at boot together serialize the apply with an advisory lock. The project records which (see [Migrations at boot](#migrations-at-boot)).
 
 ```text
-backend                          # a monolith; a service reads `catalog`
+backend                          # a monolith; a service reads `users`
 backend serve
 backend serve --migrate-database # apply pending migrations, then serve
 backend worker run               # only with Temporal: the worker's composition root, same executable
@@ -30,11 +30,13 @@ backend migrate                  # the alternative: the same list as a one-shot 
 ```
 
 ```swift
+import ArgumentParser
+
 @main
 struct Backend: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "backend",
-        abstract: "Acme Backend",
+        abstract: "The backend",
         subcommands: [
             Serve.self,
             Worker.self,   // only with Temporal
@@ -48,58 +50,49 @@ Put commands in `<Project>/<Command>/` (or `<Service>/<Command>/`); the migratio
 
 ## Environment configuration
 
-Build `ConfigReader(providers: [EnvironmentVariablesProvider(), InMemoryProvider.applicationDefaults])` once, then scope by concern. See [configuration.md](configuration.md) for native library readers, relative keys, application defaults, and validation boundaries. Swift Configuration transforms camel-case scoped keys into variables:
+Build `ConfigReader(providers: [EnvironmentVariablesProvider(), InMemoryProvider.applicationDefaults])` once, then scope by concern; [configuration.md](configuration.md) owns native readers, relative keys, application defaults, and validation. Swift Configuration turns camel-case scoped keys into variables:
 
 ```dotenv
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_USER=…                      # the database's owner: migrations only
-POSTGRES_PASSWORD=…
-POSTGRES_DB=<project>_catalog        # a service; a monolith's is <project>
-POSTGRES_SERVICE_PASSWORD=…          # <name>_service, the tenant-scoped role; the name defaults
-POSTGRES_INTERNAL_PASSWORD=…         # <name>_internal: only a package with tenant tables
-POSTGRES_WORKER_PASSWORD=…           # <name>_worker: the worker's environment and the migrating one
+POSTGRES_USER=                       # the database's owner: migrations only
+POSTGRES_PASSWORD=
+POSTGRES_DB=<project>_users          # a service; a monolith's is <project>
+POSTGRES_SERVICE_PASSWORD=           # <name>_service, the tenant-scoped role; the name defaults
+POSTGRES_INTERNAL_PASSWORD=          # <name>_internal: only a package with tenant tables
 HTTP_SERVER_HOST=0.0.0.0             # with HTTP
 HTTP_SERVER_PORT=8080
 GRPC_SERVER_HOST=0.0.0.0             # with gRPC
 GRPC_SERVER_PORT=50051
+GRPC_SERVER_MAX_CONNECTION_AGE_SECONDS=300
+GRPC_INTERNAL_SERVER_PORT=50052      # only beside a client-facing listener: the internal mTLS one
 GRPC_ACCOUNTS_HOST=accounts          # one scope per upstream service, required; a monolith has none
 GRPC_ACCOUNTS_PORT=50051
-TLS_CERTIFICATE_PATH=/run/tls/cert.pem       # with gRPC
+TLS_CERTIFICATE_PATH=/run/tls/cert.pem       # every listener and client
 TLS_PRIVATE_KEY_PATH=/run/tls/key.pem
 TLS_TRUST_ROOTS_PATH=/run/tls/ca.pem
 TLS_REFRESH_INTERVAL_SECONDS=60
-TEMPORAL_TLS_CERTIFICATE_PATH=/run/temporal-tls/cert.pem
-TEMPORAL_TLS_PRIVATE_KEY_PATH=/run/temporal-tls/key.pem
-TEMPORAL_TLS_TRUST_ROOTS_PATH=/run/temporal-tls/ca.pem
-TEMPORAL_TLS_REFRESH_INTERVAL_SECONDS=60
 JWT_PUBLIC_KEY_PATH=/run/secrets/jwt-public
 JWT_PRIVATE_KEY_PATH=/run/secrets/jwt-private  # only the process that issues tokens
-TEMPORAL_HOST=temporal
-TEMPORAL_PORT=7233
-TEMPORAL_CLIENT_NAMESPACE=production                      # serve: the SDK's own client keys
-TEMPORAL_CLIENT_INSTRUMENTATION_SERVERHOSTNAME=temporal
-TEMPORAL_TASK_QUEUE=catalog                               # serve: the queue its workflow clients start on, equal to the worker's
-TEMPORAL_WORKER_NAMESPACE=production                      # worker: the SDK's own worker keys
-TEMPORAL_WORKER_TASKQUEUE=catalog
-TEMPORAL_WORKER_BUILDID=production
-TEMPORAL_WORKER_CLIENT_IDENTITY=catalog-worker
-TEMPORAL_WORKER_CLIENT_INSTRUMENTATION_SERVERHOSTNAME=temporal
-TEMPORAL_WORKER_HEARTBEATINTERVALMS=60000                 # worker liveness; the SDK default disables
 LOKI_URL=http://loki:3100
 LOG_LEVEL=info
 ```
 
-`<name>` is the service name in a service and the project name in a monolith: `catalog_service` and `backend_service`. Roles belong to the process, so a monolith's ten modules share one set.
+`<name>` is the service name in a service and the project name in a monolith: `users_service` and `backend_service`. Roles belong to the process, so a monolith's ten modules share one set. Temporal's keys, the worker role's password, and the worker's own scope are in the orchestrating-temporal-workflows skill's [worker.md](../../orchestrating-temporal-workflows/references/worker.md).
 
-Prefer native library readers. For types without one, add a focused `Type+ConfigReader.swift` in the executable. Read relative keys and delegate to the existing initializer; keep deployment defaults in the application provider. Do not pass extra default or directory arguments.
+`PostgresConfiguration` owns every connection the process makes. Each connection reads its password when it is asked for rather than in `init`, so one type serves every command: `serve` reads the service and internal roles, `serve --migrate-database` (or `migrate`) the owner too, and a missing secret still fails at startup, naming the key, because every command builds its clients before its `ServiceGroup` runs. The password properties are exposed for the role migrations.
 
 ```swift
+// Sources/Users/Configuration/PostgresConfiguration.swift
+import Configuration
+import PostgresNIO
+
 struct PostgresConfiguration: Sendable {
-    let host: String; let port: Int; let database: String
-    let serviceUser: String                                   // the tenant-scoped role
-    let internalUser: String                                  // only with tenant tables
-    let workerUser: String                                    // only with Temporal
+    let host: String
+    let port: Int
+    let database: String
+    let serviceUser: String
+    let internalUser: String                                   // only with tenant tables
     private let config: ConfigReader
 
     init(config: ConfigReader) throws {
@@ -108,173 +101,444 @@ struct PostgresConfiguration: Sendable {
         self.database = try config.requiredString(forKey: "db")
         self.serviceUser = try config.requiredString(forKey: "serviceUser")
         self.internalUser = try config.requiredString(forKey: "internalUser")
-        self.workerUser = try config.requiredString(forKey: "workerUser")
         self.config = config
     }
 
-    /// The owner: migrations only. Read when asked for, so a command that never migrates never needs it.
+    /// The owner: migrations only. Nothing that serves connects with it.
     var owner: PostgresClient.Configuration {
-        get throws { try connection(user: config.requiredString(forKey: "user"), password: config.requiredString(forKey: "password", isSecret: true)) }
+        get throws {
+            try connection(
+                user: config.requiredString(forKey: "user"),
+                password: config.requiredString(forKey: "password", isSecret: true)
+            )
+        }
     }
-    var service: PostgresClient.Configuration { get throws { try connection(user: serviceUser, password: servicePassword) } }
-    var servicePassword: String { get throws { try config.requiredString(forKey: "servicePassword", isSecret: true) } }
-    // internalService / internalPassword and worker / workerPassword, the same shape
+
+    /// The tenant-scoped role, for the public and the caller's own operations.
+    var service: PostgresClient.Configuration {
+        get throws { try connection(user: serviceUser, password: servicePassword) }
+    }
+
+    var servicePassword: String {
+        get throws { try config.requiredString(forKey: "servicePassword", isSecret: true) }
+    }
+
+    /// The role that sees every row, for administrators and other processes.
+    var internalService: PostgresClient.Configuration {
+        get throws { try connection(user: internalUser, password: internalPassword) }
+    }
+
+    var internalPassword: String {
+        get throws { try config.requiredString(forKey: "internalPassword", isSecret: true) }
+    }
+
+    private func connection(user: String, password: String) -> PostgresClient.Configuration {
+        PostgresClient.Configuration(
+            host: host,
+            port: port,
+            username: user,
+            password: password,
+            database: database,
+            tls: .prefer(.clientDefault)   // `.require` where the database is reached over a network the deployment does not control
+        )
+    }
 }
 ```
 
-Each connection reads its password when it is asked for rather than in `init`. That is what lets one type serve every command: `serve` reads the service and internal roles, `serve --migrate-database` (or `migrate`) the owner too and, when there is a worker, the worker role's password for `CreateWorkerRole`, and `worker run` the worker role alone, so the worker's environment carries neither the owner pair nor the serving roles' secrets and the serving process never connects as the worker, and a missing secret still fails at startup, naming the key, because every command builds its clients before its `ServiceGroup` runs. The password properties are exposed so the role migrations can read them.
-
-Require topology and secrets where no appropriate default exists. Put application mount paths, database/role names, listener bindings, task queues, and URLs in the application defaults provider; library tuning defaults belong to their readers. A local wrapper such as `PostgresConfiguration` owns parsing and role-specific connections. Record exceptions to default ownership in `AGENTS.md`. Use the pinned library’s documented required keys and native scoping; required SDK keys may be satisfied by application defaults. Workflow starts read the application key `temporal.taskQueue` and worker polling reads the SDK's `temporal.worker.taskqueue`; derive both defaults from one value and document that overrides must agree.
-
-Key material, signing keys and certificates, is configured as a path and file loading is delegated to the configured cryptographic library. A path is the form NIOSSL and grpc-swift already take credentials in, it keeps a private key out of the environment, and it fails at startup naming the path. The rationale is in [identity-and-access.md](identity-and-access.md), *Key material in configuration*.
-
-Where the values come from in a running environment is the delivering-swift-services skill's subject.
+A package with no tenant tables drops `internalUser` and its two properties; with Temporal, `workerUser`, `worker`, and `workerPassword` follow the same shape. Require topology and secrets where no appropriate default exists; put mount paths, database and role names, listener bindings, and URLs in the application defaults provider. Key material is configured as a path and opened by the cryptographic library, so it fails at startup naming the path ([identity-and-access.md](identity-and-access.md#key-material-in-configuration)). Where the values come from in a running environment is the delivering-swift-services skill's subject.
 
 ## The serve composition root
 
-Use these section comments in this order, keeping only the transport sections the shape serves:
+`Serve.run()` has these `// MARK:` sections in this order, keeping only the transport sections the shape serves: Configuration, Logging, Infrastructure, Composition, Router and Hummingbird (with HTTP), gRPC (with gRPC), Lifecycle. A process serving both transports has one root, one set of use cases, and one `ServiceGroup` holding the application and the server; never two roots for two transports. The two files below are complete; copy the one that matches the shape and delete what the package does not have.
+
+- **Logging** is bootstrapped inline, never behind a shared helper: a `MultiplexLogHandler` of `StreamLogHandler.standardOutput` and one in-process shipper, the process name as the service label, and `<Project>Authentication`'s `.user` metadata provider, so every line inside a request carries `user_id`. The default shipper is `swift-log-loki`; the alternative is any `LogHandler` the deployment prefers (stdout alone where the platform collects it, or OTLP), and substituting one changes only this block.
+- **Infrastructure** builds one `PostgresClient` per role the process connects as, the token verifier from the mounted public key, the certificate reloader, one `GRPCClient` per upstream service, and, with Temporal, one `TemporalClient`.
+- **Composition** builds one `PostgresDatabase` per module per role over the shared clients, then policies, use cases (each over the database its scope admits, passing `logger`), the cross-module adapters, and one transport implementation per contract. Say in a comment which database each use case runs on and why: that sentence is the authorization design.
+
+## A gRPC service with tenant tables
+
+A users service: a person reads their own profile under the tenant policy; administrators read anyone on `UserService`; the authentication process resolves users on `UserInternalService`. Only the gateway and other processes dial a microservice, so its one listener is internal and requires mTLS for both descriptors.
 
 ```swift
-func run() async throws {
-    // MARK: - Configuration
-    // MARK: - Logging
-    // MARK: - Infrastructure
-    // MARK: - Composition
-    // MARK: - Router          // with HTTP
-    // MARK: - Hummingbird     // with HTTP
-    // MARK: - gRPC            // with gRPC
-    // MARK: - Lifecycle
+// Sources/Users/Serve/Serve.swift
+import ArgumentParser
+import AuthenticationGRPC
+import AuthenticationJWT
+import Configuration
+import GRPCCore
+import GRPCNIOTransportHTTP2
+import GRPCServiceLifecycle
+import JWTKit
+import Logging
+import LoggingLoki
+import NIOCertificateReloading
+import PersistencePostgres
+import PostgresNIO
+import ServiceLifecycle
+import UnixSignals
+import UsersCore
+import UsersGRPC
+import UsersPostgres
+import UsersProtos
+import <Project>Authentication
+import <Project>Persistence
+
+struct Serve: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "serve",
+        abstract: "Start the gRPC server"
+    )
+
+    @Flag(help: "Apply pending database migrations before serving")
+    var migrateDatabase = false
+
+    func run() async throws {
+        // MARK: - Configuration
+        let config = ConfigReader(providers: [EnvironmentVariablesProvider(), InMemoryProvider.applicationDefaults])
+        let postgres = try PostgresConfiguration(config: config.scoped(to: "postgres"))
+        let tlsConfig = config.scoped(to: "tls")
+        let serverConfig = config.scoped(to: "grpc.server")
+
+        // MARK: - Logging
+        let lokiProcessor = LokiLogProcessor(
+            configuration: try LokiLogProcessorConfiguration(config: config.scoped(to: "loki"))
+        )
+        let logLevel = config.string(forKey: "logLevel", default: Logger.Level.info)
+        LoggingSystem.bootstrap(
+            { label, metadataProvider in
+                var handler = MultiplexLogHandler([
+                    StreamLogHandler.standardOutput(label: label, metadataProvider: metadataProvider),
+                    LokiLogHandler(label: label, service: "users", processor: lokiProcessor),
+                ])
+                handler.logLevel = logLevel
+                handler.metadataProvider = metadataProvider
+                return handler
+            },
+            metadataProvider: .user
+        )
+        let logger = Logger(label: "users")
+
+        // MARK: - Infrastructure
+        if migrateDatabase {
+            try await PostgresClient.withClient(configuration: postgres.owner, logger: logger) { client in
+                try await Migrations(client: client, configuration: postgres, logger: logger).run()
+            }
+        }
+
+        let serviceClient = try PostgresClient(configuration: postgres.service, backgroundLogger: logger)
+        let internalClient = try PostgresClient(configuration: postgres.internalService, backgroundLogger: logger)
+        let userAuthenticator = await JWTAuthenticator<UserIdentity>(
+            publicKey: try EdDSA.PublicKey(config: config.scoped(to: "jwt"))
+        )
+        var reloaderConfig = try TimedCertificateReloader.Configuration(config: tlsConfig)
+        reloaderConfig.logger = logger
+        reloaderConfig.onCertificateLoadFailed = { failure in
+            logger.warning("TLS certificate reload failed", metadata: ["error": "\(failure.error)"])
+        }
+        let certificateReloader = try TimedCertificateReloader.makeReloaderValidatingSources(
+            configuration: reloaderConfig
+        )
+
+        // MARK: - Composition
+        // Who may call an RPC decides its database. The caller's own profile runs on `database`, as
+        // users_service, where the tenant policy confines the transaction to the caller's row. The
+        // administrators' reads (each use case refusing anyone else) and the internal service's
+        // resolve need every row, so they run on `internalDatabase`, as users_internal.
+        let database = PostgresDatabase<PostgresUsersScope>(client: serviceClient, logger: logger)
+        let internalDatabase = PostgresDatabase<PostgresUsersInternalScope>(client: internalClient, logger: logger)
+
+        let userService = UserService(
+            getProfileUseCase: GetProfileUseCase(database: database, logger: logger),
+            getUserByIdUseCase: GetUserByIDUseCase(database: internalDatabase, logger: logger),
+            listUsersUseCase: ListUsersUseCase(database: internalDatabase, logger: logger)
+        )
+        let userInternalService = UserInternalService(
+            resolveUserUseCase: ResolveUserUseCase(database: internalDatabase, logger: logger)
+        )
+
+        // MARK: - gRPC
+        let host = try serverConfig.requiredString(forKey: "host")
+        let port = try serverConfig.requiredInt(forKey: "port")
+        let server = GRPCServer(
+            transport: .http2NIOPosix(
+                address: .ipv4(host: host, port: port),
+                transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader),
+                config: HTTP2ServerTransport.Posix.Config(config: serverConfig)
+            ),
+            services: [userService, userInternalService],
+            // UserService identifies the caller and binds the tenant setting; each handler requires
+            // what its RPC needs. UserInternalService carries no application interceptor: the
+            // listener's mTLS admits the peer.
+            interceptorPipeline: [
+                .apply(
+                    BearerAuthenticationInterceptor(authenticator: userAuthenticator),
+                    to: .services([<Organization>_Users_V1_UserService.descriptor])
+                ),
+                .apply(
+                    UserSettingsInterceptor(),
+                    to: .services([<Organization>_Users_V1_UserService.descriptor])
+                ),
+            ]
+        )
+
+        // MARK: - Lifecycle
+        let serviceGroup = ServiceGroup(
+            services: [lokiProcessor, serviceClient, internalClient, certificateReloader, server],
+            gracefulShutdownSignals: [.sigint, .sigterm],
+            logger: logger
+        )
+
+        logger.info("Starting on \(host):\(port)")
+        try await serviceGroup.run()
+    }
 }
 ```
 
-A process serving both transports has one root, one set of use cases, and one `ServiceGroup` holding both the application and the server. Do not write two roots for two transports.
+A service with no tenant tables has one client, one database over `Postgres<Service>Scope`, and no `UserSettingsInterceptor`. A service that calls another adds, under Infrastructure, one `GRPCClient` per upstream with `.mTLS(config:certificateReloader:)`, `ServiceConfig.defaults`, and `BearerPropagationInterceptor<UserIdentity>()` on the upstream's `<Entity>Service` descriptors alone, wraps it in the consumer adapter under Composition, and adds the client to the `ServiceGroup` ([grpc-and-protos.md](grpc-and-protos.md#consumer-adapter)).
 
-**Logging.** Bootstrap the logging system inline, never behind a shared helper or module. Build one in-process log shipper, then `LoggingSystem.bootstrap` a `MultiplexLogHandler` of `StreamLogHandler.standardOutput` and the shipper's handler, so every line reaches both the container's stdout and the aggregator. Pass the process name as the handler's service label, and `<Project>Authentication`'s metadata providers as the bootstrap's, so every log line inside a request carries the bound caller, `user_id`, with no handler naming them. The rule is the shape: structured logs, one aggregator, the label and the providers on every line. The default shipper is `swift-log-loki` to Grafana Loki; the alternative is any `LogHandler` the deployment prefers — `StreamLogHandler` alone where the platform collects stdout, or an OTLP handler — and substituting one changes only this block.
+## A monolith serving HTTP and gRPC
 
-```swift
-// MARK: - Logging
-let lokiProcessor = LokiLogProcessor(
-    configuration: try LokiLogProcessorConfiguration(config: config.scoped(to: "loki"))
-)
-let logLevel = config.string(forKey: "logLevel", default: Logger.Level.info)
-LoggingSystem.bootstrap(
-    { label, metadataProvider in
-        var handler = MultiplexLogHandler([
-            StreamLogHandler.standardOutput(label: label, metadataProvider: metadataProvider),
-            LokiLogHandler(label: label, service: "catalog", processor: lokiProcessor),
-        ])
-        handler.logLevel = logLevel
-        handler.metadataProvider = metadataProvider
-        return handler
-    },
-    metadataProvider: .user
-)
-let logger = Logger(label: "catalog")
-```
-
-**Infrastructure.** Construct one `PostgresClient` per role the process connects as, the service role and, wherever tenant tables exist, the internal role; the token verifier from the mounted public key; one `GRPCClient` per upstream service; and, with Temporal, one `TemporalClient`. Scope the transport-security reader once:
+Apps call this monolith directly, so both its listeners are client-facing: server TLS with the stack's leaf, verified by the edge proxy, and no client certificate ([identity-and-access.md](identity-and-access.md#validation-at-every-process-boundary)). Two modules: Users has tenant rows (profiles), so it has a database per role; catalogue items are not tenant rows, so Catalog has one scope over the service role. Catalog's Core declares an `AccountClient` port, and the root satisfies it with `UsersAccountClient`, the executable-local adapter in `Sources/Backend/Ports/` shown in [core.md](core.md#ports-to-other-modules). The monolith issues tokens, so it reads the private key and verifies with its public half.
 
 ```swift
-let tlsConfig = config.scoped(to: "tls")
-let serviceClient = PostgresClient(configuration: postgres.service, backgroundLogger: logger)
-let internalClient = PostgresClient(configuration: postgres.internalService, backgroundLogger: logger)
-let userAuthenticator = await JWTAuthenticator<UserIdentity>(publicKey: try EdDSA.PublicKey(config: config.scoped(to: "jwt")))
+// Sources/Backend/Serve/Serve.swift
+import ArgumentParser
+import AuthenticationGRPC
+import AuthenticationHummingbird
+import AuthenticationJWT
+import BackendAuthentication
+import BackendHTTP
+import BackendPersistence
+import CatalogCore
+import CatalogGRPC
+import CatalogHTTP
+import CatalogPostgres
+import Configuration
+import GRPCCore
+import GRPCNIOTransportHTTP2
+import GRPCServiceLifecycle
+import Hummingbird
+import HummingbirdAuth
+import HummingbirdTLS
+import JWTKit
+import Logging
+import LoggingLoki
+import NIOCertificateReloading
+import PersistencePostgres
+import PostgresNIO
+import ServiceLifecycle
+import UnixSignals
+import UsersBcrypt
+import UsersCore
+import UsersGRPC
+import UsersHTTP
+import UsersPostgres
+
+struct Serve: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "serve",
+        abstract: "Serve HTTP and gRPC"
+    )
+
+    @Flag(help: "Apply pending database migrations before serving")
+    var migrateDatabase = false
+
+    func run() async throws {
+        // MARK: - Configuration
+        let config = ConfigReader(providers: [EnvironmentVariablesProvider(), InMemoryProvider.applicationDefaults])
+        let postgres = try PostgresConfiguration(config: config.scoped(to: "postgres"))
+        let tlsConfig = config.scoped(to: "tls")
+        let grpcServerConfig = config.scoped(to: "grpc.server")
+
+        // MARK: - Logging
+        let lokiProcessor = LokiLogProcessor(
+            configuration: try LokiLogProcessorConfiguration(config: config.scoped(to: "loki"))
+        )
+        let logLevel = config.string(forKey: "logLevel", default: Logger.Level.info)
+        LoggingSystem.bootstrap(
+            { label, metadataProvider in
+                var handler = MultiplexLogHandler([
+                    StreamLogHandler.standardOutput(label: label, metadataProvider: metadataProvider),
+                    LokiLogHandler(label: label, service: "backend", processor: lokiProcessor),
+                ])
+                handler.logLevel = logLevel
+                handler.metadataProvider = metadataProvider
+                return handler
+            },
+            metadataProvider: .user
+        )
+        let logger = Logger(label: "backend")
+
+        // MARK: - Infrastructure
+        if migrateDatabase {
+            try await PostgresClient.withClient(configuration: postgres.owner, logger: logger) { client in
+                try await Migrations(client: client, configuration: postgres, logger: logger).run()
+            }
+        }
+
+        let serviceClient = try PostgresClient(configuration: postgres.service, backgroundLogger: logger)
+        let internalClient = try PostgresClient(configuration: postgres.internalService, backgroundLogger: logger)
+        let signingKey = try EdDSA.PrivateKey(config: config.scoped(to: "jwt"))
+        let userIssuer = await JWTIssuer<UserIdentity>(privateKey: signingKey)
+        let userAuthenticator = await JWTAuthenticator<UserIdentity>(publicKey: signingKey.publicKey)
+        var reloaderConfig = try TimedCertificateReloader.Configuration(config: tlsConfig)
+        reloaderConfig.logger = logger
+        reloaderConfig.onCertificateLoadFailed = { failure in
+            logger.warning("TLS certificate reload failed", metadata: ["error": "\(failure.error)"])
+        }
+        let certificateReloader = try TimedCertificateReloader.makeReloaderValidatingSources(
+            configuration: reloaderConfig
+        )
+
+        // MARK: - Composition
+        // Two clients, one per role; one database per module per role it uses.
+        let usersDatabase = PostgresDatabase<PostgresUsersScope>(client: serviceClient, logger: logger)
+        let usersInternalDatabase = PostgresDatabase<PostgresUsersInternalScope>(client: internalClient, logger: logger)
+        let catalogDatabase = PostgresDatabase<PostgresCatalogScope>(client: serviceClient, logger: logger)
+
+        // Users, the producer, first. Sign-in finds an account by email before any caller is bound,
+        // so it runs on the internal role; a person's own profile runs under the tenant policy; an
+        // administrator's read of any user, and the resolve Catalog calls, run on the internal role.
+        let signInUseCase = SignInUseCase(
+            database: usersInternalDatabase,
+            passwordHasher: BcryptPasswordHasher(),
+            issuer: userIssuer,
+            logger: logger
+        )
+        let getProfileUseCase = GetProfileUseCase(database: usersDatabase, logger: logger)
+        let getUserByIdUseCase = GetUserByIDUseCase(database: usersInternalDatabase, logger: logger)
+        let resolveUserUseCase = ResolveUserUseCase(database: usersInternalDatabase, logger: logger)
+
+        // Catalog, the consumer. Its AccountClient port is Users' resolve behind the adapter. Were
+        // Users its own service, this one argument would be GRPCAccountClient over a GRPCClient,
+        // and nothing in CatalogCore would change.
+        let accounts = UsersAccountClient(resolveUserUseCase: resolveUserUseCase)
+        let createItemUseCase = CreateItemUseCase(database: catalogDatabase, accounts: accounts, logger: logger)
+        let listItemsUseCase = ListItemsUseCase(database: catalogDatabase, logger: logger)
+
+        // One transport implementation per contract and transport, over the same use cases.
+        let userController = UserController(
+            signInUseCase: signInUseCase,
+            getProfileUseCase: getProfileUseCase,
+            getUserByIdUseCase: getUserByIdUseCase
+        )
+        let itemController = ItemController(createItemUseCase: createItemUseCase, listItemsUseCase: listItemsUseCase)
+        let userService = UserService(
+            signInUseCase: signInUseCase,
+            getProfileUseCase: getProfileUseCase,
+            getUserByIdUseCase: getUserByIdUseCase
+        )
+        let itemService = ItemService(createItemUseCase: createItemUseCase, listItemsUseCase: listItemsUseCase)
+
+        // MARK: - Router
+        let router = Router(context: BasicRequestContext.self)
+        router.add(middleware: ErrorMiddleware())
+        router.add(middleware: LogRequestsMiddleware(.info))
+        let v1 = router.group("v1")
+
+        // Tier 1: no caller. Session-issuing routes and the health route.
+        userController.addPublicRoutes(to: v1.group("auth"))
+        v1.get("health") { _, _ in HTTPResponse.Status.ok }
+
+        // Tier 2: a caller if there is one; the bound user becomes the tenant setting.
+        let identified = v1.group(context: IdentityRequestContext.self)
+            .add(middleware: BearerAuthenticationMiddleware<IdentityRequestContext>(authenticator: userAuthenticator))
+            .add(middleware: UserSettingsMiddleware())
+
+        // Tier 3: a caller is required.
+        let authenticated = identified.group().add(middleware: IsAuthenticatedMiddleware())
+        userController.addAuthenticatedRoutes(to: authenticated.group("users"))
+        itemController.addAuthenticatedRoutes(to: authenticated.group("items"))
+
+        // MARK: - Hummingbird
+        // Client-facing: TLS to the edge proxy, no client certificate; the bearer middleware identifies.
+        let application = Application(
+            router: router,
+            server: try .tls(.http1(), tlsConfiguration: .makeServerConfiguration(certificateReloader: certificateReloader)),
+            configuration: ApplicationConfiguration(reader: config.scoped(to: "http.server")),
+            logger: logger
+        )
+
+        // MARK: - gRPC
+        // Client-facing too: only <Entity>Service descriptors, each behind the bearer interceptor.
+        let server = GRPCServer(
+            transport: .http2NIOPosix(
+                address: .ipv4(
+                    host: try grpcServerConfig.requiredString(forKey: "host"),
+                    port: try grpcServerConfig.requiredInt(forKey: "port")
+                ),
+                transportSecurity: try .serverTLS(certificateReloader: certificateReloader),
+                config: HTTP2ServerTransport.Posix.Config(config: grpcServerConfig)
+            ),
+            services: [userService, itemService],
+            interceptorPipeline: [
+                .apply(
+                    BearerAuthenticationInterceptor(authenticator: userAuthenticator),
+                    to: .services([
+                        <Organization>_Users_V1_UserService.descriptor,
+                        <Organization>_Catalog_V1_ItemService.descriptor,
+                    ])
+                ),
+                .apply(
+                    UserSettingsInterceptor(),
+                    to: .services([<Organization>_Users_V1_UserService.descriptor])   // items are not tenant rows
+                ),
+            ]
+        )
+
+        // MARK: - Lifecycle
+        let serviceGroup = ServiceGroup(
+            services: [lokiProcessor, serviceClient, internalClient, certificateReloader, application, server],
+            gracefulShutdownSignals: [.sigint, .sigterm],
+            logger: logger
+        )
+        try await serviceGroup.run()
+    }
+}
 ```
 
-A monolith has no upstream service and dials nothing over gRPC unless it consumes a service outside itself; every `GRPCClient` in a microservice is one upstream, one connection, with the factory and service config in *Transport security factories*.
+- The root, and only the root, imports every module. Compose producers before consumers, so a port is satisfied by a value that already exists; a cycle between two modules' ports is a design fault, resolved by reconsidering ownership, never by a lazy reference. Keep the port call outside the consumer's `withTransaction` ([core.md](core.md#database-boundary)).
+- An HTTP-only monolith drops the gRPC section and the gRPC transport-security files and keeps the reloader, because its listener serves TLS too; a gRPC-only one drops Router and Hummingbird. When another process calls in — a worker or a service on an internal descriptor — the monolith adds the internal listener below. The Router and Hummingbird sections are the building-swift-http-surfaces skill's ([surface.md](../../building-swift-http-surfaces/references/surface.md#composition)).
+- The descriptors come from each `<Module>GRPC`, where the in-package contracts are generated. A monolith dials nothing over gRPC unless it consumes a service outside itself, and its modules never call each other over the network.
+- A symmetric key, where the project records one, replaces the two key lines with an `HMACKey` read by `HMACKey+ConfigReader.swift` and added to one `JWTKeyCollection` both the issuer and the authenticator take ([identity-and-access.md](identity-and-access.md#one-issuer-asymmetric-keys)).
 
-**Composition.** Construct one `PostgresDatabase` per module per role over the shared clients, `PostgresDatabase<Postgres<Module>Scope>(client:logger:)` over the service client and `PostgresDatabase<Postgres<Module>InternalScope>(client:logger:)` over the internal one, then policies, use cases (each over the database its scope admits, passing `logger`), workflow-client adapters, and one transport implementation per contract: a gRPC service per proto service, a controller per resource. Say in a comment which database each use case runs on and why, because that sentence is the authorization design.
+## Two listeners: client-facing and internal
 
-## Composing a monolith
-
-The root of a monolith does what a service's root does, once per module, and one thing more: it satisfies each module's cross-module ports with another module's use case.
-
-```swift
-// MARK: - Composition
-// Two clients, one per role; one database per module per role it uses. Every tenant-scoped database
-// reads the same caller setting, bound once at the transport.
-let catalogDatabase = PostgresDatabase<PostgresCatalogScope>(client: serviceClient, logger: logger)
-let usersDatabase = PostgresDatabase<PostgresUsersScope>(client: serviceClient, logger: logger)
-let usersInternalDatabase = PostgresDatabase<PostgresUsersInternalScope>(client: internalClient, logger: logger)
-
-// Users: a person reads their own profile under the tenant policy; other modules resolve
-// an account by id on the internal role.
-let getProfileUseCase = GetProfileUseCase(database: usersDatabase, logger: logger)
-let resolveAccountUseCase = ResolveAccountUseCase(database: usersInternalDatabase, logger: logger)
-let usersController = UserController(getProfileUseCase: getProfileUseCase, /* … */)
-
-// Catalog: its AccountClient port is Users' use case, called locally through a few lines in the
-// executable that convert Users' entity into Catalog's Account. Were Users its own service, this
-// one argument would be GRPCAccountClient over a GRPCClient instead, and nothing in CatalogCore
-// would change. Items are not tenant rows, so Catalog has one scope, and its administrator's
-// create runs there.
-let accounts = UsersAccountClient(resolveAccountUseCase: resolveAccountUseCase)
-let createItemUseCase = CreateItemUseCase(database: catalogDatabase, accounts: accounts, logger: logger)
-let itemController = ItemController(createItemUseCase: createItemUseCase, /* … */)
-let itemService = ItemService(createItemUseCase: createItemUseCase, /* … */)          // with gRPC
-```
-
-Compose modules in dependency order, producers before consumers, so a port is satisfied by a value that already exists. A cycle between two modules' ports is a design fault; resolve it by reconsidering ownership, never by a lazy reference. Keep the port call outside the consumer's `withTransaction`, except for the bounded single-use-secret rotation read documented in [core.md](core.md#database-boundary).
-
-The root, and only the root, imports every module. A module that imports another compiles today and cannot be moved tomorrow.
-
-## The HTTP sections
-
-With HTTP, the root adds **Router** and **Hummingbird** sections after Composition: one router on `BasicRequestContext` with every module's controllers in the three tiers, and the application read by `ApplicationConfiguration(reader:)` scoped to `http.server`, owned by the same `ServiceGroup`. Both are the building-swift-http-surfaces skill's, in its [surface reference](../../building-swift-http-surfaces/references/surface.md#composition).
-
-## The gRPC section
-
-Construct one server with every proto service the process serves, every module's in a monolith, and apply the identifying interceptors to every `<Entity>Service`, never to an internal one:
+A process that apps or partners call directly and that another process also calls runs two `GRPCServer`s in one `ServiceGroup`, over the same use cases and reloader: the client-facing one carries every `<Entity>Service` behind the bearer and settings interceptors on server TLS; the internal one, on its own port, carries every `<Entity>InternalService` on mTLS with no application interceptor. Never register an internal descriptor on the client-facing listener.
 
 ```swift
 // MARK: - gRPC
-let serverConfig = config.scoped(to: "grpc.server")
+let internalServerConfig = config.scoped(to: "grpc.internalServer")
 let server = GRPCServer(
     transport: .http2NIOPosix(
-        address: .ipv4(
-            host: try serverConfig.requiredString(forKey: "host"),
-            port: try serverConfig.requiredInt(forKey: "port")
-        ),
-        transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader)
+        address: .ipv4(host: try serverConfig.requiredString(forKey: "host"), port: try serverConfig.requiredInt(forKey: "port")),
+        transportSecurity: try .serverTLS(certificateReloader: certificateReloader),          // the edge proxy dials it
+        config: HTTP2ServerTransport.Posix.Config(config: serverConfig)
     ),
-    services: [itemService, userService],
+    services: [userService],
     interceptorPipeline: [
-        .apply(
-            BearerAuthenticationInterceptor(authenticator: userAuthenticator),
-            to: .services([
-                <Organization>_Catalog_V1_ItemService.descriptor,
-                <Organization>_Users_V1_UserService.descriptor,
-            ])
-        ),
-        .apply(
-            UserSettingsInterceptor(),   // only where tenant tables exist: the bound user becomes the tenant setting
-            to: .services([
-                <Organization>_Users_V1_UserService.descriptor,   // items are not tenant rows
-            ])
-        ),
+        .apply(BearerAuthenticationInterceptor(authenticator: userAuthenticator), to: .services([<Organization>_Users_V1_UserService.descriptor])),
+        .apply(UserSettingsInterceptor(), to: .services([<Organization>_Users_V1_UserService.descriptor])),
     ]
 )
+let internalServer = GRPCServer(
+    transport: .http2NIOPosix(
+        address: .ipv4(host: try internalServerConfig.requiredString(forKey: "host"), port: try internalServerConfig.requiredInt(forKey: "port")),
+        transportSecurity: try .mTLS(config: tlsConfig, certificateReloader: certificateReloader),  // processes only
+        config: HTTP2ServerTransport.Posix.Config(config: internalServerConfig)
+    ),
+    services: [userInternalService]
+)
+// Lifecycle: [lokiProcessor, serviceClient, internalClient, certificateReloader, server, internalServer]
 ```
 
-Internal descriptors have no application authentication interceptor. `BearerAuthenticationInterceptor` binds users on `<Entity>Service` descriptors without requiring one; `UserSettingsInterceptor` follows it where tenant tables exist, and each handler requires what its RPC needs. The backend listener still requires mTLS for every descriptor. Keep internal operations private and outside gateway routes. A monolith uses local calls between its modules rather than internal network hops.
+The internal port is reachable only on the private network and never routed by the edge proxy. A microservice behind a gateway does not split: only processes dial it, so its one listener is internal.
 
 ## Lifecycle
 
-Own every long-lived runnable dependency with ServiceLifecycle:
+One `ServiceGroup` owns every long-lived runnable dependency with graceful shutdown on `.sigint` and `.sigterm` (from `UnixSignals`): the log processor, every `PostgresClient`, every certificate reloader, every `GRPCClient`, the application with HTTP, the server with gRPC, both when both. With Temporal, `serve` also builds one long-lived `TemporalClient`, injects `<Feature>WorkflowClient` adapters into Core use cases, and adds the client to the group; it never runs workflow definitions or Activities ([worker.md](../../orchestrating-temporal-workflows/references/worker.md)).
 
-```swift
-// MARK: - Lifecycle
-let serviceGroup = ServiceGroup(
-    services: [lokiProcessor, certificateReloader, serviceClient, internalClient, accountsClient, application, server],
-    gracefulShutdownSignals: [.sigint, .sigterm],
-    logger: logger
-)
-try await serviceGroup.run()
-```
-
-Include the application with HTTP, the server with gRPC, both when both. When the package uses Temporal, construct one long-lived `TemporalClient` in `serve`, inject a `<Feature>WorkflowClient` adapter into Core use cases, and include the client in `ServiceGroup`. Do not run workflow definitions or Activity implementations in the serving process.
-
-A project may record borrowed SDK-managed HTTP singletons such as `HTTPClient.shared` as a lifecycle exception in `AGENTS.md`. The application does not own or shut down that singleton; requests still belong to the RPC or Activity making them. An explicitly constructed HTTP client remains the application's shutdown responsibility.
+A project may record borrowed SDK-managed HTTP singletons such as `HTTPClient.shared` as a lifecycle exception in `AGENTS.md`. The application does not own or shut down that singleton; an explicitly constructed HTTP client remains the application's shutdown responsibility.
 
 ## The gateway composition root
 
@@ -282,27 +546,14 @@ A gateway's root — the authenticator, one mTLS `GRPCClient` per upstream with 
 
 ## Transport security factories
 
-Configure service connections with the `tls` reader and Temporal with `temporal.tls`. Each scope has its own certificate/key pair and trust bundle from application defaults. Use the configuration pattern in [configuration.md](configuration.md); adapters accept a reader, not a directory or default-path argument.
-
-Declare `NIOCertificateReloading` from swift-nio-extras and `GRPCServiceLifecycle` from grpc-swift-extras directly in the executable. Prime one `TimedCertificateReloader` per credential pair before constructing any transport:
+Configure service connections with the `tls` reader; each scope has its own certificate/key pair and trust bundle from application defaults, and adapters accept a reader, not a directory or default-path argument ([configuration.md](configuration.md)). Declare `NIOCertificateReloading` from swift-nio-extras and `GRPCServiceLifecycle` from grpc-swift-extras directly in the executable. Prime one `TimedCertificateReloader` per credential pair before constructing any transport, as both roots above do; `makeReloaderValidatingSources` loads and validates the initial pair without starting the reload loop. Own the reloader exactly once in the same `ServiceGroup` as the transports, and share it across clients and the listener only when the pair supports both purposes.
 
 ```swift
-let tlsConfig = config.scoped(to: "tls")
-var reloaderConfig = try TimedCertificateReloader.Configuration(config: tlsConfig)
-reloaderConfig.logger = logger
-reloaderConfig.onCertificateLoadFailed = { failure in
-    logger.warning("TLS certificate reload failed", metadata: ["error": "\(failure.error)"])
-}
-let certificateReloader = try TimedCertificateReloader.makeReloaderValidatingSources(
-    configuration: reloaderConfig
-)
-```
+// Sources/<Service>/Configuration/HTTP2ClientTransport.Posix.TransportSecurity+ConfigReader.swift
+import Configuration
+import GRPCNIOTransportHTTP2
+import NIOCertificateReloading
 
-The factory loads and validates the initial pair. Configuration construction does not start the reload loop. Own the reloader exactly once in the same `ServiceGroup` as the transports. Share it across service clients and the service listener only when the pair supports both purposes. Always construct a separate Temporal reloader with `config.scoped(to: "temporal.tls")`; it is a required lifecycle dependency, not an optional alternate path.
-
-The transport factories read trust relative to their reader and take the reloader as a runtime dependency:
-
-```swift
 extension HTTP2ClientTransport.Posix.TransportSecurity {
     static func mTLS(config: ConfigReader, certificateReloader: any CertificateReloader) throws -> Self {
         let trustRootsPath = try config.requiredString(forKey: "trustRootsPath")
@@ -312,6 +563,13 @@ extension HTTP2ClientTransport.Posix.TransportSecurity {
         }
     }
 }
+```
+
+```swift
+// Sources/<Service>/Configuration/HTTP2ServerTransport.Posix.TransportSecurity+ConfigReader.swift
+import Configuration
+import GRPCNIOTransportHTTP2
+import NIOCertificateReloading
 
 extension HTTP2ServerTransport.Posix.TransportSecurity {
     static func mTLS(config: ConfigReader, certificateReloader: any CertificateReloader) throws -> Self {
@@ -324,13 +582,47 @@ extension HTTP2ServerTransport.Posix.TransportSecurity {
 }
 ```
 
-Import `Configuration`, `GRPCNIOTransportHTTP2`, and `NIOCertificateReloading` in these extension files. Server-side `.noHostnameVerification` still requires and verifies a client certificate against explicit trust; clients retain full server chain and hostname verification. An internal listener has no plaintext mode.
+Server-side `.noHostnameVerification` still requires and verifies a client certificate against explicit trust; clients retain full chain and hostname verification. That is every internal listener.
 
-Put server connection settings in `HTTP2ServerTransport.Posix.Config+ConfigReader.swift`. For example, read `maxConnectionAgeSeconds` as `Duration` with a 300-second default and `connectionGraceTimeSeconds` with a 30-second default. Choose bounds that fit certificate lifetime and long-running RPCs; keep them below the operational renewal budget. Do not scatter duration conversions or validation guards through the commands.
+A client-facing listener — apps or partners behind the edge proxy — presents the same leaf and requires no client certificate; the bearer interceptor identifies its callers. Add it to the same file:
 
-The reloader changes the leaf pair used on new handshakes. It does not issue certificates, refresh a trust bundle, or re-authenticate existing connections. Failed updates retain the last usable pair and retry. Deployment owns Smallstep issuance/renewal, expiry monitoring, coordinated key publication, and CA rotation; see the delivery skill's [environment reference](../../delivering-swift-services/references/environment.md#transport-security-the-certificate-volume).
+```swift
+extension HTTP2ServerTransport.Posix.TransportSecurity {
+    /// Client-facing: server-side TLS the edge proxy verifies; callers are identified by bearer JWT.
+    static func serverTLS(certificateReloader: any CertificateReloader) throws -> Self {
+        try .tls(certificateReloader: certificateReloader) {
+            $0.clientCertificateVerification = .doNotVerify
+        }
+    }
+}
+```
 
-**Every client waits for the connection, bounded by a deadline.** A gRPC call made while its channel is not ready fails fast by default, the error a caller hits on the first request after an idle period, a peer restart, or a rolling deploy. Enable *wait-for-ready* once as a client-wide default rather than per call: a `ServiceConfig` with one `MethodConfig` whose name is the empty-service global bucket (`MethodConfig.Name(service: "")`, the fallback the transport returns for any method with no more specific entry) applies to every method, with `waitForReady: true` and a `timeout` so a genuinely-down upstream still fails instead of hanging the caller forever.
+An HTTP listener gets the same with HummingbirdTLS: `server: try .tls(.http1(), tlsConfiguration: .makeServerConfiguration(certificateReloader: certificateReloader))`. The leaf's DNS SANs include the name the proxy dials. No listener has a plaintext mode.
+
+Server connection settings, including keepalive, come from the `grpc.server` reader:
+
+```swift
+// Sources/<Service>/Configuration/HTTP2ServerTransport.Posix.Config+ConfigReader.swift
+import Configuration
+import GRPCNIOTransportHTTP2
+
+extension HTTP2ServerTransport.Posix.Config {
+    init(config: ConfigReader) {
+        let maxConnectionAge = config.int(forKey: "maxConnectionAgeSeconds", as: Duration.self, default: .seconds(300))
+        let connectionGraceTime = config.int(forKey: "connectionGraceTimeSeconds", as: Duration.self, default: .seconds(30))
+        self = .defaults {
+            $0.connection.maxAge = maxConnectionAge
+            $0.connection.maxGraceTime = connectionGraceTime
+            // Accept idle client pings through the service load balancer.
+            $0.connection.keepalive.clientBehavior = .init(minPingIntervalWithoutCalls: .seconds(60), allowWithoutCalls: true)
+        }
+    }
+}
+```
+
+Choose the connection age below the certificate's renewal budget so connections re-handshake onto renewed leaves. The reloader changes the leaf pair used on new handshakes; it does not issue certificates, refresh a trust bundle, or re-authenticate existing connections, and a failed update keeps the last usable pair. Issuance, renewal, expiry monitoring, and CA rotation are the delivery skill's ([environment reference](../../delivering-swift-services/references/environment.md#transport-security-the-certificate-volume)).
+
+**Every client waits for the connection, bounded by a deadline.** A call made while its channel is not ready fails fast by default, which a caller hits after an idle period, a peer restart, or a rolling deploy. Set *wait-for-ready* once, client-wide, through the empty-service global `MethodConfig` bucket, with a `timeout` so a down upstream still fails:
 
 ```swift
 extension ServiceConfig {
@@ -346,92 +638,56 @@ extension ServiceConfig {
 }
 ```
 
-Pass it as `serviceConfig:` to every client's `.http2NIOPosix`, beside the mTLS factory. Do not reach for per-RPC `CallOptions` to set this: the generated call sites are scattered through use cases and adapters, and there is no single place to set a default `CallOptions`; `ServiceConfig` is that single place. The two are the same knob at different layers: the SDK unions a call's `CallOptions` with the method's `ServiceConfig`, filling only fields the call left unset, so `ServiceConfig` is the base default and `CallOptions` stays the per-RPC override for the rare call that needs a different timeout. The `GRPCServer` transport takes no service config, and Temporal uses its SDK’s client settings.
+Pass it as `serviceConfig:` to every client's `.http2NIOPosix`, beside the mTLS factory. A call's `CallOptions` fill only fields the call sets, so `ServiceConfig` is the base default and `CallOptions` the per-RPC override. `GRPCServer` takes no service config.
 
-**Temporal has a dedicated credential scope.** Construct its transport with `temporal.tls` and a separate primed reloader. Use the Temporal SDK’s native reader for client/worker settings. Configure trust for the actual endpoint; the client validates its server hostname and CA chain. Both service and Temporal reloaders are required entries in the lifecycle when both are used.
+Temporal always has its own credential scope, `temporal.tls`, and its own primed reloader; see [worker.md](../../orchestrating-temporal-workflows/references/worker.md).
 
 ## Temporal worker composition root
 
-The worker is `worker run` on the executable, in `<Project>/Worker/` or `<Service>/Worker/`: `Worker` is a command group and `Run` the command whose `run()` is its own composition root, in the same section order as `serve` with a Worker section in place of the transport sections. `run` is the group's default, so `<executable> worker` alone starts it too; a group rather than a bare command so an operator command about the worker has somewhere to go beside `run`. It shares the executable's `Configuration/` extensions rather than carrying copies, and reads from `PostgresConfiguration` only the worker role:
-
-```swift
-struct Worker: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "worker",
-        abstract: "The Temporal worker",
-        subcommands: [Run.self],
-        defaultSubcommand: Run.self
-    )
-}
-
-struct Run: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "run",
-        abstract: "Run the Temporal worker"
-    )
-
-    func run() async throws {
-        // MARK: - Configuration
-        // MARK: - Logging
-        // MARK: - Infrastructure
-        // MARK: - Composition
-        // MARK: - Worker
-        // MARK: - Lifecycle
-    }
-}
-```
-
-There is one image, the package's. The worker application runs it with `worker run` as its command, at the same tag as the serving application, because the two share one schema and one contract. `worker run` must not open a server or read the verifying key; keep those dependencies out of the worker command. In a monolith one worker runs every module's workflows, and its Composition builds each module's worker-scoped database and Activity service in module order.
-
-The worker reaches its own database directly, as the worker role, and other services through their internal services as itself (see *Worker composition* in the orchestrating-temporal-workflows skill). Under Infrastructure, construct one `PostgresClient` from `postgres.worker`, and the long-lived gRPC and provider clients its Activities call, the gRPC clients with no interceptor, because the certificate on the connection is the credential. Under Composition, build `PostgresDatabase<Postgres<Module>WorkerScope>` over the client, the worker's use cases over it (those taking `input:` alone), the Core Activity service over those use cases, and the consumer adapters over the internal-service clients. Then create one `TemporalWorker`:
-
-```swift
-let temporalWorker = try TemporalWorker(
-    configuration: .init(configReader: temporalConfig),
-    target: .dns(
-        host: temporalHost,
-        port: temporalConfig.int(forKey: "port", default: 7233)
-    ),
-    transportSecurity: try .mTLS(config: temporalTLSConfig, certificateReloader: temporalCertificateReloader),
-    activityContainers: ReservationActivities(service: activityService),
-    workflows: [ReservationWorkflow.self],
-    logger: logger
-)
-```
-
-The configuration comes from the SDK's **own** reader, `TemporalWorker.Configuration(configReader:)`, handed the `temporal` scope, never a hand-built one; the serve side's client is the same shape, `TemporalClient.Configuration(configReader:)`. Preserve the SDK's environment names: `TEMPORAL_WORKER_NAMESPACE`, `_TASKQUEUE`, `_BUILDID`, `_CLIENT_IDENTITY`, and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`. Required SDK values may come from application defaults, such as a project task queue; otherwise the environment must supply them. `_HEARTBEATINTERVALMS` is optional; set it (60000 is a sane interval) so the worker reports liveness, which the SDK default disables. The client reads `TEMPORAL_CLIENT_NAMESPACE` and `_CLIENT_INSTRUMENTATION_SERVERHOSTNAME`. Only the dial target and transport factory remain the composition root's job.
-
-Add the worker, the Temporal certificate reloader, the service `tls` reloader when its Activities call another service, and every owned runnable dependency used by Activities directly to one `ServiceGroup` services array; the recorded borrowed HTTP-singleton exception also applies here. Do not add a periodic database-to-Temporal reconciliation service. Temporal owns durable workflow execution.
-
-A worker has no inbound user request to forward. When its Activities call another service, it calls internal operations over mTLS with its mounted certificate/key pair; unusable files fail while priming the reloader, and the receiver admits peers through its configured CA trust. Internal handlers pass business input directly to use cases. The same applies to a scheduled job; a provider webhook is different, an `<Entity>Service` RPC anyone may call, proved by the provider's signature in the request. See [identity-and-access.md](identity-and-access.md).
+The worker is `worker run` on the same executable, in `<Project>/Worker/` or `<Service>/Worker/`: its own composition root with a Worker section in place of the transport sections, the worker role and scope, no server, and no verifying key. Its command group, root, configuration readers, and TLS are the orchestrating-temporal-workflows skill's [worker.md](../../orchestrating-temporal-workflows/references/worker.md).
 
 ## Migrations at boot
 
-`serve --migrate-database` applies migrations after logging bootstrap and before any long-lived infrastructure exists. The postgres scope is read once into the executable-local `PostgresConfiguration` above, which derives every connection the process makes. The owner client lives exactly as long as the apply, through a scoped helper that starts it in a task group and cancels it when the operation returns:
+`serve --migrate-database` applies migrations after the logging bootstrap and before any long-lived client exists, over an owner client that lives exactly as long as the apply: `PostgresClient.withClient` from `PersistencePostgres` starts it in a task group and cancels it when the operation returns or throws (both roots above). The long-lived clients are built from `postgres.service` and `postgres.internalService` and never hold owner credentials. The owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
+
+`Migrations` is a small struct in `Database/Migrations.swift`. What goes in the list, and in what order, is [persistence.md](persistence.md#the-migration-list)'s:
 
 ```swift
-if migrateDatabase {
-    try await PostgresClient.withClient(configuration: postgres.owner, logger: logger) { client in
-        try await Migrations(client: client, configuration: postgres, logger: logger).run()
+// Sources/Backend/Database/Migrations.swift
+import CatalogPostgres
+import Logging
+import PostgresMigrations
+import PostgresNIO
+import UsersPostgres
+
+/// Every migration, in the order databases apply them, over a short-lived owner connection. Only append.
+struct Migrations {
+    let client: PostgresClient
+    let configuration: PostgresConfiguration
+    let logger: Logger
+
+    func run() async throws {
+        let migrations = DatabaseMigrations()
+        try await migrations.add(
+            CreateServiceRole(role: configuration.serviceUser, password: configuration.servicePassword, database: configuration.database)
+        )
+        try await migrations.add(
+            CreateInternalRole(role: configuration.internalUser, password: configuration.internalPassword, database: configuration.database)
+        )
+        await migrations.add(CreateUsersTable())
+        await migrations.add(CreateUsersRLSPolicy(internalRole: configuration.internalUser))
+        await migrations.add(CreateItemsTable())   // items are not tenant rows: no policy
+
+        try await migrations.apply(client: client, logger: logger, dryRun: false)
+        logger.info("Migrations applied")
     }
 }
 ```
 
-`PostgresClient.withClient` comes from `PersistencePostgres`: it starts the client in a task group and cancels it when the operation returns or throws. `Migrations.run()` in `Database/Migrations.swift` adds every migration explicitly, one call each, in the order databases apply them: in a new package the role migrations first, `CreateServiceRole` before the others, reading each role's password from the configuration, then each module's tables and policies in module dependency order, and applies the list:
+In a monolith the role migrations are the executable's own (`Database/Role/`); in a service they come from `<Service>Postgres`, which the file imports.
 
-```swift
-await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: try configuration.servicePassword, database: configuration.database))
-await migrations.add(CreateInternalRole(role: configuration.internalUser, password: try configuration.internalPassword, database: configuration.database))
-await migrations.add(CreateUsersTable())
-await migrations.add(CreateUsersRLSPolicy(internalRole: configuration.internalUser))
-await migrations.add(CreateItemsTable())
-try await migrations.apply(client: client, logger: logger, dryRun: false)
-```
-
-A service has one module, so its list is the roles and that module's migrations. The library refuses a reordered list, so a new migration is appended at the end, after every migration already applied, and nothing is ever reordered or removed; a role the developer adds later is appended the same way, before the policies that name it. This one file is where the order lives. The long-lived clients the `ServiceGroup` owns are built from `postgres.service` and `postgres.internalService` and never hold owner credentials; the owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
-
-The flag is the default because it needs no platform support: one container, one command, and the schema is current before the port opens. The alternative is a `migrate` subcommand running the same `Migrations.run()` and exiting, deployed as a one-shot job before the rollout, for a platform that orders jobs (an init container, a pre-deploy hook) or starts several replicas at once. Replicas that migrate at boot instead serialize the apply with a Postgres advisory lock taken around the list; which of the two a project uses is its choice, recorded once. Either way the rule holds: nothing serves an unmigrated schema, and only the migration client ever connects as the owner.
+The flag is the default because it needs no platform support: one container, one command, and the schema is current before the port opens. The alternative is a `migrate` subcommand running the same `Migrations.run()` and exiting, deployed as a one-shot job before the rollout, for a platform that orders jobs or starts several replicas at once; replicas that migrate at boot instead serialize the apply with a Postgres advisory lock around the list. Either way nothing serves an unmigrated schema, and only the migration client connects as the owner.
 
 ## Operator commands
 
-An operation that must never be reachable over the network, a data repair, a one-off export, is a subcommand, run by an operator against the package's own database. It follows the boot-migration shape: short-lived, stdout logging, a scoped client around the work. Print exactly the value the operator needs on standard output and nothing else there, so a redirect captures it. The stack's CA issues process certificates, as described by the delivering-swift-services skill.
+An operation that must never be reachable over the network, a data repair, a one-off export, is a subcommand, run by an operator against the package's own database. It follows the boot-migration shape: short-lived, stdout logging, a scoped client around the work. Print exactly the value the operator needs on standard output and nothing else there, so a redirect captures it.

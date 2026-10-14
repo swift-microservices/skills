@@ -1,6 +1,6 @@
 ---
 name: building-swift-server-libraries
-description: Builds or changes a reusable Swift server library package the swift-microservices way, such as swift-persistence, a swift-persistence-<store> driver, a swift-authentication-<technology> binding, or an organization's <project>-core. One concept per package cut by its dependency set, one product, low version floors, tagged SemVer releases with labels, a small documented public API with caller-isolated scoped callbacks and OperationContext keys, no logging bootstrap or environment reading, swift-testing with isolation contract tests and real-provider driver tests, README, AGENTS.md profile, DocC, and the library CI profile. Use when creating a Swift library package for server use, adding public API, a driver, a binding, or a product to one, raising its dependency floors, preparing a release, or editing a library's Package.swift, Sources, Tests, README, or AGENTS.md.
+description: Builds or changes a reusable Swift server library package the swift-microservices way, such as swift-persistence, a storage driver or transport binding beside it, an organization's core package of shared identity, tenant settings, and test doubles, or its proto package of gRPC contracts. Covers one concept per dependency set, low version floors, SemVer releases, a small documented API with caller-isolated callbacks and OperationContext keys, isolation contract and real-provider tests, README, AGENTS.md, and DocC. Use when creating a Swift library package for server use; adding public API, a driver, a binding, an OperationContext key, or a product to one; building or changing the organization core package or the proto package; raising dependency floors; preparing a release; or editing a library's Package.swift, Sources, Tests, README, or AGENTS.md.
 ---
 
 # Building Swift server libraries
@@ -19,13 +19,14 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 | Any public declaration | [api.md](references/api.md) — access and imports, protocol-shaped surfaces, errors, scoped callbacks and isolation, `OperationContext` keys, logging, configuration, lifecycle, documentation |
 | Tests | [testing.md](references/testing.md) — what a library test proves, isolation contract tests, bindings, real providers |
 | README, `AGENTS.md`, DocC, `.spi.yml`, headers, formatter | [repository.md](references/repository.md) |
-| `<project>-core` or `<project>-protos` | [organization-layer.md](references/organization-layer.md) |
+| `<project>-core` or `<project>-protos`, or a monolith's shared targets | [organization-layer.md](references/organization-layer.md) — when it is a package, products and their exceptions, protos, private repositories |
+| Writing or reviewing `<project>-core` code, manifest, or tests | [organization-core-code.md](references/organization-core-code.md) — the complete manifest, every source file, the required tests |
 | Swift settings, Foundation, style | the writing-swift-server-code skill's [swift-settings.md](../writing-swift-server-code/references/swift-settings.md), [foundation.md](../writing-swift-server-code/references/foundation.md), and [style.md](../writing-swift-server-code/references/style.md) |
 | CI workflows, gates, and exceptions | the delivering skill's [library-ci.md](../delivering-swift-services/references/library-ci.md) |
 
 ## Principles
 
-1. **A package is one concept and one dependency set.** A consumer that imports it acquires exactly the technology its name promises. A type that needs a new dependency belongs in another package; the organization layer's two recorded exceptions are in [organization-layer.md](references/organization-layer.md).
+1. **A package is one concept and one dependency set.** A consumer that imports it acquires exactly the technology its name promises. A type that needs a new dependency belongs in another package; the organization layer's exceptions are recorded once, in [organization-layer.md](references/organization-layer.md#product-exceptions).
 2. **Generic machinery knows nothing of an organization.** Claims, roles, setting names, contracts, and authorization belong to the organization layer and the owning services.
 3. **The public API is a contract.** Small, `Sendable`, documented on every declaration, proven by a test per guarantee, and changed only with the SemVer label the change needs.
 4. **Preserve the caller.** A scoped callback runs on the caller's isolation, an error reaches the caller unchanged, and a library never takes over logging, configuration, or lifecycle from the application that composes it.
@@ -35,8 +36,8 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 
 ### Package
 
-1. Name the repository `swift-<concept>` for an abstraction and `swift-<concept>-<technology>` for its driver or binding; the product and module are `<Concept>` or `<Concept><Technology>`, with no organization prefix; an organization-layer product carries `<Project>`.
-2. Expose one library product unless a second dependency set must be avoidable by consumers. A driver or binding depends on its abstraction by tagged URL, never `.package(path:)` or a branch.
+1. Name the repository `swift-<concept>` for an abstraction and `swift-<concept>-<technology>` for its driver or binding; the product and module are `<Concept>` or `<Concept><Technology>`, with no organization prefix; an organization-layer product carries `<Project>`, except `<project>-protos`'s `<Module>Protos`.
+2. Expose one library product unless a second dependency set must be avoidable by consumers. A driver or binding depends on its abstraction by tagged URL, never `.package(path:)` or a branch. A one-package monolith keeps `<Project>Authentication`, `<Project>Persistence`, and `<Project>Testing` in-package until a second package needs them; then they move to a tagged `<project>-core`.
 3. Use Swift tools 6.3, the compact license header after the tools-version line, one shared settings array with the four upcoming features attached to every target and test target, `swiftLanguageModes: [.v6]`, and `.macOS(.v15)`; a package meant for apps too declares their platforms. No unsafe flags, `@preconcurrency`, or default MainActor isolation.
 4. Set each `from:` to the oldest release the library relies on and raise it deliberately, saying why; never add a ceiling. Declare traits explicitly where defaults pull in full Foundation, and record an unavoidable upstream full-Foundation product as a profile exception.
 5. Never commit `Package.resolved`.
@@ -47,9 +48,9 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 7. `public` only for what consumers use; `public import` exactly where an imported type appears in public API. Every public type and protocol is `Sendable` where meaningful; mutable shared state lives in an actor or behind a `Mutex`.
 8. Shape substitution points as protocols with primary associated types, and make concrete types generic over the consumer's own types. A requirement returns what it promises or throws; it never returns an optional to mean "declined".
 9. Keep a scoped callback plain, nonescaping, and caller-isolated, `(Scope) async throws -> T` with `T: Sendable`, with neither `@Sendable` nor `@concurrent`, in the requirement, every implementation, and every double; forward with `isolation: #isolation`. Match a framework's `@concurrent` continuation requirement exactly where one is imposed.
-10. Use swift-operation-context for shared task-scoped values: declare an `OperationContextKey` with a Sendable value and a typed accessor. A binding copies `OperationContext.current`, sets its value, and scopes the continuation with `OperationContext.withContext`, keeping the framework's own state in step.
+10. Use swift-operation-context for shared task-scoped values: declare an `OperationContextKey` with a Sendable value and a typed accessor, the key internal when only the library writes it and public (or behind a public binding) when other packages establish it. A binding copies `OperationContext.current`, sets its value, and scopes the continuation with `OperationContext.withContext`, keeping the framework's own state in step.
 11. Let errors reach the caller unchanged; translate only at a transport boundary, to the framework's unauthenticated error with a stable message.
-12. Take a `Logger` as the last initializer parameter, with no default; only a trailing operation closure follows it. Never bootstrap logging, read the environment, construct a configuration provider, open fixed paths, or own global lifecycle. A convenience `init(config:)` reads relative keys and delegates to the typed initializer; a long-lived runnable conforms to `Service`.
+12. Take a `Logger` last with no default; never bootstrap logging, read the environment, or own global lifecycle ([api.md](references/api.md#logging-configuration-and-lifecycle)).
 13. Document every public declaration with a one-line summary, and keep a DocC catalog that builds without warnings, with articles for contracts a signature cannot state.
 
 ### Tests and repository
@@ -57,7 +58,7 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 14. Test on swift-testing in `<Module>Tests` with plain imports, one test per public guarantee, doubles inside the test target, and framework in-memory harnesses for bindings.
 15. A package that owns a caller-isolated callback API tests it from a custom actor and from `@MainActor`, suspending inside the closure and checking isolation on both sides, plus thrown-error propagation and cancellation.
 16. A driver proves commit, rollback, and its settings against the real provider, configured from `POSTGRES_*` environment variables with a `scripts/test.sh` that starts an ephemeral server; CI provides the database and fails without it.
-17. Keep README, `AGENTS.md`, DocC, and `.spi.yml` true to the released API: install snippets at the current floor, the family table complete, every profile exception stated with its replacement coverage.
+17. Keep README, `AGENTS.md`, DocC, and `.spi.yml` (public repositories only) true to the released API: install snippets at the current floor, the family table complete, every profile exception stated with its replacement coverage.
 18. Apply the delivering skill's library CI profile as written; start `.swift-format` from its sample formatter unless the profile records another, and lint all tracked Swift, manifests included.
 
 ## Workflow
@@ -70,7 +71,7 @@ Create a library:
 - [ ] 2. Manifest: name, header, settings array on every target, platforms, one product, floors, explicit traits
 - [ ] 3. API: protocols with primary associated types, Sendable types, caller-isolated callbacks, OperationContext keys, Logger last, documentation on every declaration
 - [ ] 4. Tests: one per guarantee; isolation contract tests for scoped callbacks; real-provider tests and scripts/test.sh for a driver
-- [ ] 5. Repository: README, AGENTS.md profile, DocC catalog, .spi.yml, .swift-format, header template, .licenseignore, .gitignore with Package.resolved
+- [ ] 5. Repository: README, AGENTS.md profile, DocC catalog, .spi.yml (public repositories), .swift-format, header template, .licenseignore, .gitignore with Package.resolved
 - [ ] 6. CI from the library profile; then swift build, swift test (or scripts/test.sh), and git ls-files -z '*.swift' | xargs -0 swift-format lint --strict
 - [ ] 7. Release: one SemVer label, the repository's release mechanism (Auto Release or a hand-cut tag), then raise consumers' floors
 ```
@@ -90,7 +91,7 @@ Do not call work complete until every applicable gate passes.
 - The package builds and its tests pass with `swift build` and `swift test` (a driver against a real provider), with every owned target on the shared settings and no diagnostic silenced.
 - The manifest declares only used products and packages, by tagged URL, with floors the library needs and explicit traits; no `Package.resolved` is tracked.
 - Every public declaration is documented, `Sendable` where meaningful, and covered by a test of its guarantee; scoped callbacks are caller-isolated and proven so from an actor and from `@MainActor`.
-- No library type bootstraps logging, reads the environment, decides authorization, names an organization's claims, or declares its own task-local.
-- README, `AGENTS.md`, DocC, and `.spi.yml` describe the released API; the pull request carries exactly one SemVer label matching the change.
+- No library type bootstraps logging, reads the environment, decides authorization, or names an organization's claims, and none but swift-operation-context's `OperationContext.current` is a task-local.
+- README, `AGENTS.md`, DocC, and (in a public repository) `.spi.yml` describe the released API; the pull request carries exactly one SemVer label matching the change.
 
 If a gate requires an unresolved API, compatibility, or release decision — removing public API, raising a floor consumers cannot meet, or a major release — stop at the safe boundary and request that decision rather than inventing behavior.

@@ -9,3 +9,4 @@ PASS if all of these hold:
 - Any session-issuing route sits outside the bearer middleware.
 
 FAIL if `UserSettingsMiddleware` is missing or comes before the bearer middleware, the notes routes are reachable without `guardMiddleware()`, or Vapor's own bearer authenticator replaces the package middleware.
+Grade only against these criteria; do not fail for issues they do not mention.

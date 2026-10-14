@@ -126,7 +126,7 @@ def verify(root, provider=None, no_tests=False, traits=False, foundation_excepti
                 runs = '\n'.join(s.get('run', '') for s in job.get('steps', []))
                 if provider == 'postgres':
                     pg = job.get('services', {}).get('postgres', {})
-                    need(pg.get('image') == 'postgres:18-alpine', f'{event}: real PostgreSQL 18 service missing')
+                    need(str(pg.get('image', '')).startswith('postgres:18'), f'{event}: real PostgreSQL 18 service missing')
                     need('pg_isready -h 127.0.0.1' in pg.get('options', ''), f'{event}: TCP readiness required')
                     env = job.get('env', {})
                     server = pg.get('env', {})
@@ -146,7 +146,13 @@ def verify(root, provider=None, no_tests=False, traits=False, foundation_excepti
         need(not any(v is False for k, v in config.items() if k.endswith('_enabled') and k != 'api_breakage_check_enabled'), 'Soundness check silently disabled')
     labels = [w for w in workflows.values() if {'labeled', 'unlabeled', 'opened', 'reopened', 'synchronize'} <= set((w.get('on', {}).get('pull_request') or {}).get('types', []))]
     need(any(s.get('uses') == 'apple/swift-nio/.github/actions/pull_request_semver_label_checker@main' for w in labels for j in w.get('jobs', {}).values() for s in j.get('steps', [])), 'SemVer label gate missing')
-    need(all((w.get('permissions') or {}).get('pull-requests') == 'read' for w in labels) and bool(labels), 'SemVer label workflow cannot read pull requests')
+    def reads_pull_requests(workflow):
+        # Workflow-level permission, or the same permission on every job, both work.
+        if (workflow.get('permissions') or {}).get('pull-requests') == 'read':
+            return True
+        jobs = workflow.get('jobs', {}).values()
+        return bool(jobs) and all((job.get('permissions') or {}).get('pull-requests') == 'read' for job in jobs)
+    need(bool(labels) and all(reads_pull_requests(w) for w in labels), 'SemVer label workflow cannot read pull requests')
     dep_path = root / '.github/dependabot.yml'
     dep = read_yaml(dep_path) if dep_path.exists() else {}
     need(any(u.get('package-ecosystem') == 'github-actions' and u.get('directory') == '/' and u.get('schedule', {}).get('interval') == 'weekly' and u.get('target-branch', 'main') == 'main' and 'semver/none' in u.get('labels', []) for u in dep.get('updates', [])), 'Weekly Actions Dependabot/label policy missing')

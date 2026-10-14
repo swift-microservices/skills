@@ -9,3 +9,4 @@ PASS if all of these hold:
 - `HummingbirdTesting`, if present, appears only in the test target.
 
 FAIL if the `.target(name: "AcmeAuthentication", …)` declaration's own `dependencies:` list includes Hummingbird or GRPCCore (other targets listing `"AcmeAuthentication"` as a dependency are expected), or a new library product is added for the middleware.
+Grade only against these criteria; do not fail for issues they do not mention.

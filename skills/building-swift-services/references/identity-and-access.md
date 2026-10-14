@@ -4,19 +4,19 @@ Use mTLS to admit service connections and user JWTs to identify users; use cases
 
 ## Contents
 
-- The packages
-- One issuer, asymmetric keys
-- The user identity
-- Identifying a caller versus requiring one
-- Where the caller lives
-- Authorization lives in the use case
-- Two RPC services
-- Propagating the caller
-- Validation at every process boundary
-- Processes: the certificate is the credential
-- The three rules
-- Key material in configuration
-- Rotation
+- [The packages](#the-packages)
+- [One issuer, asymmetric keys](#one-issuer-asymmetric-keys)
+- [The user identity](#the-user-identity)
+- [Identifying a caller versus requiring one](#identifying-a-caller-versus-requiring-one)
+- [Where the caller lives](#where-the-caller-lives)
+- [Authorization lives in the use case](#authorization-lives-in-the-use-case)
+- [Two RPC services](#two-rpc-services)
+- [Propagating the caller](#propagating-the-caller)
+- [Validation at every process boundary](#validation-at-every-process-boundary)
+- [Processes: the certificate is the credential](#processes-the-certificate-is-the-credential)
+- [The three rules](#the-three-rules)
+- [Key material in configuration](#key-material-in-configuration)
+- [Rotation](#rotation)
 
 ## The packages
 
@@ -65,7 +65,7 @@ Where tenant tables exist, the user settings interceptor or middleware follows b
 | Administrator | `callAsFunction(subject: UserIdentity, input:)` | `requireAdministrator()`; owning use case requires the administrator role again before any I/O |
 | Internal service / worker | `callAsFunction(input:)` | Peer admitted by transport mTLS; owning use case checks business invariants |
 
-Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep backend listeners private and gateway routes limited to `<Entity>Service` operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
+Every peer admitted by the listener's configured CA trust can call its internal operations. This is a deliberate trust boundary, not per-workload authorization. Keep internal listeners private, off any client-facing listener, and gateway routes limited to `<Entity>Service` operations. If admission requirements later differ by workload, revisit the trust/authorization design explicitly.
 
 An HTTP route collection or verb may additionally be protected by `AdminRequestContext` or equivalent middleware using only verified JWT role claims, without database lookups. This early gate supplements the owning use case; it does not replace resource or business authorization.
 
@@ -109,7 +109,7 @@ private func requireAdministrator() throws -> UserIdentity {
 }
 ```
 
-An administrator's call has the tenant setting bound too; its use case runs on the internal role, which ignores it, or on the module's one scope where the module has no tenant tables. Internal descriptors have no application authentication interceptor. Their listener still requires mTLS.
+An administrator's call has the tenant setting bound too; its use case runs on the internal role, which ignores it, or on the module's one scope where the module has no tenant tables. Internal descriptors have no application authentication interceptor. Their listener still requires mTLS, and they are never registered on a client-facing listener.
 
 ## Propagating the caller
 
@@ -119,7 +119,12 @@ Bearer parsing takes the first authorization entry, matches the scheme case-inse
 
 ## Validation at every process boundary
 
-Every service-to-service connection requires mTLS. Clients verify the server chain and destination hostname; listeners require a client certificate against explicit roots. User RPCs additionally verify the original JWT and authorize the operation in the owning use case. Request fields and asserted metadata are not substitutes for that verification.
+A listener is one of two kinds, decided by who dials it:
+
+- **Internal.** Every process-to-process connection requires mTLS from the stack's CA: internal descriptors, workers, and service-to-service calls. Clients verify the server chain and destination hostname; the listener requires a client certificate against explicit roots. A microservice behind a gateway has only this kind, because only the gateway and its peers call it.
+- **Client-facing.** A listener that apps or partners reach — a gRPC monolith called directly, or the HTTP gateway — is server-side TLS like an API gateway: the process presents a certificate the edge proxy verifies, requires no client certificate, and identifies callers by bearer JWT alone. Public TLS terminates at the edge; the proxy-to-process hop stays on the private network and is TLS, never plaintext ([environment.md](../../delivering-swift-services/references/environment.md#public-ingress)). It carries `<Entity>Service` descriptors only.
+
+A process with both kinds of caller runs two listeners: the client-facing one with `<Entity>Service` behind the bearer and settings interceptors, and an internal mTLS one with `<Entity>InternalService` ([composition.md](composition.md#two-listeners-client-facing-and-internal)). A gRPC monolith nothing else calls has only the client-facing one. User RPCs verify the original JWT and authorize the operation in the owning use case on either kind; request fields and asserted metadata are not substitutes for that verification.
 
 Inside a monolith, verify the user at the transport and pass `subject:` to local calls. No TLS connection exists between modules in one process.
 

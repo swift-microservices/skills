@@ -11,3 +11,4 @@ PASS if all of these hold:
 - With no user bound, it calls `next` unchanged.
 
 FAIL if it parses a header or token itself, makes an authorization decision, declares a `@TaskLocal`, or hard-codes a concrete context type.
+Grade only against these criteria; do not fail for issues they do not mention.

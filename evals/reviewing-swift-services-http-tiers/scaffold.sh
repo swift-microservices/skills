@@ -172,7 +172,7 @@ func makeRouter(
     sessionController.addRefreshRoute(to: identified.group("auth"))
 
     // Tier 3: a caller is required.
-    let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
+    let authenticated = identified.group().add(middleware: IsAuthenticatedMiddleware())
     noteController.addAuthenticatedRoutes(to: authenticated.group("notes"))
 
     return router

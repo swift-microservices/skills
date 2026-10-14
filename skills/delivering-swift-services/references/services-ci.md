@@ -9,15 +9,15 @@ worker commands and justified style or coverage exceptions. Explicit user scope 
 
 ## Contents
 
-- Events and gates
-- Workflow layout and references
-- Source quality and headers
-- Locked dependency resolution
-- Tests and capability coverage
-- Static SDK compatibility
-- Release image and Foundation
-- Publishing and deployment ordering
-- Dependency updates and completion
+- [Events and gates](#events-and-gates)
+- [Workflow layout and references](#workflow-layout-and-references)
+- [Source quality and headers](#source-quality-and-headers)
+- [Locked dependency resolution](#locked-dependency-resolution)
+- [Tests and capability coverage](#tests-and-capability-coverage)
+- [Static SDK compatibility](#static-sdk-compatibility)
+- [Release image and Foundation](#release-image-and-foundation)
+- [Publishing and deployment ordering](#publishing-and-deployment-ordering)
+- [Dependency updates](#dependency-updates)
 
 ## Events and gates
 
@@ -40,17 +40,24 @@ do not silently switch an application to the latest library matrix.
 
 ## Workflow layout and references
 
-The image tool is the project's choice (see *The release image* in [delivery.md](delivery.md)).
+The image tool is the project's choice (see *The release image* in [delivery.md](delivery.md#the-release-image)).
 The service assets are the worked example for a Containerfile built with Buildx; a project on
 Apple's `container`, a static SDK base image or `swift-container-plugin` replaces the image
 workflow's build step and keeps its gates. Copy the assets into these destinations and fill in
-the product, registry and optional Containerfile target/worker inputs:
+the product, registry, package name, and the optional Containerfile target:
 
 - `service-checks.yml` → `.github/workflows/checks.yml` (reusable source/tests/static checks). When the image path, local or published, does not use the static SDK, set `enable_linux_static_sdk_build: false` and remove the `linux_static_sdk_*` inputs.
 - `service-image.yml` → `.github/workflows/image.yml` (reusable native image build/validation).
 - `service-check-image.sh` → `.github/scripts/check-image.sh`.
 - `service-pull-request.yml`, `service-develop.yml`, `service-main.yml` → `.github/workflows/pull_request.yml`, `develop.yml`, `main.yml`.
+- `service-cleanup-images.yml` → `.github/workflows/cleanup-images.yml` (weekly registry retention).
 - `service-dependabot.yml` → `.github/dependabot.yml`.
+- `Containerfile` and `dockerignore` → `Containerfile` and `.dockerignore`, on the Containerfile path.
+
+With a worker, every call to `image.yml` passes `worker: true` (so the check runs `worker run --help`),
+and develop/main keep the second deploy step with `WORKER_APPLICATION_ID` /
+`PROD_WORKER_APPLICATION_ID`; without one, remove both. Pass `build_target` only when the
+service image is not the Containerfile's last stage.
 
 Reuse `swiftlang/github-workflows` soundness and package-test workflows pinned to a reviewed
 release's commit SHA. Their configurable platform/toolchain inputs suit a service's one deployed
@@ -136,20 +143,24 @@ A project whose image path does not use the static SDK needs no such build and c
 ## Release image and Foundation
 
 Build the actual release image with the project's image tool, natively for the deployment
-architecture; do not substitute a host `swift build`, emulation or library-consumer build. Use the same release configuration and
-lockfile for PR validation and publishing. Preserve one image for serve/worker processes.
+architecture, meeting the contract in [delivery.md](delivery.md#the-release-image); do not
+substitute a host `swift build`, emulation or library-consumer build. Use the same release
+configuration and lockfile for PR validation and publishing. In the final image,
+`service-check-image.sh` (image, product, worker flag, binary path):
 
-The final image runs as an unprivileged user and contains the executable, backtracer, all SwiftPM
-resource bundles and required runtime libraries. Copy the entire staging directory; copying only
-the binary silently drops staged resources. In the final image:
+- fails an image that runs as root, unless `AGENTS.md` records that exception and the job sets `ALLOW_ROOT_IMAGE=true`;
+- inspects the executable's dynamic library closure with `ldd` and fails for a missing library, accepting a static binary;
+- runs `--help` and `serve --help`, and `worker run --help` when the worker flag is set;
+- never boots production configuration, contacts infrastructure, or runs migrations.
 
-- Inspect the executable's dynamic runtime library closure and fail for missing libraries.
-- Run `--help` and `serve --help`; also `worker run --help` when that command exists.
-- Do not boot production configuration, contact infrastructure or run migrations for this smoke check.
-
-These commands catch loader and command-packaging failures; they do not establish readiness,
-resource consumption by every code path, or deployed connectivity. Static binaries have no
-dynamic closure to inspect; verify their execution separately. `service-check-image.sh` assumes an image loaded into a local Docker daemon with `ldd` in it and the binary at `/app`; another image tool meets the same gate by loading its image locally (or into a local registry) and running the same commands against it, with the binary path that tool uses, skipping `ldd` for a fully static binary. A tool that pushes as it builds, such as `swift-container-plugin`, pushes to a run-scoped tag (`:run-${{ github.run_id }}`), the job pulls and checks that digest — a daemon on the runner for validation is fine, since the project's "no daemon" choice is about the build — and then copies that same digest to the short-SHA and branch tags with a registry copy (`crane copy`, `skopeo copy`, or `docker buildx imagetools create`), never a rebuild. A copier or runtime used only to check or re-tag the image is not a second image tool.
+These commands catch loader and command-packaging failures, not readiness or deployed
+connectivity. The script assumes an image loaded into a local Docker daemon with `ldd` in it;
+pass the binary path the tool uses (`/app/<product>` by default, `/<product>` for
+`swift-container-plugin`). A tool that pushes as it builds pushes to a run-scoped tag
+(`:run-${{ github.run_id }}`); the job pulls and checks that digest (a daemon on the runner for
+validation is fine), then copies the same digest to the short-SHA and branch tags with a
+registry copy (`crane copy`, `skopeo copy`, `docker buildx imagetools create`), never a
+rebuild. A copier or runtime used only to check or re-tag is not a second image tool.
 
 Prefer FoundationEssentials in owned code. Inspect the actual Linux executable; the library
 Foundation consumer workflow cannot validate an application. Full Foundation may be required
@@ -175,19 +186,8 @@ a pending run with a newer one; this convention deploys branch state and does no
 every intermediate commit reaches the environment. A deployment API trigger proves acceptance,
 not application health; environment verification remains separate.
 
-## Dependency updates and completion
+## Dependency updates
 
-Dependabot checks Swift and Actions weekly and targets develop. A library-only `semver/none`
-label or release workflow is not a service requirement. Promote changes from staging through
-the ordinary develop-to-main merge. CI itself neither merges updates nor creates releases.
-
-Validate workflow inputs against the selected upstream release; run actionlint, YAML/shell lint,
-strict formatter lint and locked tests where available. Verify the native static SDK and actual
-final image when the environment supports them. Test any image-check helper against missing
-libraries and worker-command failures, not just its successful branch. Use independent eval
-artifact checks to catch lost gates, wrong platform, unlocked resolution or PR publication.
-
-Completion reports distinguish local validation from GitHub/Linux/image execution that was not
-performed. Updating workflows does not authorize CI monitoring, deployment, repository-setting
-changes or unrelated application edits. Repository profiles must describe actual workflow gates
-and their limitations.
+Dependabot checks Swift and Actions weekly and targets develop; updates are promoted through the
+ordinary develop-to-main merge. A library-only `semver/none` label or release workflow is not a
+service requirement, and CI neither merges updates nor creates releases.

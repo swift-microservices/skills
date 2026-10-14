@@ -2,10 +2,10 @@
 
 ## Contents
 
-- Database boundary
-- Feature structure
-- Ports to other modules
-- Logging in use cases
+- [Database boundary](#database-boundary)
+- [Feature structure](#feature-structure)
+- [Ports to other modules](#ports-to-other-modules)
+- [Logging in use cases](#logging-in-use-cases)
 
 Core is the same target in every shape. A module's Core knows nothing about whether the module ships alone as a service or beside others in a monolith, and nothing about whether its use cases are reached by a route, an RPC, or both.
 
@@ -131,20 +131,37 @@ Do not pass `Date` or a `now` closure into a use case to stamp a record. The rep
 
 ## Ports to other modules
 
-A module that needs another module's behavior declares, in its own Core, the protocol it needs. When the producer's use-case protocol is the right shape, the consumer depends on that shape by re-declaring it, never by importing the producer's Core; more often the consumer needs less, and declares a narrow port naming only the operation and the values it uses:
+A module that needs another module's behavior declares, in its own Core, the port it needs, naming only the operation and the values it uses. Even when the producer's use-case protocol is the right shape, the consumer re-declares it with its own types; it never imports the producer's Core:
 
 ```swift
+// Sources/CatalogCore/Ports/AccountClient.swift
+#if canImport(FoundationEssentials)
+package import FoundationEssentials
+#else
+package import Foundation
+#endif
+
 package protocol AccountClient: Sendable {
     func account(id: UUID) async throws(AccountClientError) -> Account?
 }
 
+package enum AccountClientError: Error, Equatable {
+    case unavailable
+    case unknown
+}
+
 package struct Account: Equatable, Sendable {
     package let id: UUID
-    package let status: AccountStatus
+    package let name: String
+
+    package init(id: UUID, name: String) {
+        self.id = id
+        self.name = name
+    }
 }
 ```
 
-The `Account` here is the consumer's own value, carrying only what the consumer reads; it is not the producer's entity and not a generated message. The use case takes the port in its initializer beside the database and calls it outside `withTransaction`:
+`Account` is the consumer's own value, carrying only what the consumer reads; it is not the producer's entity and not a generated message. The port's error carries `.unavailable` from its first version, even while an in-process adapter never throws it, and the use case already maps it; when the producer becomes a service, a network failure has a case to land in and the consumer's Core does not change. The use case takes the port in its initializer beside the database and calls it outside `withTransaction`:
 
 ```swift
 package struct CreateItemUseCase<DatabaseType: Database, Accounts: AccountClient>: CreateItemUseCaseProtocol where DatabaseType.Scope: CreateItemUseCaseScope {
@@ -155,7 +172,37 @@ package struct CreateItemUseCase<DatabaseType: Database, Accounts: AccountClient
 }
 ```
 
-What satisfies the port is the composition root's decision and the root's alone. In a monolith it is the producer module's use case, wrapped in a few lines that convert the producer's entity into the consumer's value; in microservices it is `GRPCAccountClient` in the consumer's GRPC target, over a `GRPCClient` (the consumer adapter in [grpc-and-protos.md](grpc-and-protos.md)). Core cannot tell the two apart, which is the point: the day the producer becomes a service, the consumer's Core does not change. Mock the port in `<Module>CoreTests` exactly as a repository is mocked.
+What satisfies the port is the composition root's decision alone, and because the port's types are the consumer's, the producer's use case never conforms to it directly. In a monolith the root always adapts with a small executable-local adapter in `Sources/<Project>/Ports/<Producer><Port>.swift`, named for the producer and the port as `GRPCAccountClient` is named for its transport:
+
+```swift
+// Sources/Backend/Ports/UsersAccountClient.swift
+import CatalogCore
+import UsersCore
+
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
+
+/// Catalog's AccountClient, satisfied in-process by Users' ResolveUserUseCase.
+struct UsersAccountClient: AccountClient {
+    let resolveUserUseCase: any ResolveUserUseCaseProtocol
+
+    func account(id: UUID) async throws(AccountClientError) -> Account? {
+        do {
+            let user = try await resolveUserUseCase(input: ResolveUserUseCaseInput(id: id))
+            return Account(id: user.id, name: user.name)
+        } catch ResolveUserUseCaseError.userNotFound {
+            return nil
+        } catch {
+            throw .unknown
+        }
+    }
+}
+```
+
+The adapter converts and maps errors; it decides nothing. In microservices the root injects `GRPCAccountClient` from the consumer's GRPC target instead, over a `GRPCClient` ([grpc-and-protos.md](grpc-and-protos.md#consumer-adapter)). Core cannot tell the two apart, so the day the producer becomes a service the consumer's Core does not change, and the executable's adapter is deleted. Mock the port in `<Module>CoreTests` exactly as a repository is mocked.
 
 ## Logging in use cases
 

@@ -1,38 +1,29 @@
 ---
 name: delivering-swift-services
-description: Defines standard CI profiles for Swift server libraries and deployable services and delivers Swift services from a commit to a running process. Covers compiler compatibility, package resolution, formatting, service images, publishing, deployment, Compose, mounted secrets, mTLS certificates, migrations, and rollback. Use when creating or changing library/service CI or service delivery workflows, Containerfiles, image publishing, deployment, certificates, or stack startup.
+description: Delivers Swift services from a commit to a running, mutually authenticated stack, and defines the standard CI profiles for Swift server libraries and deployable services. Covers library and service CI, compiler compatibility, locked resolution, formatting, the release image (Containerfile, static Linux SDK, or swift-container-plugin), per-commit publishing, deployment of serving and worker applications on a Dokploy-style platform, rollback, migrations in the pipeline, the Compose suite and its .env, mounted secrets and JWT signing keys, and mTLS certificates from a private CA such as Smallstep step-ca with enrollment and renewal. Use when creating or changing CI workflows, a Containerfile, image publishing, deployment, a compose.yaml or .env, certificates, step-ca, enrollment, renewal, or rotation, or when bootstrapping a stack or debugging its first start.
 ---
 
 # Delivering Swift services
 
-How a service gets from a merged commit to a process that answers, and how the whole stack runs on one host: the pipeline that publishes and deploys, and the environment the deployed system runs in.
+How a service gets from a merged commit to a process that answers, and how the whole stack runs: the CI of libraries and services, the pipeline that publishes and deploys, the running environment, and the certificates that secure it. Designing, building services, HTTP surfaces, libraries, and workflows are separate skills; this one validates, publishes, and runs what they produce.
 
-Read applicable `AGENTS.md` files first: their project profile, styles, and recorded exceptions override these general conventions. Preserve unrelated established code.
+Read applicable `AGENTS.md` files first: their project profile, styles, and recorded exceptions override these conventions. Preserve unrelated established code. An old workflow is not itself an exception.
 
-For every reusable library used in Swift server development, read [library-ci.md](references/library-ci.md)
-and enforce its standard pipeline, formatter, headers, and dependency policy. This includes
-project-owned Core, contract, and SDK packages. Explicit repository profiles record justified
-capability exceptions; an old workflow is not itself an exception.
-For executable services, read [services-ci.md](references/services-ci.md) for deployed-platform
-checks, locked resolution and image validation. Repository `AGENTS.md` profiles supply explicit
-compiler, platform, formatting and coverage exceptions; deployment rules remain below.
-
-Designing the shape, building services, HTTP surfaces, and libraries, and running workflows are separate skills; this one publishes and runs what they produce, and owns the CI of both libraries and services.
-
-Rules in this skill are conventions the packages and the shared code shape depend on; keep them unless the user changes the vocabulary. Where a rule says *default* and names an alternative, that is a project choice: take the default unless the project's decision record says otherwise, and never switch it per file.
-
-The references describe one worked default end to end: GitHub Actions, a Compose suite, a `step`-issued CA, Loki, a Dokploy-style platform. Every rule below leads with the principle that default satisfies, so another platform can satisfy it differently and still pass the gates.
+Rules here are conventions the packages and the shared code shape depend on; keep them unless the user changes the vocabulary. The image tool, the CA, where Postgres runs, and the library release mechanism are project choices, recorded once in `AGENTS.md`: each is a contract plus a worked example, never switched per file. The worked example is GitHub Actions, a Containerfile, a Compose suite, Smallstep `step-ca`, Loki, and a Dokploy-style platform; every rule leads with the principle, so another platform satisfies it differently and passes the same gates.
 
 ## Load the references
 
-Each topic has exactly one home. Every other skill says only that a value "comes from the environment" or that images "come from delivery".
+Each topic has exactly one home; other skills say only that a value "comes from the environment" or that images "come from delivery".
 
 | Task | Read |
 | --- | --- |
-| Reusable library CI, supported compilers, optional checks, library formatting, and repository exceptions | [library-ci.md](references/library-ci.md) |
-| Service CI, deployed compiler/architecture, locked tests, static SDK, formatting and final-image validation | [services-ci.md](references/services-ci.md) |
-| Service branches, the release image, publishing, registry, deployment, migrations and retention | [delivery.md](references/delivery.md) — delivery |
-| Images, the suite Compose file, Postgres instances, ports, secrets, the certificate volume, the gateway's address, log aggregation, verifying what a service receives | [environment.md](references/environment.md) — the only file that describes the running environment |
+| CI for every reusable library used in server development, including the project's core, contract, and SDK packages: compilers, optional checks, formatter, headers, dependency policy, capability exceptions, private organization libraries | [library-ci.md](references/library-ci.md) |
+| CI for an executable service, monolith, gateway, or worker: deployed compiler and architecture, locked tests, static SDK, final-image validation | [services-ci.md](references/services-ci.md) |
+| Branches, the release image and its contract, local builds, publishing, the registry and retention, deploying serving and worker applications, platform traps, migrations | [delivery.md](references/delivery.md) |
+| The running stack: the suite Compose file and `.env`, where Postgres runs, ports, secrets and JWT keys, the gateway's address, logs, verifying what a service receives | [environment.md](references/environment.md) |
+| The CA contract and `step-ca`: initialization, provisioners, enrollment, renewal and publication, rekey, trust rotation, file ownership, Temporal TLS, the local development CA, verification | [certificates.md](references/certificates.md) |
+
+Templates live in `assets/`; each reference names the ones it uses and whether to copy or execute them.
 
 ## Principles
 
@@ -40,8 +31,8 @@ The rules follow from these. When a situation is not covered, decide from the pr
 
 1. **The commit is the version.** A service publishes an image per commit and carries no SemVer; the SHA is the deploy identifier and the rollback target. SemVer belongs to the packages consumers resolve by range.
 2. **A pipeline that does less than it claims is worse than a red one.** Deploy steps are mandatory; a missing secret fails the run loudly. A green run is not proof a tag exists; check the manifest.
-3. **Nothing is plaintext and nothing is published.** Every internal gRPC connection is mutually authenticated by a CA the stack controls; no internal port reaches a host interface; the gateway is reached only through its sidecar or the platform ingress.
-4. **Key material is a file; configuration carries a path.** Signing keys, TLS keys and certificates, and enrollment credentials are mounted, never environment variables; database role passwords come from the environment, read as secrets; each credential directory is enrolled before startup and maintained by its renewer.
+3. **Nothing is plaintext and nothing is published.** Every internal gRPC connection is mutually authenticated by a CA the stack controls, locally too; no internal port reaches a host interface; a client-facing listener is reached only through the edge, over TLS end to end.
+4. **Key material is a file; configuration carries a path.** Signing keys, TLS keys and certificates, and enrollment tokens are mounted, never environment variables; database role passwords come from the environment, read as secrets. Renewers write credential directories; applications only read them.
 5. **A container cannot serve an unmigrated schema.** Migrations run before the process binds, by default in the serving container at boot, and they are expand/contract because deploys roll back and schemas do not.
 6. **Share the machinery, duplicate the declarations.** Logic that churns is centralized and versioned; a cron line, a retention count, a package name stays in each repository.
 7. **Fail at `up`, not at the first request.** `${VAR:?message}` guards, secret source files, and health-gated `depends_on` make a misconfigured stack refuse to start.
@@ -51,36 +42,35 @@ The rules follow from these. When a situation is not covered, decide from the pr
 ### Branches and CI
 
 1. Two long-lived branches, two environments: develop validates and deploys successful candidates to staging; main validates and publishes them, deploying to production once it exists. Serialize rollouts per branch; superseded pending runs need not deploy every intermediate commit. Promotion is a merge, never a steady-state cherry-pick.
-2. PRs and deployment-branch pushes follow [services-ci.md](references/services-ci.md): the deployed platform, source/workflow checks, locked focused tests, a static SDK build where the project's image path uses one, and actual final-image validation. PRs never publish or deploy; deployment publication waits for the required checks.
-3. When the project's image path, local or published, uses the static Linux SDK, keep a static SDK build in CI to catch SDK, C/C++, and dependency compatibility failures. Verify Foundation linking separately: a successful static build does not prove FoundationEssentials-only dependencies. Follow executable inspection in [services-ci.md](references/services-ci.md#release-image-and-foundation); document unavoidable upstream full-Foundation requirements while keeping our code on modern Essentials APIs.
-4. Pin service actions and reusable workflows to reviewed commit SHAs with the release tag as a comment, or the branch and date when adopting functionality ahead of a release. Library references follow their [CI profile](references/library-ci.md#dependency-resolution-and-workflow-references), which may prefer `@main`. Inspect nested references before claiming immutability. Dependabot targets develop for services and main for libraries.
-5. A service executable commits its validated `Package.resolved` with dependency changes; a library package never commits it and records API impact with SemVer labels. Library releases follow their repository profile. Released dependency tags remain immutable because consumers remember their fingerprints.
-6. When a private repository's arm runners are refused for billing, do not weaken the pipeline to pass: fund it, self-host, or publish through the local image build and a hand-triggered deploy until CI returns.
+2. PRs and deployment-branch pushes follow [services-ci.md](references/services-ci.md): the deployed platform, source and workflow checks, locked focused tests, a static SDK build where the image path uses one, and actual final-image validation. PRs never publish or deploy; publication waits for the required checks.
+3. A successful static SDK build does not prove FoundationEssentials-only dependencies: inspect the executable as in [services-ci.md](references/services-ci.md#release-image-and-foundation) and document unavoidable upstream full-Foundation requirements while keeping owned code on Essentials APIs.
+4. Pin service actions and reusable workflows to reviewed commit SHAs with the release tag as a comment. Library references follow their [CI profile](references/library-ci.md#dependency-resolution-and-workflow-references), which may prefer `@main`. Inspect nested references before claiming immutability. Dependabot targets develop for services and main for libraries.
+5. A service executable commits its validated `Package.resolved`; a library never commits it and records API impact with SemVer labels. Released dependency tags never move: consumers remember their fingerprints.
+6. When a private repository's runners are refused for billing, do not weaken the pipeline to pass: fund it, self-host, or publish through the local image build and a hand-triggered deploy until CI returns.
 
 ### Images and publishing
 
-7. Publish two tags per commit: an immutable short SHA for forensics and rollback, and the moving branch tag the platform application tracks. Build the image natively for the deployment host's architecture, never under emulation.
-8. One image per service, whether or not it has a worker; the worker application runs the same image at the same tag with `./<service> worker run` as its command.
-9. How the image is built is the project's choice, recorded once in `AGENTS.md`: a `Containerfile` built with Docker or Apple's `container`, a static Linux SDK binary copied into a minimal base, or `swift-container-plugin`. Whichever tool, the image is a release build from the locked graph (`--disable-automatic-resolution`), runs as an unprivileged user, carries CA certificates and time-zone data where it has an OS layer, the backtracer, and every resource bundle, and is the image CI validated. A local path may use another tool; only the published path is release evidence.
-10. Push with the workflow's own token and `packages: write`; grant a pre-existing package's Actions access to the repository before the first pipeline push. Prune each registry weekly to a recent window per repository.
+7. Publish two tags per commit: an immutable short SHA for forensics and rollback, and the moving branch tag the platform application tracks. Build natively for the deployment host's architecture, never under emulation.
+8. One image per service; a worker application runs the same image at the same tag with `worker run` as its command.
+9. The image meets the contract in [delivery.md](references/delivery.md#the-release-image), whichever tool the project recorded: a locked release build, an unprivileged fixed numeric user, the backtracer and every resource bundle, and the image CI validated. Where a tool cannot meet a clause (`swift-container-plugin` images default to root), `AGENTS.md` records the exception and its compensating control.
+10. Push with the workflow's own token and `packages: write` on the publishing job only; grant a pre-existing package's Actions access before the first pipeline push. Prune each registry weekly to a recent window per repository.
 
 ### Deploying
 
-11. Deploy is a single trigger-only step bound to plain secrets, SHA-pinned; rollback is pinning an older SHA on the platform application by hand, outside the pipeline.
-12. One platform application per process, image-sourced and tracking the branch tag, so a rollout is a tag move and a rollback is a pin. Default: a Dokploy-style application whose `command` is `./<service> serve --migrate-database` (`command` replaces the entrypoint, so name the binary). Alternative: any platform that pins an image by SHA and rolls back by hand, such as a Kubernetes Deployment or a Fly app, with the same command, or with `migrate` as a pre-rollout job when the platform orders jobs.
-13. Staging and production are two environments of one project. Shared values live in each environment's scope, referenced by every application as `${{environment.KEY}}`; the project scope stays empty; a per-tier secret never goes project-wide. Each environment owns its database instance, signing keypair, cache, and CA; platform services are shared with a namespace per environment.
-14. Provisioning jobs are disposable one-shots with restart policy `none`, log-verified, deleted after use. A crash-looping application is stopped, then deployed, never deployed over.
-15. Migrations run by default at boot in the serving container over a short-lived owner client, or, where the project records it, as a `migrate` one-shot before the rollout or an apply serialized by a Postgres advisory lock. They are expand/contract: add tables, nullable columns, and indexes freely; ship renames, drops, and tightened constraints in a later commit once no deployed code references the old shape.
+11. Deploy is a trigger-only step per application bound to plain secrets, SHA-pinned; a service with a worker deploys both applications. Rollback is pinning an older SHA on the platform application by hand, outside the pipeline.
+12. One platform application per process, image-sourced and tracking the branch tag. Default: a Dokploy-style application whose `command` names the binary's real path, `/app/<service> serve --migrate-database` (`command` replaces the entrypoint). Alternative: any platform that pins an image by SHA and rolls back by hand, such as a Kubernetes Deployment, with the same command or a `migrate` pre-rollout job.
+13. Staging and production are two environments of one project. Shared values live in each environment's scope, referenced as `${{environment.KEY}}`; the project scope stays empty. Each environment owns its database, signing keypair, cache, and CA.
+14. Provisioning jobs are disposable one-shots with restart policy `none`, log-verified, deleted after use. A crash-looping application is stopped, then deployed. A worker gets a stop grace period longer than its drain and exits 0 after draining.
+15. Migrations follow *Migrations* in [delivery.md](references/delivery.md#migrations): at boot by default, expand/contract always.
 
 ### The environment
 
-16. The whole stack is declared in one place from published images, never built there, and a missing value stops it before anything starts; keep every environment concern in environment.md alone. Default: one `compose.yml`, a `.env.example` naming every variable, a git-ignored `.env` filling it, `${VAR:?message}` guards on required values, every anchor referenced, rendered with `docker compose config` before `up`. Alternative: a Helm chart or platform manifest with the same three properties (images only, every variable named with a required guard, rendered and reviewed before apply).
-17. Publish nothing that nothing outside the stack calls; internal services are reached by name on a private network. Default: no `ports:` on Postgres, the cache, the workflow engine, the log store, or the gateway, and the gateway addressed through a tailnet sidecar or the platform ingress. Alternative: cluster-internal services with no node port or load balancer and the gateway behind an ingress, when the platform is Kubernetes.
-18. Mount signing keys, TLS private keys, and CA/enrollment secrets as files with restrictive access. Applications see only their own credential directories; renewers write them, applications read them. Only the issuer mounts the JWT signing key; workers do not need user JWT keys.
-19. Internal gRPC and Temporal connections require mTLS with explicit CA trust and verified server DNS names. The CA is the project's choice, private to the stack, with separate trust per environment. Default: Smallstep `step-ca` in the services' platform project, with scoped enrollment and persistent `step-cli` renewers publishing each workload's files. Alternative: any CA the stack controls (a service mesh, a cloud private CA) that issues, renews, and publishes the same files. Swift reloads leaves with `TimedCertificateReloader`; trust rotation uses overlap and transport reconstruction. Temporal credentials and reloaders are separate.
-20. One database per service (one for a monolith) is an ownership rule: only that process migrates, reads, and writes its tables. The database is healthy before the process starts and migrated by it (by default at boot). Where it lives is the project's choice per environment, with no default: one Postgres container or instance per service, the image provisioning the database and owner with no init job; one instance (a container or a managed cluster) with a database and an owner per service, where role names are cluster-wide, so each service's roles must be named distinctly, and point-in-time recovery is per instance; or one database with a schema per service, the cheapest and the weakest. The options are weighed in the building skill's persistence reference under *Where a service's data lives*.
-21. Every process ships its own structured logs to one aggregator, and dashboards are never on a host port. Default: in-process shipping (swift-log-loki to Loki, Grafana behind its own sidecar), no scraping agent. Alternative: stdout to the platform's collector when the platform provides one, keeping the service label and the identity metadata on every line.
-22. Make first startup verifiable. Provision the CA, enroll initial workload credentials, start renewers, generate the JWT signing pair, and fill `.env` before applications start. With Compose, use `docker compose up -d`, then verify with `docker compose config <service>`, `pg_stat_activity` for the roles, and a request through the public hostname. Alternative: the platform's apply followed by the same three verifications.
+16. The whole stack is declared in one place from published images, never built there, and a missing value stops it before anything starts. Default: [environment.md](references/environment.md)'s Compose suite with `.env.example`, `${VAR:?message}` guards, every anchor referenced, rendered with `docker compose config` before `up`. Alternative: a Helm chart or platform manifest with the same three properties.
+17. Publish nothing that nothing outside the stack calls. Default: no `ports:` on Postgres, the cache, the workflow engine, the log store, the CA, or any service. The edge is the project's choice meeting [environment.md](references/environment.md#public-ingress)'s contract — public TLS ends at the edge with strict origin verification, the proxy reaches the process over TLS it verifies, a client-facing listener needs no client certificate; default: Cloudflare (Full (Strict), gRPC enabled) in front of the platform's reverse proxy. Alternative: a tailnet sidecar.
+18. Mount signing keys, TLS keys, and enrollment tokens as files with restrictive access. Each process sees only its own credential directories. Only the issuer mounts the JWT signing key; workers mount no JWT key.
+19. Internal gRPC and Temporal connections require mTLS with explicit trust and verified server names; only a client-facing listener omits the client certificate, and no plaintext mode exists. The CA is the project's choice, private, one per environment, meeting the contract in [certificates.md](references/certificates.md); default: `step-ca` with one provisioner per workload, short-lived enrollment tokens, and a renewer per credential directory. Temporal credentials are separate.
+20. One database per service (one for a monolith) is an ownership rule: only that process migrates, reads, and writes its tables. Where it lives is the project's choice per environment, weighed in the building skill's persistence reference.
+21. Every process ships its own structured logs to one aggregator, and dashboards are never on a host port. Default: in-process shipping to Loki, Grafana behind its own sidecar. Alternative: stdout to the platform's collector, keeping the service label and identity metadata.
 
 ## Workflows
 
@@ -88,36 +78,38 @@ Copy the checklist you need and check items off as you go.
 
 ```
 Deliver a service:
-- [ ] 1. The image build with the project's recorded tool (a Containerfile and .dockerignore, a static SDK build, or swift-container-plugin) per delivery.md; a local build command
-- [ ] 2. PR/develop/main workflows using reusable checks.yml and image.yml; checks → image smoke validation → publish → deploy, plus separate cleanup and weekly Dependabot
-- [ ] 3. Static Linux SDK job beside the tests job when the project's image path uses the static SDK
-- [ ] 4. Platform application per process: image source, branch tag, ./<service> serve --migrate-database, file mounts for keys and certificates, environment-scope references
-- [ ] 5. Deploy secrets set on the repository; a missing one must fail the run, not skip the deploy
-- [ ] 6. Push to develop; confirm the SHA and branch tags exist in the registry; confirm the application rolled and migrated before it served
+- [ ] 1. The image build with the project's recorded tool (Containerfile and .dockerignore from assets, a static SDK build, or swift-container-plugin with its user exception decided); a local Makefile build
+- [ ] 2. PR/develop/main workflows over reusable checks.yml and image.yml: checks → image smoke validation → publish → deploy; worker: true and the worker deploy step when a worker exists
+- [ ] 3. Static Linux SDK job beside the tests when the image path uses the static SDK; weekly cleanup and Dependabot
+- [ ] 4. Platform application per process: image source, branch tag, the binary's real path with serve --migrate-database or worker run, file mounts, environment-scope references, worker stop grace period
+- [ ] 5. Deploy secrets set on the repository, worker application ids included; a missing one fails the run
+- [ ] 6. Push to develop; confirm the SHA and branch tags exist; confirm each application rolled and migrated before it served
 - [ ] 7. Promote by merging develop into main; confirm the :main tag exists before debugging a deploy
 ```
 
 ```
-First start of a stack:
-- [ ] 1. compose.yml from published images, .env.example copied to .env, every required value filled
-- [ ] 2. Signing pair generated into ./secrets with 0700/umask 077; the directory git-ignored
-- [ ] 3. docker compose config renders every service; every anchor referenced; every ${VAR:?} satisfied
-- [ ] 4. docker compose up -d: initial enrollment supplies each workload’s leaf pair, renewers stay running, Postgres becomes healthy, services migrate and serve
-- [ ] 5. Verify: pg_stat_activity shows the service and internal roles and never the owner; the sidecar registered; a request through the public hostname answers
+Bootstrap the environment:
+- [ ] 1. CA: offline root and intermediate, ca.json with one JWK provisioner per workload (fixed subject and SANs, bounded durations), PKI volume primed, CA healthy with no host port
+- [ ] 2. Enroll: permission-init, one offline-minted short-lived token per credential directory, the enrollment one-shot verified, tokens and one-shots removed
+- [ ] 3. Renewers: one per credential directory, healthy, the only writers of what applications read
+- [ ] 4. JWT keys: generate-jwt-keys.sh into a git-ignored 0700 directory; only the issuer mounts the private key
+- [ ] 5. .env from .env.example, every required value filled, images pinned to published tags
+- [ ] 6. docker compose config renders every service: anchors referenced, guards satisfied, no ports on internal services
+- [ ] 7. docker compose up -d: Postgres healthy, services migrate then serve, workers poll
+- [ ] 8. Verify: pg_stat_activity shows the service, internal, and worker roles and never the owner; certificate-verify-peer.sh passes on each internal listener; a request through the public hostname answers
 ```
 
 ## Completion gates
 
-Apply the gates relevant to the requested scope. A CI configuration change reports available
-validation and unexecuted checks; it does not require publication or deployment to be complete.
+Apply the gates relevant to the requested scope. A CI change reports the validation run and the checks left unexecuted; it does not require publication or deployment.
 
-- Successful deployment candidates publish one validated image per service with SHA and branch tags; the staging branch's deploy trigger rolls the service application, which is migrated before it serves (at boot, or by the migrate one-shot), and the worker application, which runs the same image with `worker run`.
-- CI resolves from the committed `Package.resolved` and tests the architecture production runs; the static SDK build passes where the project's image path uses it; a missing deploy secret or variable fails the pipeline rather than skipping the deploy.
+- Successful deployment candidates publish one validated image per service with SHA and branch tags; the deploy trigger rolls the service application, migrated before it serves, and the worker application on the same image with `worker run`.
+- CI resolves from the committed `Package.resolved` and tests the architecture production runs; the static SDK build passes where the image path uses it; a missing deploy secret fails the pipeline.
 - Nothing is published that nothing outside the stack calls; `docker compose config` renders every required value; a stack missing a key or a secret file fails at `up`.
-- Every gRPC server refuses a client without a certificate the stack's CA signed; every client verifies the server's name; every process missing its own certificate fails at startup naming the path; no plaintext mode exists.
+- Every internal gRPC listener refuses a client without a certificate the stack's CA signed; a client-facing listener serves TLS the edge proxy verifies; every client verifies the server's name; a process missing its certificate fails at startup naming the path; no plaintext mode exists; renewers write and applications only read.
 - Only the authenticating service mounts the private signing key; no key is an environment variable; secrets never appear in logs.
 - Logs carry a service label and searchable identifiers and reach the aggregator.
-- Shared platform values live in each environment's scope and are referenced by every application; the project scope is empty; a promotion differs only by image tag.
+- Shared platform values live in each environment's scope; the project scope is empty; a promotion differs only by image tag.
 - Rollback is possible to any SHA inside the retention window, by pinning the application, without a pipeline change.
 
 If a gate requires an unresolved platform, billing, or data-migration decision, stop at the safe boundary and request that decision rather than inventing behavior.

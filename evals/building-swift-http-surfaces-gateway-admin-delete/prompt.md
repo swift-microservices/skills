@@ -1,5 +1,6 @@
 ---
 max_turns: 60
+timeout_seconds: 600
 allowed_tools: [Read, Glob, Grep, Write, Edit, Skill]
 tags: [http, gateway]
 ---

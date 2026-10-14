@@ -2,11 +2,11 @@
 
 ## Contents
 
-- Layout
-- README
-- AGENTS.md
-- DocC and the Swift Package Index
-- Headers, formatting, and CI
+- [Layout](#layout)
+- [README](#readme)
+- [AGENTS.md](#agentsmd)
+- [DocC and the Swift Package Index](#docc-and-the-swift-package-index)
+- [Headers, formatting, and CI](#headers-formatting-and-ci)
 
 ## Layout
 
@@ -20,7 +20,7 @@ swift-<concept>[-<technology>]/
   .swift-format                  # the sample formatter, unless AGENTS.md records another
   .license_header_template
   .licenseignore                 # Package.swift and LICENSE only
-  .spi.yml
+  .spi.yml                       # public repositories only
   .github/                       # the library CI profile's workflows and Dependabot; the release workflow where Auto Release is used
   scripts/test.sh                # only a driver that needs a real provider
   Sources/<Module>/
@@ -37,7 +37,7 @@ Group sources by concept only when a module holds more than a handful of files; 
 
 The README is what a consumer reads before adding the dependency. In order:
 
-1. The package name, the documentation badge, and one sentence saying what it provides.
+1. The package name, the documentation badge (public repositories), and one sentence saying what it provides.
 2. A paragraph on what it depends on and what it deliberately leaves to others.
 3. The install snippets, at the latest release's floor:
 
@@ -67,7 +67,18 @@ Every library carries an `AGENTS.md`, the repository profile an agent reads befo
 - **Releases**: the SemVer labels, the repository's recorded release mechanism (Auto Release or hand-cut bare tags), "consumers pin by tag, never by branch or path".
 - **Library CI profile**: the gates the repository runs and every capability exception with its reason and replacement coverage (a PostgresNIO or Vapor 4 full-Foundation requirement, a real-database test matrix, a generated package's build-only matrix), as the [library CI profile](../../delivering-swift-services/references/library-ci.md) requires.
 
-An application's or organization layer's `AGENTS.md` adds a **Skills** table routing tasks to these skills, and its **conventions**: the shape, transport, identity, database, and delivery decisions the skills leave as project choices. Keep the profile true: a rule the code does not follow is a defect in one of them.
+An application's or organization layer's `AGENTS.md` adds two sections after its opening paragraph:
+
+- **Skills**: the plugin install lines.
+
+  ```markdown
+  - Claude Code: `/plugin marketplace add swift-microservices/skills`, then `/plugin install swift-microservices@swift-microservices`
+  - Codex: `codex plugin marketplace add https://github.com/swift-microservices/skills`, then `codex plugin add swift-microservices@swift-microservices`
+  ```
+
+- **`<Project>`'s choices**: the project profile, one bullet per decision the skills leave to the project (shape and transport, identity, data and Postgres placement, workflows, mounts, delivery with image tool, CA, and release mechanism, style). The canonical copy is in `<project>-core`'s `AGENTS.md` (the monolith's own before a core exists); every other repository copies it verbatim under "Copied from `<project>-core`; edit there first."
+
+Keep the profile true: a rule the code does not follow is a defect in one of them.
 
 ## DocC and the Swift Package Index
 
@@ -80,7 +91,7 @@ builder:
     - documentation_targets: [Persistence]
 ```
 
-A README that links a documentation badge needs both the catalog and `.spi.yml`; the soundness workflow's `docs_check_targets` names the same targets, and the catalog builds without warnings. The DocC plugin is added only in the docs check's disposable checkout, never as a permanent package dependency.
+`.spi.yml` and the badge exist only in a public repository; a private one keeps its catalogs and the docs check (see [organization-layer.md](organization-layer.md#private-repositories)). A README that links a documentation badge needs both the catalog and `.spi.yml`; the soundness workflow's `docs_check_targets` names the same targets, and the catalog builds without warnings. The DocC plugin is added only in the docs check's disposable checkout, never as a permanent package dependency.
 
 ## Headers, formatting, and CI
 

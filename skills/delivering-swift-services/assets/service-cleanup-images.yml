@@ -1,0 +1,24 @@
+name: Clean up container images
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    name: Delete old image versions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      packages: write
+    steps:
+      - name: Keep the newest 30 versions
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55  # v5
+        with:
+          package-name: example-service
+          package-type: container
+          min-versions-to-keep: 30
