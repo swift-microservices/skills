@@ -1,6 +1,6 @@
 ---
 type: llm
-focus: { source: file, path: acme-backend/Sources/NotebooksCore/Notebooks/UseCases/ListNotebooks/ListNotebooksUseCase.swift }
+focus: { source: file, path: acme-backend/Sources/NotebooksCore/Notebooks/UseCases/ListOwnNotebooks/ListOwnNotebooksUseCase.swift }
 ---
 
 PASS if all of these hold:

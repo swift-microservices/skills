@@ -1,108 +1,211 @@
 # Testing
 
-How a module's behavior is verified: the test target, the mocks, and the line between what a use-case test covers and what the transport and the database already enforce. A service is a module in its own package, and its tests are the same. A package that defines a caller-isolated callback API — a `Database`, a runner — also carries isolation contract tests; those are the building-swift-server-libraries skill's ([testing reference](../../building-swift-server-libraries/references/testing.md#isolation-contract-tests)). Tests here run with no infrastructure — no Postgres, no network, no interceptor — because the architecture puts those concerns where a unit test does not have to simulate them; the principal a use case decides on is a plain value the test builds.
+How a module's behavior is verified: the test targets, the mocks, what a use-case test covers, and what the transport tests cover. A service is a module in its own package, and its tests are the same. A package that defines a caller-isolated callback API also carries isolation contract tests; those are the building-swift-server-libraries skill's ([testing reference](../../building-swift-server-libraries/references/testing.md#isolation-contract-tests)).
 
 ## Contents
 
-- The test target
-- Mocks
-- The scoped database helper
-- What a use-case test covers
-- What a use-case test does not cover
-- Transport tests
+- [The test targets](#the-test-targets)
+- [Values and the subject](#values-and-the-subject)
+- [Mocks](#mocks)
+- [The scoped database helper](#the-scoped-database-helper)
+- [What a use-case test covers](#what-a-use-case-test-covers)
+- [What a use-case test does not cover](#what-a-use-case-test-does-not-cover)
+- [Transport tests](#transport-tests)
 
-## The test target
+## The test targets
 
-Every module carries a test target, `<Module>CoreTests` (`<Service>CoreTests` when the module is a service; a monolith has one per module), registered in the manifest with the Core target, the `swift-log` facade, the principal types, and the shared test doubles as its dependencies:
+Every module carries `<Module>CoreTests` (`<Service>CoreTests` in a service; one per module in a monolith), depending on the Core target, the `swift-log` facade, `<Project>Authentication`, and `<Project>Testing`. A module that serves RPCs also carries `<Module>GRPCTests`. Both manifests are in [service-package.md](service-package.md#manifest-of-a-modules-targets). `<Project>Testing` is the one product a test target links that a production target never may.
 
-```swift
-.testTarget(
-    name: "CatalogCoreTests",
-    dependencies: [
-        "CatalogCore",
-        .product(name: "<Project>Authentication", package: "<project>-core"),
-        .product(name: "<Project>Testing", package: "<project>-core"),
-        .product(name: "Logging", package: "swift-log"),
-    ],
-    swiftSettings: swiftSettings
-),
+Tests are swift-testing — `@Suite`, `@Test`, `#expect`, `#require` — never XCTest. Targets of one package use `package` access, so a test target imports Core plainly; `@testable` is never needed, and needing it signals a wrong access level. In a monolith a module's tests import that module's Core alone. Suites are named for the feature (`@Suite("User use cases")`), test functions for the behavior, and the display string states the expectation as a sentence: `@Test("duplicate repository errors become create use-case errors")`.
+
+A module with Temporal adds `<Module>WorkflowsTests` ([testing.md](../../orchestrating-temporal-workflows/references/testing.md) in the orchestrating-temporal-workflows skill). Use-case tests stay here, over mocks.
+
+```text
+Tests/<Module>CoreTests/
+  Mocks/
+    <Entity>UseCaseMocks.swift      # actor repositories, the mock scope, makeSubject
+    WithDatabase.swift
+  Support/
+    Values.swift
+  <Entity>UseCaseTests.swift
 ```
 
-`<Project>Testing` is the one product a test target links that a production target never may; nothing else in the packages is test-only.
+## Values and the subject
 
-Tests are swift-testing — `@Suite`, `@Test`, `#expect`, `#require` — never XCTest. Because targets of one package use `package` access (see *Shape, package, targets, and naming* in SKILL.md), the test target imports Core plainly, and in a monolith a module's tests import that module's Core alone — a test that needs two modules' Core targets is a sign the modules are not separate; `@testable` is never needed, and needing it is a sign a symbol has the wrong access level.
+Fixed values live in `Support/Values.swift`, so an assertion against a mock's output is reproducible:
 
-Suites are named for the feature (`@Suite("Subscriber use cases")`), test functions for the behavior, and the display string states the expectation as a sentence: `@Test("duplicate repository errors become create use-case errors")`.
+```swift
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
 
-A module with Temporal adds `<Module>WorkflowsTests`, which runs its Workflows end to end on the SDK's test server; the orchestrating-temporal-workflows skill describes it. Use-case tests stay here, over mocks, because a Workflow test mocks the Activity service and never reaches a use case.
+extension UUID {
+    static let user = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    static let missing = UUID(uuidString: "00000000-0000-0000-0000-000000000099")!
+}
+
+extension Date {
+    static let reference = Date(timeIntervalSince1970: 1_700_000_000)
+}
+```
+
+The subject factory builds the principal a user use case takes, over the fixed date; a "reads their own row" test passes the stored row's id, an authorization test the role:
+
+```swift
+func makeSubject(id: UUID = .user, role: UserRole = .user) -> UserIdentity {
+    UserIdentity(
+        userId: id,
+        role: role,
+        issuer: "users-core-tests",
+        issuedAt: .reference,
+        expiration: Date.reference.addingTimeInterval(60)
+    )
+}
+```
+
+Where Core declares its own enum named like `<Project>Authentication`'s `UserRole`, qualify the parameter type with the module name. An internal use case takes business input directly; test its invariants without manufacturing a caller.
+
+A use case that decides on time reads `Date.now`, so a test of that decision builds its dates relative to `Date.now` with a clear margin — a minute past or a minute ahead — never at the boundary. Everything else uses `.reference`, never `Date()`.
 
 ## Mocks
 
-Mocks live in a `Mocks/` directory inside the test target, one file per concern, and mirror the shapes Core declares:
+Mocks live in `Mocks/`, mirror the shapes Core declares, and are the module's own; only `MockDatabase` and `MockUserAuthenticator`, which every module would write identically, come from `<Project>Testing`.
 
-- **A mock repository is an actor** holding an array of entities and an optional injected failure, conforming to the Core repository protocol. Reads return the array; writes append a deterministic entity or throw the injected repository error. State lives behind the actor so concurrent tests cannot race it.
-- **`MockDatabase` comes from `<Project>Testing`.** It is a `Database` with no transaction and a fixed scope: `withTransaction` hands every unit of work the same scope, so the test sees exactly what the use case did and asserts against the repositories it built the scope from.
-- **A mock scope** is a struct conforming to every per-use-case scope protocol the suite exercises, holding the mock repositories:
+**A mock repository is an actor** holding a dictionary keyed by id, an optional injected failure, and a `calls` counter every method increments. Guard tests assert `calls == 0` after a refusal: unchanged data alone cannot prove no read occurred.
 
 ```swift
-struct MockCatalogScope: CreateItemUseCaseScope, ListItemsUseCaseScope {
-    let itemRepository: any ItemRepository
+actor MockUserRepository: UserRepository {
+    private(set) var calls = 0
+    private var users: [UUID: User]
+    private let createFailure: UserRepositoryError?
+
+    init(users: [User] = [], createFailure: UserRepositoryError? = nil) {
+        self.users = Dictionary(uniqueKeysWithValues: users.map { ($0.id, $0) })
+        self.createFailure = createFailure
+    }
+
+    func create(_ command: CreateUserCommand) async throws -> User {
+        calls += 1
+        if let createFailure {
+            throw createFailure
+        }
+        let user = User(id: .user, name: command.name, email: command.email, status: .active, creationDate: .reference, updateDate: .reference)
+        users[user.id] = user
+        return user
+    }
+
+    func find(id: UUID) async throws -> User? {
+        calls += 1
+        return users[id]
+    }
 }
 ```
 
-- **A subject factory** builds the principal a user use case takes, beside the mocks, with the role as its one argument:
+**`MockDatabase` comes from `<Project>Testing`**: a `Database` with no transaction and a fixed scope, so the test asserts against the repositories it built the scope from. **A mock scope** is a struct conforming to every use-case scope the suite exercises:
 
 ```swift
-func makeSubject(role: UserRole) -> UserIdentity {
-    let now = Date.now
-    return UserIdentity(userId: UUID(), role: role, issuer: "catalog-core-tests", issuedAt: now, expiration: now.addingTimeInterval(60))
+struct MockUserScope: CreateUserUseCaseScope, GetProfileUseCaseScope, GetUserByIDUseCaseScope, ListUsersUseCaseScope {
+    let userRepository: any UserRepository
 }
 ```
 
-A test that needs the subject's own id — a "reads their own row" case — makes the identity with a fixed id instead. An internal use case takes business input directly; test its invariants without manufacturing a caller.
+When a scope needs several repositories, group the mocks in one struct so a test builds and inspects them together:
 
-Dates in mocks are fixed (`Date(timeIntervalSince1970:)`), never `Date()`: an assertion against a mock's output must be reproducible. A use case that decides on time reads `Date.now`, so a test of that decision builds its dates relative to now with a clear margin — an end date a minute past or a minute ahead — never at the boundary. The mock repositories and scopes are the service's own, because they mirror the service's repositories; only the two doubles every service would write identically are shared.
+```swift
+struct EntitlementMockRepositories {
+    let entitlements: MockEntitlementRepository
+    let devices: MockDeviceRepository
+}
+```
 
 ## The scoped database helper
 
-Construct the mock database through one scoped helper beside the mocks, and write test bodies inside it:
+Construct the mock database through one scoped helper in `Mocks/WithDatabase.swift`, and write test bodies inside it. `T` carries no `Sendable` constraint: the operation runs in the caller's isolation.
 
 ```swift
-func withDatabase<T: Sendable>(
-    repository: any SubscriberRepository,
-    operation: (MockDatabase<MockNewsletterScope>) async throws -> T
+import UsersCore
+import <Project>Testing
+
+func withDatabase<T>(
+    repository: any UserRepository,
+    operation: (MockDatabase<MockUserScope>) async throws -> T
 ) async rethrows -> T {
-    let database = MockDatabase(scope: MockNewsletterScope(subscriberRepository: repository))
+    let database = MockDatabase(scope: MockUserScope(userRepository: repository))
     return try await operation(database)
 }
 ```
 
-A returning factory would be equivalent today; the scoped shape is chosen for where it goes: a later integration variant that provisions a real ephemeral database has the same signature, and no call site changes. `rethrows` keeps the call honest — a test whose closure cannot throw calls it without `try`.
+With several repositories the helper takes the `…MockRepositories` struct instead. The scoped shape keeps every call site unchanged if a variant later provisions a real ephemeral database, and `rethrows` lets a test whose closure cannot throw call it without `try`.
+
+```swift
+@Test("listing as a user is refused before any read")
+func listAsUserIsForbidden() async {
+    let repository = MockUserRepository(users: [makeUser()])
+    await withDatabase(repository: repository) { database in
+        let useCase = ListUsersUseCase(database: database, logger: Logger(label: "users-core-tests"))
+        await #expect(throws: ListUsersUseCaseError.forbidden) {
+            _ = try await useCase(subject: makeSubject(role: .user))
+        }
+    }
+    #expect(await repository.calls == 0)
+}
+```
 
 ## What a use-case test covers
 
 Test the decisions the use case owns, through its public surface, against mocks alone:
 
-1. **The success path**: calling the use case mutates or reads the repository as specified, and the returned shape carries the expected values.
-2. **Every guard**: an input the use case refuses before I/O throws the use case's own typed error, and the repository was never reached (`#expect(subscribers.isEmpty)` after the refusal). The authorization guard is one of these — `makeSubject(role: .user)` against an administrator's use case throws `.forbidden` and touches nothing — because the rule lives in the use case and this is where it is checkable.
-3. **Meaningful error classifications**: named repository failures retain the distinctions callers act on. Inject failures and compare the typed error; parameterize equivalent paths with explicit input/expected pairs.
+1. **The success path**: the use case reads or mutates the repository as specified, and the result carries the expected values.
+2. **Every guard**: input the use case refuses before I/O throws its own typed error and leaves `calls == 0`. The authorization guard is one of these — `makeSubject(role: .user)` against an administrator's use case throws `.forbidden` and touches nothing.
+3. **Meaningful error classifications**: injected repository failures retain the distinctions callers act on. Parameterize equivalent paths with explicit input/expected pairs.
 
-Keep a test when a plausible regression in code this package owns would fail it. There is no test-count quota per error enum, method, or overload. Keep distinct decision branches and boundary values; consolidate cases that exercise the same behavior. Guard tests count calls or use a collaborator that fails if reached: unchanged data alone cannot prove that no read occurred. A mock's idempotent behavior does not establish database retry safety.
+Keep a test when a plausible regression in code this package owns would fail it. There is no quota per error case, method, or overload; consolidate cases that exercise the same behavior. A mock's idempotent behavior does not establish database retry safety.
 
 ## What a use-case test does not cover
 
-- **Identification.** Requiring a caller is the handler's per-RPC decision and never lives in a use case (see *Identifying a caller versus requiring one* in identity-and-access.md) — so use-case tests need no token, no `OperationContext`, no interceptor scaffolding. The principal arrives as a value. A test that binds an `OperationContext` to exercise a use case is testing the wrong layer; a handler test, when one is written, binds it with the standard `OperationContext.withContext`, or hands the handler `MockUserAuthenticator(["admin-token": admin])` and sends `Bearer admin-token`.
-- **Row confinement.** Row-level security is enforced by the database from the stamped transaction (persistence.md); a mock database cannot exercise it and must not pretend to. Policies are verified against a real database as part of the persistence completion gates, not in unit tests.
-- **Transport.** Status-code mapping belongs to the producer adapter or the controller and is exercised at the transport boundary (below), not by driving a server inside a use-case test.
+- **Identification.** Requiring a caller is the handler's per-RPC decision ([identity-and-access.md](identity-and-access.md#identifying-a-caller-versus-requiring-one)); use-case tests bind no `OperationContext` and need no token or interceptor. The principal arrives as a value.
+- **Row confinement.** Row-level security is enforced by the database from the stamped transaction; a mock database cannot exercise it. Policies are verified against a real database as the roles ([persistence.md](persistence.md#row-level-security)).
+- **Transport.** Status mapping is the transport tests' (below).
 
-The result is that `swift test` runs the whole target in milliseconds with no containers, which is what allows CI to run it on every pull request (the delivering-swift-services skill).
+`swift test` then runs the Core targets in milliseconds with no containers, which lets CI run them on every pull request.
 
 ## Transport tests
 
-A transport target is tested through the framework's own test harness, over mocks of what the controllers or handlers collaborate with — mocked use-case protocols in a module's surface, one mocked generated client protocol per `<Entity>Service` in a gateway — never over a database. On HTTP, compose the application in the test exactly as the composition root does, with a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key so the bearer middleware runs as shipped, and drive it with HummingbirdTesting's `.router` (or `VaporTesting`); the tier matrix and error mappings it covers are the building-swift-http-surfaces skill's (*Tests* in its [surface reference](../../building-swift-http-surfaces/references/surface.md#tests)). On gRPC, a handler test binds the principal with the standard `OperationContext.withContext`, or runs the interceptor with `MockUserAuthenticator(["admin-token": admin])` and sends `Bearer admin-token`, and asserts the status each use-case error maps to.
+Transport tests are both kinds, split by purpose:
 
-A transport test asserts routing, identification, conversion, and status. What the use case decides is the use-case test's, and a transport test that re-asserts a business rule through a mocked use case is testing its own mock.
+- **Handler and router tests** over mocked collaborators — the module's use-case protocols, or one mocked generated client protocol per `<Entity>Service` in a gateway — never a database. They cover the tier and identity matrix (absent token `unauthenticated`/401, non-administrator `permissionDenied`/403, the use case not reached), request conversion, and the mapping of every use-case error to its status. On HTTP these drive HummingbirdTesting's `.router` (or `VaporTesting`) over an application composed as the root composes it, with a real `JWTIssuer` and `JWTAuthenticator` over a throwaway Ed25519 key ([surface.md](../../building-swift-http-surfaces/references/surface.md#tests)). On gRPC a handler test binds the principal with `OperationContext.withContext`, or runs the interceptor with `MockUserAuthenticator(["admin-token": admin])` and sends `Bearer admin-token`.
+- **One live loopback TLS suite per gRPC module**, `<Module>GRPCTests`, for what only the wire proves: the servers and their interceptor pipelines as the root builds them, token verification at the receiver (an invalid, an expired, and a wrongly signed token), bearer propagation on `<Entity>Service` descriptors only, internal-service admission by certificate, and each listener's transport configuration. Each listener is dialed as its real callers dial it: a client-facing listener with server TLS and a bearer token and no client certificate (an internal descriptor answers `unimplemented` there), an internal listener with mTLS (a client without a certificate is refused). A microservice's one listener is internal, so its suite is mTLS throughout. It mints a throwaway CA and leaf pairs with swift-certificates and swift-crypto, serves on `127.0.0.1` port `0`, and dials with full server verification against `localhost`:
 
-Prefer the router harness for credential/role refusals and shared problem/status mappings. Reserve real loopback connections for wire conversion, descriptor-scoped bearer propagation, independent receiver verification, deadlines, and lifecycle behavior. Test generic TLS rejection and reload mechanics once in the owning shared contract suite; repeat a service case only when it exercises that service's production configuration or a distinct composition invariant. Hand-built fixture TLS settings do not verify executable configuration. Recorded `AGENTS.md` profiles may specify this shared coverage arrangement.
+```swift
+// Tests/UsersGRPCTests/TLSFixtures.swift (excerpt)
+struct TestCA: Sendable {
+    let key: Certificate.PrivateKey
+    let certificate: Certificate
 
-Remove stale scenarios after architecture changes and unused fixture machinery with them. Keep setup isolated per case and use `#require` before indexing fixture output. Observe async completion or reconnect state with bounded waiting rather than sleeping for a guessed interval. Preserve durable workflow replay histories and real database isolation/idempotency coverage; these prove contracts mocks cannot.
+    init() throws {
+        key = Certificate.PrivateKey(P256.Signing.PrivateKey())
+        let name = try DistinguishedName { CommonName(UUID().uuidString) }
+        certificate = try Certificate(
+            version: .v3,
+            serialNumber: Certificate.SerialNumber(),
+            publicKey: key.publicKey,
+            notValidBefore: Date.now.addingTimeInterval(-60),
+            notValidAfter: Date.now.addingTimeInterval(86_400),
+            issuer: name,
+            subject: name,
+            signatureAlgorithm: .ecdsaWithSHA256,
+            extensions: try Certificate.Extensions {
+                Critical(BasicConstraints.isCertificateAuthority(maxPathLength: nil))
+                Critical(KeyUsage(keyCertSign: true))
+            },
+            issuerPrivateKey: key
+        )
+    }
+}
+```
+
+The client-facing client is `.tls { $0.trustRoots = …; $0.serverCertificateVerification = .fullVerification }` with no certificate chain. A leaf is issued by the CA with `ExtendedKeyUsage([.serverAuth, .clientAuth])` and `SubjectAlternativeNames([.dnsName("localhost")])`, written as PEM files to a temporary directory the test removes, and loaded through `TimedCertificateReloader.makeReloaderValidatingSources`. The fixture server runs the module's services over `MockDatabase` and a fixture repository inside a `ServiceGroup` in a task group, reads the bound port from `transport.listeningAddress`, and triggers graceful shutdown when the body returns; give the suite a `.timeLimit` and every call a short `CallOptions.timeout`.
+
+A transport test asserts routing, identification, conversion, and status; what the use case decides is the use-case test's. Test generic TLS rejection and reload mechanics once in the owning shared library's suite; repeat a case here only when it exercises this module's configuration. Keep setup isolated per case, `#require` before indexing fixture output, and observe async completion with bounded waiting rather than sleeping. Remove stale scenarios and unused fixture machinery after architecture changes.

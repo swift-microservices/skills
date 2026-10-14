@@ -2,19 +2,19 @@
 
 ## Contents
 
-- Two shapes, one grammar
-- The module
-- Target graph of a monolith
-- Target graph of a microservice
-- Target graph of a gateway
-- What each target owns
-- Movability and the cross-module rule
-- Dependency direction
-- Business rules, policies, and adapters
-- Share the machinery, duplicate the wiring
-- Naming grammar
-- Boundary rules
-- Ownership rules
+- [Two shapes, one grammar](#two-shapes-one-grammar)
+- [The module](#the-module)
+- [Target graph of a monolith](#target-graph-of-a-monolith)
+- [Target graph of a microservice](#target-graph-of-a-microservice)
+- [Target graph of a gateway](#target-graph-of-a-gateway)
+- [What each target owns](#what-each-target-owns)
+- [Movability and the cross-module rule](#movability-and-the-cross-module-rule)
+- [Dependency direction](#dependency-direction)
+- [Business rules, policies, and adapters](#business-rules-policies-and-adapters)
+- [Share the machinery, duplicate the wiring](#share-the-machinery-duplicate-the-wiring)
+- [Naming grammar](#naming-grammar)
+- [Boundary rules](#boundary-rules)
+- [Ownership rules](#ownership-rules)
 
 Use a module-oriented SwiftPM package, not textbook layer names. The package is the deployment unit; targets are compile-time boundaries inside it.
 
@@ -46,20 +46,23 @@ One package `<organization>-<project>`, one executable `<Project>`, every module
 
 ```text
 <Project>                                  # the composition root: composes every module
-├── CatalogCore
+├── <Project>Authentication                                # the org layer, in-package: identities, roles, user context
+├── <Project>Persistence ─→ <Project>Authentication        # only with tenant tables: the settings interceptor and middleware
+├── <Project>Testing ─────→ <Project>Authentication        # test doubles, linked by test targets only
+├── CatalogCore ──────────→ <Project>Authentication
 ├── CatalogPostgres ──────→ CatalogCore
 ├── CatalogHTTP ──────────→ CatalogCore, <Project>HTTP     # with HTTP
 ├── CatalogGRPC ──────────→ CatalogCore                    # with gRPC
-├── UsersCore
+├── UsersCore ────────────→ <Project>Authentication
 ├── UsersPostgres ────────→ UsersCore
 ├── UsersHTTP ────────────→ UsersCore, <Project>HTTP
 ├── UsersGRPC ────────────→ UsersCore
 ├── UsersBcrypt ──────────→ UsersCore                      # one per provider SDK
 ├── <Project>HTTP                                          # with HTTP: contexts, error middleware, problem types
-└── <Project> ────────────→ every module's targets
+└── <Project> ────────────→ every module's targets; Ports/ adapts one module's use case to another's port
 ```
 
-`<Project>HTTP` exists because the request contexts, the error middleware, and the problem types are shared by every `<Module>HTTP` and owned by none of them. It holds transport plumbing only, never a use case or an entity. A gRPC monolith needs no such target: every `<Module>GRPC` is self-contained and the interceptors are applied in the root.
+The org layer, `<Project>Authentication`, `<Project>Persistence`, and `<Project>Testing`, lives in the package as targets until a second package needs it; then it moves to a tagged `<project>-core`, the same rule as in-package protos. `<Project>HTTP` exists because the request contexts, the error middleware, and the problem types are shared by every `<Module>HTTP` and owned by none of them; it holds transport plumbing only. A gRPC monolith needs no such target: every `<Module>GRPC` is self-contained and the interceptors are applied in the root.
 
 One database, one executable, one `ServiceGroup`. The root builds one `PostgresClient` per role, one `PostgresDatabase` per module per role, every module's use cases, and then one `GRPCServer` registering every `<Module>GRPC`'s services, one Hummingbird application mounting every `<Module>HTTP`'s controllers, or both.
 
@@ -90,7 +93,7 @@ The HTTP transport of a system whose modules are services. One package `<organiz
 └── <Project> ──→ API   # command tree, configuration, clients, lifecycle
 ```
 
-Two targets, not four. A gateway owns no entities, no repositories, and no database, so `Core` and `Postgres` targets would be empty. Do not add an `APICore` to mirror the module shape: the only candidates for it are the request contexts and the problem types, and both are transport concerns that belong beside the controllers that use them. Name it `-api`, not `-gateway`: the thing that actually gateways, routing, TLS termination, rate limiting, is the ingress in front of this process; what this package holds is hand-written controllers mapping one contract onto another, an edge service. Its package, manifest, and root are the building-swift-http-surfaces skill's, in its [gateway reference](../../building-swift-http-surfaces/references/gateway.md).
+Two targets, not four: a gateway owns no entities, repositories, or database, so it has no Core or Postgres and no `APICore`. Its package, its naming (`-api`, not `-gateway`), its manifest, and its root are the building-swift-http-surfaces skill's [gateway reference](../../building-swift-http-surfaces/references/gateway.md).
 
 ## What each target owns
 
@@ -101,20 +104,21 @@ Two targets, not four. A gateway owns no entities, no repositories, and no datab
 | `<Module>Postgres` | Postgres scopes, one per database role, repositories, prepared statements, the module's table and policy migrations; in a service, the role migrations too | Business validation, RPC or HTTP mapping, CLI parsing, a `Database` of its own, another module's tables |
 | `<Module>GRPC` | Generated-service conformances, one per proto service, request/input mapping, domain/protobuf mapping, RPC error translation, the per-handler guards `requireUser()` and `requireAdministrator()`, early gates the use case backs | SQL, environment reading, server construction, an authorization decision |
 | `<Module>HTTP` | The module's OpenAPI document and generated types, controllers over the module's use-case protocols, schema conversions, use-case error to problem mapping; in a service, the contexts and error middleware too | SQL, environment reading, application construction, an authorization decision |
+| `<Project>Authentication`, `<Project>Persistence`, `<Project>Testing` (monolith, in-package) | What `<project>-core` would hold: `UserIdentity`, `UserRole`, `OperationContext.user` and the `.user` metadata provider, the EdDSA conveniences; `PostgresSettings.user(_:)`, `UserSettingsInterceptor`, `UserSettingsMiddleware`; `MockDatabase`, `MockUserAuthenticator` | A module's entity or use case, configuration, composition |
 | `<Project>HTTP` (monolith only) | Request contexts, error middleware, problem types, the `HTTPError` problem conformance | A controller, a use case, an entity, a route |
 | `API` (gateway only) | Generated OpenAPI types, request contexts, error middleware and problem types, controllers over generated client protocols, RPC conversions, route registration | Environment reading, client construction, logging setup, `@main`, a database |
 | `<Module>Workflows` | Temporal Workflows, Activity containers, workflow-client adapters, signals, queries, Temporal error translation | SQL implementations, generated protobuf, environment reading, dependency construction |
-| `<Project>` or `<Service>` | ArgumentParser command tree, environment configuration, logging bootstrap, dependency construction, the cross-module injections, server, application, and client construction, lifecycle; the one migration list, `Database/Migrations.swift`, and in a monolith the role migrations too; with Temporal, the `worker run` command's second composition root | Reusable business rules |
+| `<Project>` or `<Service>` | ArgumentParser command tree, environment configuration, logging bootstrap, dependency construction, the cross-module injections, server, application, and client construction, lifecycle; the one migration list, `Database/Migrations.swift`, and in a monolith the role migrations and the cross-module adapters in `Ports/`; with Temporal, the `worker run` command's second composition root | Reusable business rules |
 
 ## Movability and the cross-module rule
 
 A module never imports another module's Core, Postgres, HTTP, or GRPC target. Only the composition root sees more than one module. That single rule is what makes the shape a wiring decision:
 
-- When a consumer module needs another module's behavior, its Core declares the protocol it needs: the producer's `XUseCaseProtocol` when the shapes match, or a narrower client port naming only the operation and the values the consumer needs. Generated protobuf types never appear in it.
-- In a monolith the composition root injects the producer module's use case, directly for a use-case protocol, or behind a few lines in the executable that convert into a narrow port's value. The call is local; transaction boundaries follow the same remote-call rule and bounded single-use-secret rotation exception in [core.md](core.md).
-- In microservices the composition root injects a gRPC client adapter conforming to the same protocol, the consumer adapter of [grpc-and-protos.md](grpc-and-protos.md).
+- When a consumer module needs another module's behavior, its Core declares the port it needs in its own types, naming only the operation and the values the consumer reads. Generated protobuf types never appear in it.
+- In a monolith the composition root always adapts: a small executable-local adapter in `Sources/<Project>/Ports/` calls the producer's use case and converts into the port's values ([core.md](core.md#ports-to-other-modules)). The producer's use case cannot conform to the port directly, because the port's types are the consumer's. The call is local, and stays outside the consumer's transaction ([core.md](core.md#database-boundary)).
+- In microservices the composition root injects a gRPC client adapter conforming to the same port, the consumer adapter of [grpc-and-protos.md](grpc-and-protos.md#consumer-adapter).
 
-Turning a module into a service is therefore three steps: release its contract in `<project>-protos`, give the module its own package, database, and executable, and swap what the consumer's root injects. Nothing inside the module changes, and the consumer's Core does not know it happened. Going the other way, folding a service into a monolith, is the same three steps reversed. Neither needs a plan of its own.
+Turning a module into a service is therefore three steps: release its contract in `<project>-protos`, give the module its own package, database, and executable, and swap the consumer root's adapter for the gRPC client adapter. Nothing inside the module changes, and the consumer's Core does not know it happened. Going the other way, folding a service into a monolith, is the same three steps reversed. Neither needs a plan of its own.
 
 The rule has a persistence half: a module owns its tables and no other module queries, joins, or references them with a foreign key, in a monolith's single database exactly as across service databases. A module that needs another module's data asks through the port and stores what it is told, under its own identifiers, as *Ownership rules* below describes.
 
@@ -142,13 +146,15 @@ package struct PasswordPolicy: Equatable, Sendable {
 }
 ```
 
-A limit is never a `static let` on the use case: the use case is generic over its database type, and Swift refuses static stored properties in generic types, so the value has nowhere to live but the policy, which is also where a test can vary it. Name a rule expressed as numbers `XPolicy`, not `XConfiguration`. Configuration is deployment wiring that varies per environment; a policy is a product decision that would be identical in staging and production. An executable-local policy reader translates configuration into policy; being loadable from `ConfigReader` does not make a value configuration. Name the typed policy property `expiration`, matching `expirationDate`; name its numeric configuration key `expirationSeconds` to expose the unit.
+A limit lives in the policy, never on the use case, which is also where a test can vary it. Name a rule expressed as numbers `XPolicy`, not `XConfiguration`. Configuration is deployment wiring that varies per environment; a policy is a product decision that would be identical in staging and production. An executable-local policy reader translates configuration into policy; being loadable from `ConfigReader` does not make a value configuration. Name the typed policy property `expiration`, matching `expirationDate`; name its numeric configuration key `expirationSeconds` to expose the unit.
 
 Use a protocol where collaborator substitution is useful. A focused standards library may be passed concretely when wrapping its standard types or engine adds no value; record that choice in the project profile. A policy is the exception because it is data, not a collaborator: the composition root builds it from configuration and passes it by value into the use case's initializer, which defaults the parameter to `.standard` so a test constructs the use case without it. A validator that applies such a policy, `PasswordValidator(policy:)`, travels the same way; a validator with no values to carry is not a type at all but a guard in the use case.
 
 ## Share the machinery, duplicate the wiring
 
 Shared packages carry what is genuinely the same in every package, consumed by tag beside the proto contracts. The [swift-microservices](https://github.com/swift-microservices) packages hold the generic machinery, knowing nothing of the organization: swift-persistence and swift-persistence-postgres for the transaction boundary and the Postgres driver, swift-authentication for the shape of a proven caller, swift-authentication-jwt for the user's token, swift-authentication-grpc, -hummingbird, and -vapor for the transports that bind one; a process is proved by its certificate over mTLS and needs no package of its own. `<project>-core` holds what the organization decides once: the user's claims, the roles, the setting the policies read, the interceptor and the middleware that bind it, the test doubles. Every package is one dependency set, so a target links exactly the technology it names (see *The packages* in [identity-and-access.md](identity-and-access.md)).
+
+In a one-package monolith that organization layer is in-package targets until a second package needs it ([service-package.md](service-package.md#source-tree-of-a-monolith)).
 
 What stays per package is the wiring: configuration readers, transport-security factories, the composition roots, the scopes, the migration lists, the request contexts, the mock repositories. Those start identical and diverge as systems evolve, and duplicating eight lines costs less than a tag and a bump in every consumer for every change to them. The test of where a shape belongs is whether it would ever differ between two packages: a `Database` protocol never does, a `PostgresConfiguration` does the moment one package gains a role. Do not add another shared package, and do not put configuration or composition into `<project>-core`.
 
@@ -168,7 +174,7 @@ What stays per package is the wiring: configuration readers, transport-security 
 - Postgres implementation: `PostgresItemRepository`; prepared statement `CreateItemStatement`; scopes `Postgres<Module>Scope` such as `PostgresCatalogScope`, plus `Postgres<Module>InternalScope` with tenant tables and `Postgres<Module>WorkerScope` with a worker; migrations such as `CreateItemsTable`, which the executable's `Migrations.swift` lists.
 - gRPC service implementations, one per proto service: `ItemService`, `ItemInternalService`.
 - HTTP controller, one per resource: `ItemController`; contexts `IdentityRequestContext`, `AdminRequestContext`; conversions `ItemResponse+Schema.swift` in a module, `ItemResponse+RPC.swift` in a gateway.
-- Cross-module port in a consumer's Core: the producer's `XUseCaseProtocol`, or a narrow `<Entity>Client` port such as `AccountClient`; its gRPC implementation `GRPCAccountClient` in the consumer's GRPC target.
+- Cross-module port in a consumer's Core: a narrow `<Entity>Client` port such as `AccountClient`; its in-process adapter `UsersAccountClient` in the monolith's `Sources/<Project>/Ports/`, named for the producer; its gRPC implementation `GRPCAccountClient` in the consumer's GRPC target.
 - Identity: `UserIdentity` as `subject:` on user operations; internal operations accept business input directly after transport mTLS admission.
 - Temporal workflow, Activities, and client adapter: `ReservationWorkflow`, `ReservationActivities`, `TemporalReservationWorkflowClient`.
 - Identifiers: values — properties, parameters, variables, and enum cases — spell `xId`, never `xID`, so `registrationId` stays aligned with SQL `registration_id` and proto `registration_id`; type names spell `ID`, as Apple's APIs do: `GetUserByIDUseCase`.
@@ -191,7 +197,7 @@ Use protocols where they enable a real seam:
 
 Do not add a protocol merely to mirror every concrete type. Keep entities and command values as structs. Keep configuration and composition concrete at the executable root.
 
-Use typed errors in Core. Map persistence failures into repository errors in persistence, repository errors into use-case errors in Core, and use-case errors into RPC status in GRPC or problem details in HTTP. Reverse that translation at the consumer boundary. Never make Core switch on SQLSTATE, `RPCError`, or `HTTPError`.
+Use typed errors in Core. Core never matches on `PSQLError`; repositories translate the SQLSTATEs they know into `XRepositoryError` and let an unknown cause propagate to the use case's catch-all. Use cases translate repository errors into their own typed errors, and transports translate those into RPC status or problem details; the consumer boundary reverses that. Never make Core switch on SQLSTATE, `RPCError`, or `HTTPError`.
 
 Translate an error only where the translation carries information. A one-case adapter enum every failure funnels into, `catch { throw XClientError.unavailable }`, destroys the cause without adding a distinction, so a permanent misconfiguration reports as a retryable outage and the caller retries what can never succeed. Let the infrastructure error propagate and classify it where the difference is actionable. Name a repository error for the constraint that exists: a partial unique index over active states means "an active record exists", not "duplicate email".
 

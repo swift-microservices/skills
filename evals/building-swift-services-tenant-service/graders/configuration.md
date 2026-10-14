@@ -1,10 +1,5 @@
 ---
-type: llm
-focus: { source: file, path: acme-documents/Sources/Documents/Serve/Serve.swift }
+type: regex
+target: { source: file, path: acme-documents/Sources/Documents/Serve/Serve.swift }
+pattern: '^(?=[\s\S]*?ConfigReader\(\s*providers:\s*\[\s*EnvironmentVariablesProvider\(\)[^\]]*?InMemoryProvider)(?=[\s\S]*?scoped\(to:\s*"postgres"\))(?=[\s\S]*?scoped\(to:\s*"tls"\))(?=[\s\S]*?scoped\(to:\s*"grpc(?:\.server)?"\))(?![\s\S]*?"(?:/run/|/etc/|/var/|0\.0\.0\.0|127\.0\.0\.1|localhost))(?![\s\S]*?\bguard\b[^\n]*(?:[cC]onfig|\bport\b|\bhost\b|[pP]ath\b))(?![\s\S]*?\(config:(?:[^()\n]|\([^()\n]*\))*,\s*\w*(?:[Pp]ath|[Dd]irectory)\s*:)'
 ---
-
-PASS if all of these hold in Serve:
-- Configuration comes from a `ConfigReader` whose providers put environment variables before the application's in-memory defaults.
-- Readers are scoped by concern (for example `postgres`, `tls`, `jwt`, `grpc.server`) and passed to native readers or focused `init(config:)` extensions.
-
-FAIL if Serve hard-codes mount paths or hosts inline, validates configuration with its own guard statements, or passes a default-path or directory argument to an adapter alongside its reader. A `default:` value on an individual key read (such as a log level or port) is fine. Calling helper extensions defined in other files is expected.

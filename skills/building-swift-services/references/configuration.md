@@ -4,11 +4,11 @@ Keep provider selection in the executable and configuration parsing close to the
 
 ## Contents
 
-- Prefer native readers
-- Supply application defaults
-- Extend types without a reader
-- Names, units, and validation
-- Library adoption
+- [Prefer native readers](#prefer-native-readers)
+- [Supply application defaults](#supply-application-defaults)
+- [Extend types without a reader](#extend-types-without-a-reader)
+- [Names, units, and validation](#names-units-and-validation)
+- [Library adoption](#library-adoption)
 
 ## Prefer native readers
 
@@ -46,6 +46,8 @@ extension InMemoryProvider {
             "postgres.workerUser": "catalog_worker",
             "grpc.server.host": "0.0.0.0",
             "grpc.server.port": 50051,
+            "grpc.internalServer.host": "0.0.0.0",              // only beside a client-facing listener
+            "grpc.internalServer.port": 50052,
             "loki.url": "http://localhost:3100",
             "temporal.tls.certificatePath": "/run/temporal-tls/cert.pem",
             "temporal.tls.privateKeyPath": "/run/temporal-tls/key.pem",
