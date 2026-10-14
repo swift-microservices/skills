@@ -2,16 +2,16 @@
 
 ## Contents
 
-- The test target
-- What a library test proves
-- Isolation contract tests
-- Bindings and interceptors
-- Real providers
-- What not to test here
+- [The test target](#the-test-target)
+- [What a library test proves](#what-a-library-test-proves)
+- [Isolation contract tests](#isolation-contract-tests)
+- [Bindings and interceptors](#bindings-and-interceptors)
+- [Real providers](#real-providers)
+- [What not to test here](#what-not-to-test-here)
 
 ## The test target
 
-One `<Module>Tests` target on swift-testing (`import Testing`, `@Suite`, `@Test`, `#expect`, `#require`), never XCTest, with the shared Swift settings and the library module as a `.target(name:)` dependency. A test imports the module plainly; needing `@testable` means the test is reaching for an implementation detail rather than the contract. Test doubles live in the test target, not in a product: a small `TableAuthenticator<Credential, Identity>` over a dictionary, a `ScopeDatabase<Scope>` that hands every unit of work a fixed scope. An organization-layer `<Project>Testing` product is the exception, because services share those doubles.
+One `<Module>Tests` target on swift-testing, never XCTest, with the shared Swift settings and the library module as a `.target(name:)` dependency. A test imports the module plainly; needing `@testable` means the test is reaching for an implementation detail rather than the contract. Test doubles live in the test target, not in a product: a small `TableAuthenticator<Credential, Identity>` over a dictionary, a `ScopeDatabase<Scope>` that hands every unit of work a fixed scope. An organization-layer `<Project>Testing` product is the [exception](organization-layer.md#product-exceptions).
 
 Name a suite for the type and a test for the behavior, with the display string stating the expectation: `@Test("A transaction preserves MainActor isolation across suspension")`.
 

@@ -17,8 +17,7 @@
 
 ## Releases
 
-- Every pull request carries exactly one label: `⚠️ semver/major`, `🆕 semver/minor`,
-  `🔨 semver/patch`, or `semver/none`.
-- Releases are created by the Auto Release workflow, run by hand on `main`; a major bump is refused
-  there and cut by hand. The latest release is 0.2.0.
+- Every pull request carries exactly one SemVer label.
+- Releases are created by the Auto Release workflow, run by hand on `main`. The latest release is
+  0.2.0.
 - Consumers pin by tag, never by branch or path.

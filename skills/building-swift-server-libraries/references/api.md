@@ -2,21 +2,21 @@
 
 ## Contents
 
-- Access and imports
-- Small, protocol-shaped surfaces
-- Errors
-- Scoped callbacks and isolation
-- OperationContext keys
-- Logging, configuration, and lifecycle
-- Documentation
-- What a library never does
+- [Access and imports](#access-and-imports)
+- [Small, protocol-shaped surfaces](#small-protocol-shaped-surfaces)
+- [Errors](#errors)
+- [Scoped callbacks and isolation](#scoped-callbacks-and-isolation)
+- [OperationContext keys](#operationcontext-keys)
+- [Logging, configuration, and lifecycle](#logging-configuration-and-lifecycle)
+- [Documentation](#documentation)
+- [What a library never does](#what-a-library-never-does)
 
 A library's public API is a contract every consumer compiles against and every release must honor. Keep it as small as the concept, document every declaration, and make each guarantee one its tests prove.
 
 ## Access and imports
 
 - `public` only for what consumers use; everything else `internal` or `private`. A library has no `package`-access consumers outside itself.
-- Plain imports are internal under `InternalImportsByDefault`. Write `public import` exactly where an imported type appears in public API (`public import OperationContext` beside an `OperationContextKey`, `public import JWTKit` beside a `JWTPayload` constraint); `public import` does not re-export names, so a consumer still imports the modules it names. Under the conditional Foundation import, both branches carry the same access.
+- Import access follows the writing skill's [Swift settings](../../writing-swift-server-code/references/swift-settings.md): `public import` exactly where an imported type appears in public API, including a public extension of another module's type.
 - Module-qualify a name that collides with the framework's own: the Vapor binding writes `Authentication.Authenticator` because Vapor has one too.
 - Make every public type and protocol `Sendable` where it is meaningful; a public reference type with mutable state is an actor or holds it behind a `Mutex`.
 
@@ -70,7 +70,12 @@ Where a framework protocol requires `@concurrent` on a continuation (`next` in a
 
 ## OperationContext keys
 
-A value that travels with a task, such as a bound principal or the settings a transaction applies, is an `OperationContextKey` the library declares, with a Sendable value and a typed accessor:
+A value that travels with a task, such as a bound principal or the settings a transaction applies, is an `OperationContextKey` the library declares, with a Sendable value and a typed accessor. No library but swift-operation-context declares a `@TaskLocal`; `OperationContext.current` is the one.
+
+Choose the key's visibility by who establishes the value:
+
+- **Only the owning library writes it**: keep the key `internal` or `private` and expose a public typed accessor whose setter is no wider than the writers (`public internal(set) var`), or a public binding method.
+- **Other packages legitimately establish it** (a transport binding binds a principal, the organization layer sets database settings): make the key public, or keep it internal and expose a public read-write accessor or binding method. `PrincipalKey` and `PostgresSettingsKey` are public for this reason:
 
 ```swift
 public enum PostgresSettingsKey: OperationContextKey {
@@ -85,7 +90,25 @@ extension OperationContext {
 }
 ```
 
-Use `OperationContext` from swift-operation-context for shared operation values. A key's type identifies its slot, including generic specialization; its `Value` must be `Sendable`. `OperationContext.current` is nonoptional and defaults to an empty context, while individual values remain optional. Copy the current context to preserve enclosing values, set the key, and scope the continuation:
+An owner-written value keeps its key internal; consumers read it and only the library's binding sets it:
+
+```swift
+public import OperationContext
+
+enum RequestIDKey: OperationContextKey {
+    typealias Value = String
+}
+
+extension OperationContext {
+    /// The id of the request this operation serves, bound by the library's middleware.
+    public internal(set) var requestId: String? {
+        get { self[RequestIDKey.self] }
+        set { self[RequestIDKey.self] = newValue }
+    }
+}
+```
+
+A key's type identifies its slot, including generic specialization. `OperationContext.current` is nonoptional and defaults to an empty context, while individual values remain optional. A binding copies the current context to preserve enclosing values, sets its value, and scopes the continuation; `withContext` replaces the whole context for the closure and restores the previous one on return or throw:
 
 ```swift
 var context = OperationContext.current
@@ -94,8 +117,6 @@ return try await OperationContext.withContext(context) {
     try await operation()
 }
 ```
-
-`withContext` replaces the whole context for the closure and restores the previous binding on return or throw. Prefer structured child tasks (`async let` and task groups), which inherit the binding and finish within the operation. `Task {}` inherits it but can outlive the scope; detached tasks and callbacks need an explicitly captured context rebound around their work. Network propagation requires explicit encoding and validation by the transport.
 
 Bindings keep the framework's identity state in step: Hummingbird's context `identity`, or Vapor's `request.auth` and `request.operationContext`. AuthenticationVapor provides `request.operationContext` through request storage; routes bind it around work that reads task-local values. The organization layer adds named accessors over generic keys (`OperationContext.user` over `PrincipalKey<UserIdentity, String>`) and logging metadata providers that explicitly read those values. Context storage does not authenticate, authorize, apply database settings, or configure logging by itself.
 

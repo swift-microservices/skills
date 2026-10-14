@@ -2,14 +2,14 @@
 
 ## Contents
 
-- One concept, one dependency set
-- The family
-- Naming
-- The manifest
-- Dependencies and floors
-- Platforms
-- Versions, tags, and releases
-- Splitting and adding packages
+- [One concept, one dependency set](#one-concept-one-dependency-set)
+- [The family](#the-family)
+- [Naming](#naming)
+- [The manifest](#the-manifest)
+- [Dependencies and floors](#dependencies-and-floors)
+- [Platforms](#platforms)
+- [Versions, tags, and releases](#versions-tags-and-releases)
+- [Splitting and adding packages](#splitting-and-adding-packages)
 
 ## One concept, one dependency set
 
@@ -40,7 +40,7 @@ Before adding a package, check whether the concept is already one of these, and 
 ## Naming
 
 - Repository and package: `swift-<concept>` for an abstraction, `swift-<concept>-<technology>` for its driver or binding, lowercase: `swift-persistence-postgres`, `swift-authentication-grpc`.
-- Product and module: the concept in upper camel case, then the technology: `Persistence`, `PersistencePostgres`, `AuthenticationGRPC`. A product carries no organization prefix; an organization-layer product does (`<Project>Authentication`).
+- Product and module: the concept in upper camel case, then the technology: `Persistence`, `PersistencePostgres`, `AuthenticationGRPC`. A product carries no organization prefix; an organization-layer product does (`<Project>Authentication`), except `<project>-protos`'s `<Module>Protos` (see [organization-layer.md](organization-layer.md#project-protos)).
 - Types: the concept they provide, never a framework's generic vocabulary (`PostgresDatabase`, `JWTAuthenticator`, `BearerPropagationInterceptor`), and identifiers spelled `ID` in type names and `Id` in values (`userId`).
 - A client library named for the technology it plugs into keeps that technology's prefix: swift-openapi-token-authentication (`OpenAPITokenAuthentication`) is middleware for Swift OpenAPI Generator's clients, not a binding of swift-authentication, and does not depend on it.
 - A test target is `<Module>Tests`; a second test target that needs heavier dependencies is named for what it proves (`<Project>MTLSTests`).
@@ -49,24 +49,14 @@ Before adding a package, check whether the concept is already one of these, and 
 
 ```swift
 // swift-tools-version: 6.3
-// Copyright (c) 2026 Zaid Rahhawi
+// Copyright (c) <year> <owner>
 // SPDX-License-Identifier: MIT
 // See LICENSE for license information.
 
 import PackageDescription
 
 let swiftSettings: [SwiftSetting] = [
-    // https://github.com/apple/swift-evolution/blob/main/proposals/0335-existential-any.md
-    .enableUpcomingFeature("ExistentialAny"),
-
-    // https://github.com/swiftlang/swift-evolution/blob/main/proposals/0444-member-import-visibility.md
-    .enableUpcomingFeature("MemberImportVisibility"),
-
-    // https://github.com/swiftlang/swift-evolution/blob/main/proposals/0409-access-level-on-imports.md
-    .enableUpcomingFeature("InternalImportsByDefault"),
-
-    // https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md
-    .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+    // The four upcoming features of the shared settings array, from swift-settings.md.
 ]
 
 let package = Package(
@@ -110,8 +100,8 @@ let package = Package(
 ```
 
 - The tools-version line is first, then the compact license header, then `import PackageDescription`.
-- One shared settings array, each feature commented with its proposal, attached to every target and test target; the [Swift settings](../../writing-swift-server-code/references/swift-settings.md) explain each.
-- One library product per package by default, exposing the one module consumers import. A second product is justified only by a second dependency set a consumer must be able to avoid; a test-support product is an organization-layer pattern (`<Project>Testing`), linked by test targets only. The organization layer records two more exceptions: `<project>-protos` has one `<Module>Protos` product per contract, so a consumer imports only the contracts it calls, and `<Project>Persistence` bundles its gRPC and Hummingbird bindings (and the Vapor one on a Vapor project) because only executables link it (see [organization-layer.md](organization-layer.md)).
+- The settings array is the writing skill's [shared settings array](../../writing-swift-server-code/references/swift-settings.md), copied whole and attached to every target and test target.
+- One library product per package by default, exposing the one module consumers import. A second product is justified only by a second dependency set a consumer must be able to avoid; the organization layer's exceptions are recorded once, in [organization-layer.md](organization-layer.md#product-exceptions).
 - Every target declares exactly the products it imports, and every declared package is used. Use `.package(url:from:)` with the full `.git` URL.
 - No unsafe flags, no `@preconcurrency` imports, no default MainActor isolation: a consumer cannot build a package whose manifest uses unsafe flags as a dependency.
 

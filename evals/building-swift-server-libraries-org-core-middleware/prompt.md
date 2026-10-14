@@ -1,5 +1,5 @@
 ---
-max_turns: 40
+max_turns: 60
 timeout_seconds: 900
 allowed_tools: [Read, Glob, Grep, Write, Edit, Skill]
 tags: [libraries, organization-layer]

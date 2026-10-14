@@ -8,3 +8,4 @@ PASS if all of these hold:
 - Dependent packages or conformers must adopt the non-optional return and raise their floor to 0.3.0.
 
 FAIL if the label it recommends is `⚠️ semver/major`, `🔨 semver/patch`, or `semver/none` (naming other labels only to rule them out is fine), if it proposes 1.0.0 unprompted, or claims to have built, committed, or released anything.
+Grade only against these criteria; do not fail for issues they do not mention.
