@@ -3,5 +3,10 @@ type: llm
 focus: { source: file, path: acme-api/Sources/Acme/Serve/Serve.swift }
 ---
 
-PASS if the serve command builds JWTAuthenticator<UserIdentity> from the public key, one GRPCClient per upstream service, BearerPropagationInterceptor<UserIdentity> applied to the two service descriptors, one generated stub per proto service, and runs them under a ServiceGroup; it reads no JWT signing key and opens no database. Calls to focused configuration factories are expected; trust configuration need not be inline in Serve.
-FAIL if the propagating interceptor is applied per call, a client is created per request, or a database or JWT signing key is used. A mounted TLS private key is required for mTLS and is not a JWT signing key.
+PASS if all of these hold:
+- Serve builds a `JWTAuthenticator<UserIdentity>` from a public key (read through configuration, possibly via a helper defined in another file).
+- It reads no JWT signing (private) key and opens no database or Postgres client. A mounted TLS private key for mTLS is not a JWT signing key.
+- It hands the authenticator and the upstream stubs to the router builder (`AcmeAPI` and its `Dependencies`).
+
+FAIL if a JWT signing key or a database is used, or the authenticator is not built from a public key.
+Grade only against these criteria; do not fail for issues they do not mention.

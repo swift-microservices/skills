@@ -1,29 +1,29 @@
 # The HTTP surface
 
-How HTTP is put on the system: the target that owns it, the OpenAPI document, the request contexts, the router tiers, the middleware that identifies a caller and binds the tenant, the controllers, the conversions, the error translation, and the router and application sections of the composition root. The same surface serves two shapes with one set of rules; only the controller's collaborator differs:
+How HTTP is put on the system: the target that owns it, the OpenAPI document, the request contexts, the router tiers, the tenant middleware, the controllers, the conversions, the error translation, and the Router and Hummingbird sections of the composition root. One set of rules serves two shapes; only the controller's collaborator differs:
 
 - **A module's HTTP transport.** Each module has an `<Module>HTTP` target whose controllers call the module's use-case protocols directly; a monolith's one executable mounts every module's controllers on one router, and a service mounts its own.
-- **A gateway in front of services.** A package of its own, `<organization>-api`, whose controllers call generated gRPC client protocols and forward the caller's token on each upstream's `<Entity>Service` descriptors. Its package, manifest, and composition root are in [gateway.md](gateway.md); every rule below applies to it too.
+- **A gateway in front of services.** A package of its own, `<organization>-api`, whose controllers call generated gRPC client protocols and forward the caller's token on each upstream's `<Entity>Service` descriptors. Its package, manifest, router builder, composition root, and tests are in [gateway.md](gateway.md); every rule below applies to it too.
 
-Use Hummingbird 2.28.0 or later as the default framework; the Vapor section at the end covers what changes on Vapor 4.
+Use Hummingbird 2.28.0 or later by default. A surface on Vapor 4 is in [vapor.md](vapor.md); the client SDK generated from a surface's document is in [client-sdk.md](client-sdk.md).
 
 ## Contents
 
-- Where HTTP lives
-- The OpenAPI document is the contract
-- Request contexts
-- Router tiers
-- The tenant on HTTP
-- Route design
-- Controllers
-- Schema conversion
-- Idempotency keys the client does not carry
-- Error translation
-- Composition
-- One surface or two
-- Deployment
-- The Vapor alternative
-- Tests
+- [Where HTTP lives](#where-http-lives)
+- [The OpenAPI document is the contract](#the-openapi-document-is-the-contract)
+- [The document as a client contract](#the-document-as-a-client-contract)
+- [Request contexts](#request-contexts)
+- [Router tiers](#router-tiers)
+- [The tenant on HTTP](#the-tenant-on-http)
+- [Route design](#route-design)
+- [Controllers](#controllers)
+- [Schema conversion](#schema-conversion)
+- [Idempotency keys the client does not carry](#idempotency-keys-the-client-does-not-carry)
+- [Error translation](#error-translation)
+- [Composition](#composition)
+- [One surface or two](#one-surface-or-two)
+- [Deployment](#deployment)
+- [Tests](#tests)
 
 ## Where HTTP lives
 
@@ -40,7 +40,7 @@ HTTP is a transport target like gRPC is, one per module, in both shapes:
 └── Catalog
 ```
 
-An `<Module>HTTP` target owns that module's OpenAPI document and generated types, its controllers, its schema conversions, its use-case problem conformances, and its route registration. It links `Hummingbird`, `HummingbirdAuth`, `OpenAPIRuntime`, `<Project>Authentication`, `Logging`, and its own module's Core; never Postgres, never another module's targets. The types a module's surface shares with every other module's — the request contexts, the error middleware, the problem types — are hand-written in a `<Project>HTTP` target the module targets link, so the surface has one vocabulary. A service folds them into its single `<Service>HTTP`.
+An `<Module>HTTP` target owns that module's OpenAPI document and generated types, its controllers, its schema conversions, its use-case problem conformances, and its route registration. It links `Hummingbird`, `HummingbirdAuth`, `HTTPTypes`, `OpenAPIRuntime`, `<Project>Authentication`, `Logging`, and its own module's Core; never Postgres, never another module's targets. The types every module's surface shares — the request contexts, the error middleware, the problem types — are hand-written in a `<Project>HTTP` target the module targets link, so the surface has one vocabulary. A service folds them into its single `<Service>HTTP`.
 
 Controllers over use cases hold use-case protocol existentials, exactly as a gRPC producer adapter does, and call them with `subject:` or `input:` from the context:
 
@@ -58,21 +58,103 @@ The transport target is what keeps a module movable. When a module becomes a ser
 
 ## The OpenAPI document is the contract
 
-Keep `openapi.yaml` in the generating target's directory beside `openapi-generator-config.yaml`. That is where the generator plugin looks. Do not keep it elsewhere and reach for it with `resources: [.copy("../../Docs/openapi.yaml")]`: the relative path escapes the target directory, which SwiftPM warns about, and the copy exists only to satisfy a lookup the convention already performs.
-
-Generate types only:
+Keep `openapi.yaml` beside `openapi-generator-config.yaml` in the directory of the target that serves it, where the generator plugin looks; never reach for a document elsewhere with `resources: [.copy("../../openapi.yaml")]`, whose path escapes the target.
 
 ```yaml
 generate:
   - types
 accessModifier: package
+namingStrategy: idiomatic
+typeOverrides:
+  schemas:
+    UUID: Foundation.UUID
+nameOverrides:
+  UUID: UUID
+additionalImports:
+  - struct Foundation.UUID
 ```
 
-Routes are registered by hand on Hummingbird, so generated server stubs would be a second routing mechanism maintained for the same endpoints. Use `package`, not `public` — the types cross target boundaries inside one package.
+Generate types only and register routes by hand, so the framework's route groups carry the tiers; generated server stubs would be a second routing mechanism for the same endpoints. Use `package` access: the types cross target boundaries inside one package and never leave it. `namingStrategy: idiomatic` turns operation ids and schema names into Swift names (`getProfile`, `ItemResponse`).
 
-The rule is one routing mechanism and one contract; which one is a project choice. Types-only with hand-registered routes is the default for a project that wants the framework's own APIs to carry the surface: Hummingbird's `RequestContext` chain, route groups, and middleware, or Vapor's route collections and `req.auth`. The tiers below are those APIs, and a tier is a group. The alternative is the generator's server side: `generate: [types, server]` plus the framework's transport package, `OpenAPIHummingbird` from swift-openapi-hummingbird or `OpenAPIVapor` from swift-openapi-vapor, so the generated `APIProtocol` is implemented once and registered on the router with `registerHandlers(on:)`. It is a valid surface, for a team that wants the compiler to prove the document and the handlers agree, at the cost of tiering by middleware on the generated transport rather than by route group, and it is chosen once per project, never per route. Either way the document stays in the target that serves it and the generated types stay out of Core.
+Declare one `UUID` schema (`type: string`, `format: uuid`) and reference it wherever an id appears; the override decodes it straight into `UUID`, so no conversion parses id strings from the OpenAPI side. It fits the Foundation rule: the generated code already imports `struct Foundation.URL`, `Data`, and `Date` from full Foundation, so the override adds no linkage, and `UUID` is the same type hand-written code reaches through the conditional `FoundationEssentials` import. Record the generated code's Foundation import as the documented exception the [foundation reference](../../writing-swift-server-code/references/foundation.md#dependency-traits-that-pull-in-foundation) asks for.
 
-One document per module, in the target that serves it. In a monolith each `<Module>HTTP` holds its module's document, which is that module's contract and moves with the module the day it becomes a service; the problem document is a hand-written type in `<Project>HTTP`, not a generated schema, so no two documents need to define the same schema. A service has one document, in `<Service>HTTP`, and a gateway one, in `API`. Unimplemented paths in a document cost nothing while types are all that is generated, so the document can lead the implementation and serve as the checklist.
+The alternative, chosen once per project and never per route, is `generate: [types, server]` with `OpenAPIHummingbird` (or `OpenAPIVapor`), registering one implementation of the generated `APIProtocol` with `registerHandlers(on:)`. The compiler then proves handlers and document agree, at the cost of tiering by middleware on the generated transport instead of by route group.
+
+One document per surface: one per `<Module>HTTP` in a monolith, which moves with the module the day it becomes a service; one in `<Service>HTTP`; one in a gateway's `API`. Every document declares the `Problem` schema it answers with (next section); the server encodes its own hand-written `Problem`, never the generated one, so several documents can declare the same schema without sharing a generated type. Unimplemented paths cost nothing while only types are generated, so the document can lead the implementation and serve as its checklist.
+
+## The document as a client contract
+
+The client SDK ([client-sdk.md](client-sdk.md)) and every other client generate from the same document, so each operation carries what a generator needs:
+
+- An `operationId`, which names the generated method.
+- A `security` entry matching the tier the route is registered in: `[]` for session-issuing and health routes, `[{}, {bearerAuth: []}]` for the identifying tier, `[{bearerAuth: []}]` for the requiring tier. A refresh route names its own scheme, because it carries a refresh token, not an access token.
+- A `default` response referencing the shared `Problem` response: `application/problem+json` over a declared `Problem` schema, so every failure decodes.
+
+The document declares `servers` whose URLs end in the version base path the root mounts (`/v1`), and its paths omit it:
+
+```yaml
+openapi: 3.1.0
+info:
+  title: <Project> API
+  version: 1.0.0
+servers:
+  - url: https://api.example.com/v1
+paths:
+  /items/{id}:
+    get:
+      operationId: getItem
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          description: The item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemResponse'
+        default:
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    refreshToken:
+      type: http
+      scheme: bearer
+  responses:
+    Problem:
+      description: RFC 9457 problem details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    UUID:
+      type: string
+      format: uuid
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+    ItemResponse:
+      type: object
+      required: [id, name]
+      properties:
+        id: { $ref: '#/components/schemas/UUID' }
+        name: { type: string }
+```
 
 ## Request contexts
 
@@ -89,10 +171,17 @@ package struct IdentityRequestContext: ChildRequestContext, AuthRequestContext {
         self.coreContext = context.coreContext
         self.identity = nil
     }
+
+    /// The caller of a "the caller's own" route.
+    package func requireUser() throws -> UserIdentity {
+        try requireIdentity()
+    }
 }
 ```
 
 Carry `coreContext` across. Do not rebuild it with `.init(source: context)`, which is what Hummingbird's own `ChildRequestContext` documentation shows: `CoreRequestContextStorage`'s `init(source:)` starts `parameters` and `endpointPath` empty, and path parameters are extracted before the child is constructed. Rebuilding silently discards them, so a route declared with `:id` matches, runs, and then cannot find its own parameter.
+
+Every token is a person's — a process proves itself with its certificate and never reaches an HTTP surface — so `requireUser()` is `requireIdentity()` under the name the caller's-own routes use for what they mean.
 
 The admin context holds a non-optional identity, because reaching a handler through it is the proof the check ran:
 
@@ -116,53 +205,47 @@ package struct AdminRequestContext: ChildRequestContext {
 }
 ```
 
-Distinguish the two failures for the same reason gRPC handlers do. Absent is `401`, because presenting a token could change the answer; insufficient is `403`, because it could not.
-
-The surface is for people, and every token is a person's: a process proves who it is with its certificate and never reaches an HTTP surface with a token, and a token whose subject is not a user id fails to decode as a `UserIdentity` before any handler sees it. Give `IdentityRequestContext` a `requireUser()` all the same, and use it on every route that acts on "the caller's own" account — it is `requireIdentity()` under the name the routes use for what they mean, and the name records the intent:
-
-```swift
-package func requireUser() throws -> UserIdentity {
-    try requireIdentity()
-}
-```
-
-`AdminRequestContext` adds a security gate using verified JWT role claims without database lookups. Apply it to individual verbs or a whole administrative route collection. The owning use case still enforces the role, resource, and business permissions required by its own contract and tests them there; an optional API collection restriction supplements those checks.
+Absent is `401`, because presenting a token could change the answer; insufficient is `403`, because it could not. The gate reads verified JWT role claims without database lookups, around one verb or a whole administrative route collection; the owning use case still enforces the role, resource, and business permissions of its own contract.
 
 ## Router tiers
 
-Register routes in three tiers, and let the tier decide what runs:
+Register routes in three tiers, and let the tier decide what runs. This is the Router section of a module's composition root; a gateway's router builder registers the same tiers without `UserSettingsMiddleware`:
 
 ```swift
+// MARK: - Router
 let router = Router(context: BasicRequestContext.self)
-router.add(middleware: CORSMiddleware(...))
 router.add(middleware: ErrorMiddleware())
 router.add(middleware: LogRequestsMiddleware(.info))
 
 let v1 = router.group("v1")
 
-// Tier 1 — no caller. Session-issuing routes and the health route.
-authenticationController.addPublicRoutes(to: v1.group("auth"))
+// Tier 1: no caller. Session-issuing routes and the health route.
+v1.get("health") { _, _ -> HTTPResponse.Status in .ok }
+usersController.addPublicRoutes(to: v1.group("auth"))
 
-// Tier 2 — a caller if there is one; anonymous requests still arrive.
+// Tier 2: a caller if there is one; anonymous requests still arrive.
 let identified = v1.group(context: IdentityRequestContext.self)
     .add(middleware: BearerAuthenticationMiddleware<IdentityRequestContext>(authenticator: userAuthenticator))
     .add(middleware: UserSettingsMiddleware())
+itemController.addIdentifiedRoutes(to: identified.group("items"))
 
-// Tier 3 — a caller is required.
-let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
+// Tier 3: a caller is required.
+let authenticated = identified.group().add(middleware: IsAuthenticatedMiddleware())
+itemController.addAuthenticatedRoutes(to: authenticated.group("items"))
+usersController.addAuthenticatedRoutes(to: authenticated.group("profile"))
 ```
 
-`BearerAuthenticationMiddleware` comes from swift-authentication-hummingbird's `AuthenticationHummingbird`; it takes any `Authenticator<String, UserIdentity>`, sets the context's `identity`, and binds the `Principal<UserIdentity, String>` in `OperationContext` that the tenant middleware and the propagating interceptor read. A target that builds the tiers links `Authentication` to name the authenticator protocol and `AuthenticationHummingbird` for the middleware — the executable in a monolith or a service, `API` in a gateway whose router builder takes the authenticator — and every surface target links `<Project>Authentication` for `UserIdentity`; the key, and `AuthenticationJWT`, reach only the executable.
+Take tier 3 from `identified.group()`. `RouterGroup.add(middleware:)` adds to the group it is called on and returns it, applying to routes registered afterwards, so `identified.add(middleware: IsAuthenticatedMiddleware())` would make every tier-2 route registered after it require a caller.
 
-Tier 1 exists because a session-issuing route must never meet an authenticating middleware. Token refresh sends the refresh token in the `Authorization` header, and a refresh token is a database row rather than a signed one. An authenticating middleware applied to it verifies that value as a claim payload, fails, and returns `401` before the handler is reached — so the route cannot succeed at any point, for any client. Registering it in the tier with no authenticating middleware makes that structural.
+`BearerAuthenticationMiddleware` comes from swift-authentication-hummingbird's `AuthenticationHummingbird`. It takes any `Authenticator<String, UserIdentity>`, sets the context's `identity`, and binds the `Principal<UserIdentity, String>` in `OperationContext` that the tenant middleware and the propagating interceptor read. The target that builds the tiers links `Authentication` to name the authenticator protocol and `AuthenticationHummingbird` for the middleware — the executable in a monolith or a service, `API` in a gateway — and every surface target links `<Project>Authentication` for `UserIdentity`; the key and `AuthenticationJWT` reach only the executable.
 
-Tier 2 is where a route that reads differently for a known caller belongs — a catalogue that is public but richer once logged in. Do not collapse tiers 2 and 3; identifying and requiring are separate decisions here exactly as they are on gRPC.
+Tier 1 exists because refresh sends the refresh token — a database row, not a signed token — in the `Authorization` header; an authenticating middleware would fail to verify it and answer `401` before the handler ran. Tier 2 holds a route that reads differently for a known caller, a catalogue that is public but richer once signed in. Never collapse tiers 2 and 3: identifying and requiring are separate decisions here exactly as they are on gRPC.
 
 ## The tenant on HTTP
 
-On gRPC the bound user becomes the tenant setting through `UserSettingsInterceptor`; on HTTP the same job is `UserSettingsMiddleware`, its HTTP counterpart in `<Project>Persistence`, added to the identifying tier right after the bearer middleware. It reads `OperationContext.current.user`, and when a user is bound runs the rest of the request under an `OperationContext` carrying `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — so every transaction a use case begins during the request applies it and the tenant policy sees the caller. With no user bound it binds nothing, and a policy then admits no rows.
+`UserSettingsMiddleware`, from `<Project>Persistence` beside `UserSettingsInterceptor`, is the HTTP counterpart of that interceptor. It follows the bearer middleware in the identifying tier, never precedes it, and reads `OperationContext.current.user`: when a user is bound it runs the rest of the request under an `OperationContext` carrying `PostgresSettings.user(_:)` — the one setting, `app.caller_user_id` — so every transaction a use case begins applies it and the tenant policy sees the caller. With no user bound it binds nothing, and a policy then admits no rows.
 
-A gateway has no database and no tenant middleware: the setting is applied where the transaction runs, by the service the token is forwarded to. A monolith or an HTTP-serving service with a tenant table applies it here, and the monolith is the place to notice that the token is verified exactly once — at the bearer middleware — because no process boundary is crossed between it and the tables.
+Add it wherever a module has tenant tables. A gateway has no database and no tenant middleware: the service the token is forwarded to applies the setting where the transaction runs. In a monolith the token is verified exactly once, at the bearer middleware, because no process boundary lies between it and the tables.
 
 ## Route design
 
@@ -185,41 +268,45 @@ package func addAuthenticatedRoutes(to group: RouterGroup<IdentityRequestContext
 
 The conversion throws, so an administrative handler is unreachable without the check having run, and the guarantee is in the type rather than in the order middleware happened to be added.
 
-Two limits, both worth respecting rather than forcing through:
+Two limits:
 
-- Flattening fails where two operations share a method and path but differ in scope — a caller-scoped list and an administrative list of everything. Keep those as separate paths over separate use cases; a query parameter that switches between them, like a collapsed route, is one operation with two meanings.
-- Not every route is a resource. Sessions, provider webhooks, and checkout callbacks are workflows, and `POST /payments/<provider>/webhook` is the honest spelling. Do not restructure a working verb-shaped route to satisfy a taxonomy.
+- Two operations that share a method and path but differ in scope — a caller-scoped list and an administrative list of everything — stay separate paths over separate use cases; a query parameter that switches between them is one operation with two meanings.
+- Sessions, provider webhooks, and checkout callbacks are workflows, not resources: `POST /payments/<provider>/webhook` is the honest spelling. Do not restructure a working verb-shaped route to satisfy a taxonomy.
 
 A check that depends on a path parameter — this record if it is yours, any record if you are an administrator — is not one route deciding two ways. The caller's own route names no user and calls the caller's-own use case, which reads under the tenant policy; an administrator's read of any record is a separate route behind `AdminRequestContext`, calling a separate use case, or a separate RPC from a gateway. The use case decides in both, so a gateway handler never adds a resource check of its own.
 
 ## Controllers
 
-One `XController` per resource, holding protocols rather than concrete types so a test can substitute them. What the protocol is depends on the shape:
+One `XController` per resource, holding protocols rather than concrete types so a test can substitute them:
 
 - Over use cases, in a module's own surface: the use-case protocol existentials the module's Core declares, one per operation the resource exposes. The controller reads the caller from the context and passes it as `subject:`; a public route passes `input:` alone.
 - Over services, in a gateway: generated client protocols, one per `<Entity>Service` the resource speaks. Every tier calls the same stub; the forwarded token, present only when the tier bound a principal, is what the service's handlers check:
 
 ```swift
 package struct ItemController: Sendable {
-    private let client: <Organization>_Catalog_V1_ItemService.ClientProtocol
+    private let client: any <Organization>_Catalog_V1_ItemService.ClientProtocol
+
+    package init(client: any <Organization>_Catalog_V1_ItemService.ClientProtocol) {
+        self.client = client
+    }
 
     package func addPublicRoutes(to group: RouterGroup<BasicRequestContext>) { ... }
     package func addAuthenticatedRoutes(to group: RouterGroup<IdentityRequestContext>) { ... }
 }
 ```
 
-Name the registration methods for the tier they mount into. A gateway controller may reach more than one service — an item's record is owned by catalog while its stock level is owned by inventory — and that is the gateway working: which service answers a resource is its problem, not the client's. A module controller reaches its own module's use cases only; a route that needs another module's answer goes through the use case, which holds the other module's protocol, never through a second controller collaborator.
+Name the registration methods for the tier they mount into. A gateway controller may reach more than one service — an item's record is owned by catalog while its stock level is owned by inventory — because which service answers a resource is the gateway's problem, not the client's. A module controller reaches its own module's use cases only; a route that needs another module's answer goes through the use case, which holds the other module's protocol.
 
-Keep the path prefix in the composition root and the routes in the controller, so one file shows the whole surface and each controller stays movable.
+Keep path prefixes in the composition root or the router builder and the routes in the controllers, so one file shows the whole surface and each controller stays movable.
 
 ## Schema conversion
 
-Put conversions in `Schemas/Requests/` and `Schemas/Responses/`. In a gateway they are `X+RPC.swift` and convert between the generated OpenAPI types and protobuf messages, matching the producer-side `Protobuf/` convention. In a module's surface they are `X+Schema.swift` and convert between the generated OpenAPI types and Core's inputs and entities, exactly as `X+Protobuf.swift` does for gRPC; transport validation — UUID parsing, ranges, enum recognition — happens in that initializer, and generated schema types never reach Core.
+Put conversions in `Schemas/Requests/` and `Schemas/Responses/`, and conversions of enums several schemas share in `Schemas/Shared/`. In a gateway they are `X+RPC.swift` and convert between the generated OpenAPI types and protobuf messages, matching the producer-side `Protobuf/` convention. In a module's surface they are `X+Schema.swift` and convert between the generated OpenAPI types and Core's inputs and entities, exactly as `X+Protobuf.swift` does for gRPC; transport validation — ranges, enum recognition, ids from protobuf strings — happens in that initializer, and generated schema types never reach Core.
 
 Make a conversion throw rather than drop:
 
 ```swift
-extension Components.Schemas.ItemResponse: ResponseCodable {
+extension Components.Schemas.ItemResponse {
     init(_ item: <Organization>_Catalog_V1_Item) throws {
         guard let id = UUID(uuidString: item.id) else {
             throw HTTPError(.internalServerError, message: "The item record is malformed.")
@@ -229,19 +316,143 @@ extension Components.Schemas.ItemResponse: ResponseCodable {
 }
 ```
 
+A shared enum converts both ways, and an unrecognized wire value is a malformed record:
+
+```swift
+extension Components.Schemas.ItemKind {
+    init(_ kind: <Organization>_Catalog_V1_ItemKind) throws {
+        switch kind {
+        case .physical: self = .physical
+        case .digital: self = .digital
+        case .unspecified, .UNRECOGNIZED:
+            throw HTTPError(.internalServerError, message: "The item record is malformed.")
+        }
+    }
+}
+```
+
 A `compactMap` over a malformed field returns a shorter list and a `200`, so a client sees a record that has disappeared rather than an error anybody investigates. A value the upstream should never have produced is a fault in that upstream and should say so.
 
 ## Idempotency keys the client does not carry
 
-A create may take an idempotency key (see *Idempotent writes* in the building skill's [persistence reference](../../building-swift-services/references/persistence.md)) that the HTTP client has no natural way to supply — an administrator creating a catalogue row does not hold a stable operation id. Keep the key out of the OpenAPI request and mint one in the conversion, so the HTTP surface stays clean while the create contract and its own unique constraints still hold. This is not the same as idempotency: a fresh key per request means each HTTP call is a new logical attempt, and true de-duplication rests on the resource's unique column (a provider's price id, an email). Expose the key at HTTP only when the client genuinely retries a specific operation and can carry the same key across attempts.
+A create may take an idempotency key (see *Idempotent writes* in the building skill's [persistence reference](../../building-swift-services/references/persistence.md)) that the HTTP client has no natural way to supply — an administrator creating a catalogue row does not hold a stable operation id. Keep the key out of the OpenAPI request and mint one in the conversion, so the HTTP surface stays clean while the create contract and its unique constraints still hold. A fresh key per request makes each HTTP call a new logical attempt; de-duplication then rests on the resource's unique column (a provider's price id, an email). Expose the key at HTTP only when the client genuinely retries a specific operation and can carry the same key across attempts.
 
 ## Error translation
 
-Answer every failure as RFC 9457 problem details with `application/problem+json`.
+Answer every failure as RFC 9457 problem details with `application/problem+json`. The problem plumbing lives in `<Project>HTTP` in a monolith and in the surface target otherwise (`Middlewares/ErrorMiddleware/` with `Problem/` and `Problem/Conformances/`):
 
-In a module's surface, map the use case's typed errors the way the gRPC producer adapter does, in the handler, explicitly: invalid input `400`, an idempotency key reused with different input `400` (as the gateway answers `failedPrecondition`), not found `404`, a duplicate `409`, the use case's `.forbidden` `403`, an absent caller `401` from the context, and `.unknown` `500` logged with its cause. A handler translates one use-case error enum; it never sees `PSQLError` or a repository error, which persistence and Core already classified.
+```swift
+// Problem.swift
+import HTTPTypes
+import Hummingbird
 
-In a gateway, map `RPCError` by code rather than collapsing it:
+/// RFC 9457 problem details.
+package struct Problem: Encodable, Sendable {
+    package let type: String
+    package let title: String
+    package let status: Int
+    package let detail: String?
+    package let instance: String?
+
+    func response(status: HTTPResponse.Status, from request: Request, context: some RequestContext) throws -> Response {
+        var response = try context.responseEncoder.encode(self, from: request, context: context)
+        response.status = status
+        response.headers[.contentType] = "application/problem+json"
+        return response
+    }
+}
+```
+
+```swift
+// HTTPProblemResponse.swift
+package import Hummingbird
+
+package protocol HTTPProblemResponse: HTTPResponseError {
+    var type: String { get }
+    var title: String { get }
+    var detail: String? { get }
+}
+
+extension HTTPProblemResponse {
+    package var type: String { "about:blank" }
+
+    /// Public, unlike the rest of this protocol: it is the witness for Hummingbird's public
+    /// `ResponseGenerator` requirement on public types this target does not own, such as `RPCError`.
+    public func response(from request: Request, context: some RequestContext) throws -> Response {
+        let problem = Problem(type: type, title: title, status: status.code, detail: detail, instance: request.uri.path)
+        return try problem.response(status: status, from: request, context: context)
+    }
+}
+```
+
+```swift
+// ErrorMiddleware.swift
+import HTTPTypes
+package import Hummingbird
+import Logging
+
+package struct ErrorMiddleware<Context: RequestContext>: RouterMiddleware {
+    package init() {}
+
+    // `next` is spelled `@concurrent` to match `RouterMiddleware`: Hummingbird is built without
+    // NonisolatedNonsendingByDefault, which would otherwise make this closure nonisolated(nonsending).
+    package func handle(
+        _ input: Request,
+        context: Context,
+        next: @concurrent (Request, Context) async throws -> Response
+    ) async throws -> Response {
+        do {
+            return try await next(input, context)
+        } catch let error as any HTTPProblemResponse {
+            if error.status.kind == .serverError {
+                context.logger.error("Request failed", metadata: ["error": "\(String(reflecting: error))"])
+            }
+            return try error.response(from: input, context: context)
+        } catch let error as HTTPError {
+            let problem = Problem(type: "about:blank", title: error.status.reasonPhrase, status: error.status.code, detail: error.body, instance: input.uri.path)
+            return try problem.response(status: error.status, from: input, context: context)
+        } catch {
+            context.logger.error("Unhandled error", metadata: ["error": "\(String(reflecting: error))"])
+            let problem = Problem(type: "about:blank", title: "Internal Server Error", status: 500, detail: nil, instance: input.uri.path)
+            return try problem.response(status: .internalServerError, from: input, context: context)
+        }
+    }
+}
+```
+
+In a module's surface, conform each use case's typed error in `<Module>HTTP`, so a handler just `try await`s the use case and the middleware answers. The statuses mirror the gRPC producer adapter's: invalid input `400`, an idempotency key reused with different input `400`, an absent caller `401` (from the context), `.forbidden` `403`, not found `404`, a duplicate `409`, `.unknown` `500`, which the middleware logs. A handler sees one use-case error enum, never `PSQLError` or a repository error, which persistence and Core already classified:
+
+```swift
+// CatalogHTTP/Problem/CreateItemUseCaseError+HTTPProblemResponse.swift
+import CatalogCore
+import HTTPTypes
+import Hummingbird
+import <Project>HTTP
+
+extension CreateItemUseCaseError: HTTPProblemResponse {
+    package var status: HTTPResponse.Status {
+        switch self {
+        case .invalidName: .badRequest
+        case .forbidden: .forbidden
+        case .duplicateName: .conflict
+        case .unknown: .internalServerError
+        }
+    }
+
+    package var title: String {
+        switch self {
+        case .invalidName: "Invalid Name"
+        case .forbidden: "Forbidden"
+        case .duplicateName: "Duplicate Name"
+        case .unknown: "Internal Server Error"
+        }
+    }
+
+    package var detail: String? { nil }
+}
+```
+
+In a gateway, conform `RPCError` and map it by code rather than collapsing it:
 
 | gRPC code | HTTP |
 | --- | --- |
@@ -251,96 +462,75 @@ In a gateway, map `RPCError` by code rather than collapsing it:
 | `notFound` | 404 |
 | `alreadyExists`, `aborted` | 409 |
 | `resourceExhausted` | 429 |
+| `cancelled` | 499 |
 | `unimplemented` | 501 |
 | `unavailable` | 503 |
 | `deadlineExceeded` | 504 |
+| anything else | 500 |
 
-The producing service already classified the failure into a status the contract defines. Mapping every RPC failure to `500` discards that work at the last hop and tells a client to retry what cannot succeed. Reserve `500` for a failure the surface itself could not classify, and log that one with the underlying error.
+```swift
+// RPCError+HTTPProblemResponse.swift
+public import GRPCCore
+public import HTTPTypes
+public import Hummingbird
+
+// Retroactive by necessity: the gateway owns neither RPCError nor HTTPResponseError.
+// swift-format-ignore: AvoidRetroactiveConformances
+extension RPCError: @retroactive HTTPResponseError, HTTPProblemResponse {
+    package var title: String { message }
+    package var detail: String? { nil }
+
+    // Public for the same reason as `response(from:context:)`: a public type's witness for a public requirement.
+    public var status: HTTPResponse.Status {
+        switch code {
+        case .invalidArgument, .failedPrecondition, .outOfRange: .badRequest
+        case .unauthenticated: .unauthorized
+        case .permissionDenied: .forbidden
+        case .notFound: .notFound
+        case .alreadyExists, .aborted: .conflict
+        case .resourceExhausted: .tooManyRequests
+        case .cancelled: 499
+        case .unimplemented: .notImplemented
+        case .unavailable: .serviceUnavailable
+        case .deadlineExceeded: .gatewayTimeout
+        default: .internalServerError
+        }
+    }
+}
+```
+
+The producing service already classified the failure into a status its contract defines; mapping every RPC failure to `500` discards that at the last hop and tells a client to retry what cannot succeed. `500` is reserved for what the surface cannot classify, and the middleware logs it with the underlying error.
 
 ## Composition
 
 The composition root — a monolith mounting every module's controllers, a service's `serve` command adding HTTP beside gRPC — follows the building skill's [composition reference](../../building-swift-services/references/composition.md) for Configuration, Logging, Infrastructure, Composition, and Lifecycle, and adds two sections after Composition: **Router** and **Hummingbird**. A gateway's root is in [gateway.md](gateway.md#composition-root).
 
-Under **Router**, build one router on `BasicRequestContext` and register every module's controllers in the three tiers above. The tiers are the same for a module and for a gateway; what differs is that a module's tier 2 carries `UserSettingsMiddleware` after the bearer middleware wherever tenant tables exist, so the caller the middleware bound becomes the setting the policies read:
+**Router** is the code in *Router tiers* above: one router on `BasicRequestContext`, `ErrorMiddleware` and request logging, and every module's controllers in the three tiers. A monolith with a dozen modules has a dozen `add…Routes` lines per tier and nothing else.
 
-```swift
-// MARK: - Router
-let router = Router(context: BasicRequestContext.self)
-router.add(middleware: ErrorMiddleware())
-router.add(middleware: LogRequestsMiddleware(.info))
-
-let v1 = router.group("v1")
-
-// Tier 1: no caller. Session-issuing routes and the health route.
-usersController.addPublicRoutes(to: v1.group("auth"))
-v1.get("health") { _, _ in HTTPResponse.Status.ok }
-
-// Tier 2: a caller if there is one. The settings middleware turns a bound user into the tenant setting.
-let identified = v1.group(context: IdentityRequestContext.self)
-    .add(middleware: BearerAuthenticationMiddleware<IdentityRequestContext>(authenticator: userAuthenticator))
-    .add(middleware: UserSettingsMiddleware())
-itemController.addIdentifiedRoutes(to: identified.group("items"))
-
-// Tier 3: a caller is required.
-let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
-itemController.addAuthenticatedRoutes(to: authenticated.group("items"))
-usersController.addAuthenticatedRoutes(to: authenticated.group("profile"))
-```
-
-`BearerAuthenticationMiddleware` comes from `AuthenticationHummingbird` and takes any `Authenticator<String, UserIdentity>`; `UserSettingsMiddleware` comes from `<Project>Persistence`, beside `UserSettingsInterceptor`, and reads what the bearer middleware bound, so it follows it and never precedes it. Keep the path prefix here and the routes in the controllers, so one file shows the whole surface and each controller stays movable. A monolith with a dozen modules has a dozen `add…Routes` lines per tier and nothing else.
-
-Under **Hummingbird**, build the application from the router and the listener read by `ApplicationConfiguration(reader:)` scoped to `http.server`:
+**Hummingbird** builds the application from the router and the listener read by `ApplicationConfiguration(reader:)` scoped to `http.server`, served over TLS with the process's leaf and no client certificate (HummingbirdTLS; the reloader is the root's):
 
 ```swift
 // MARK: - Hummingbird
 let application = Application(
     router: router,
+    server: try .tls(.http1(), tlsConfiguration: .makeServerConfiguration(certificateReloader: certificateReloader)),
     configuration: ApplicationConfiguration(reader: config.scoped(to: "http.server")),
     logger: logger
 )
 ```
 
-The application publishes no host port of its own; the address comes from the ingress that proxies to it (*Deployment* below). On Vapor 4 the same sections build a `Vapor.Application`, register the tiers as route groups, and run under `OperationContext.withContext(req.operationContext)` where a route calls out, as *The Vapor alternative* below describes.
-
-
 With Temporal, the serving process also builds one long-lived `TemporalClient` and injects workflow-client adapters into the use cases, exactly as a gRPC root does. A process serving both transports has one root, one set of use cases, and one `ServiceGroup` holding the application and the gRPC server.
 
 ## One surface or two
 
-Default to one application and one router, over the documents the surface already has (one per `<Module>HTTP` in a monolith, one in a service or gateway), with the administrative routes in the same router. The context conversion already keeps administrative routes out of ordinary hands, with the use case deciding behind it, and a second surface doubles the generated type set.
-
-Split into two Hummingbird applications — two routers, two ports, one `ServiceGroup` — only when the administrative routes must not be publicly routable at all. That buys something a role check cannot: the routes are absent from the public router's tree, so no ordering mistake can expose them, and the port is simply never published.
-
-Before splitting, check whether the administrative client removes the need. A browser client served by its own process can proxy same-origin to an unpublished port, which gets the isolation without splitting Swift targets, and leaves the surface with no CORS configuration to maintain for it.
+Default to one application and one router, over the documents the surface already has, with the administrative routes in the same router: the context conversion keeps them out of ordinary hands, with the use case deciding behind it, and a second surface doubles the generated type set. Split into two Hummingbird applications — two routers, two ports, one `ServiceGroup` — only when the administrative routes must not be publicly routable at all, so they are absent from the public router's tree and their port is never published. A browser client served by its own process can get the same isolation by proxying same-origin to an unpublished port, without splitting Swift targets.
 
 ## Deployment
 
-The HTTP process publishes no host port. Its address comes from a sidecar or the platform ingress that proxies to it, and upstream gRPC services are reachable by name on the internal network and by nothing outside it. How that is expressed, and what a cutover behind that address entails, is the delivering-swift-services skill's subject.
-
-Configure CORS only for browsers that reach the surface directly. A client whose own server proxies to it is same-origin and needs none.
-
-A gateway needs no database, so it has no migration job and no ordering constraint beyond its upstreams being reachable. A monolith migrates at boot like any service. Give every surface a health route in tier 1 so the platform can probe it without a token.
-
-## The Vapor alternative
-
-A surface on Vapor 4 keeps every rule above and changes three mechanics, in a gateway and in a module's `<Module>HTTP` alike. Hummingbird is the default because its request-context chain carries the tiers in the type system; a project on Vapor chooses it once, for every surface.
-
-The middleware is swift-authentication-vapor's `BearerAuthenticationMiddleware`, an `AsyncMiddleware` over an identity that is `Authenticatable & Sendable`; `UserIdentity` needs that conformance declared in the surface's target. It logs the identity in to `request.auth`, so `guardMiddleware()` and `req.auth.require(UserIdentity.self)` are the requiring tier, and the admin check is a route-group middleware rather than a context conversion, since Vapor has no request-context chain.
-
-Vapor 4 bridges its responder chain through event-loop futures, so a task-local bound in middleware does not reach a route. AuthenticationVapor provides `request.operationContext` in request storage; the bearer middleware adds the principal there, and that is where a route reads it. The Vapor form of `UserSettingsMiddleware`, in `<Project>Persistence` beside the Hummingbird one, follows the same path: it reads the principal from `request.operationContext` and writes `postgresSettings = .user(identity)` back into it, rather than binding a task-local nothing downstream would see. The org layer ships the Hummingbird middleware by default and adds the Vapor one when the project uses Vapor. A use case whose transaction must carry the tenant, or an outgoing gRPC call that must carry the caller's token, then runs under that context:
-
-```swift
-app.get("orders") { req in
-    try await OperationContext.withContext(req.operationContext) {
-        try await listOrdersUseCase(subject: try req.auth.require(UserIdentity.self))
-    }
-}
-```
-
-In a module's surface, a controller is a `RouteCollection` holding the module's use-case protocols, with one `boot(routes:)` that registers into the groups the composition root hands it, and the `OperationContext.withContext` wrapper sits in the handler, once, around the use-case call. Conversions stay in `Schemas/Requests/` and `Schemas/Responses/` as `X+Schema.swift`, and problem details come from a custom `ErrorMiddleware` registered first on the application, mapping the use case's typed errors and `Abort` to `application/problem+json` exactly as the Hummingbird `ErrorMiddleware` does. A gateway's controller is the same collection over generated client protocols with `X+RPC.swift` conversions.
-
-Tiers are route groups: session-issuing routes on the bare application, an identifying group with the bearer middleware and the settings middleware, and a guarded group with `UserIdentity.guardMiddleware()` on top; the admin group adds a middleware that requires `.admin` from `req.auth` and answers `403`. As on Hummingbird, the group a route is registered in decides what runs.
+The HTTP process publishes no host port. Its listener is client-facing: the edge terminates public TLS and its proxy reaches the process over TLS it verifies, with no client certificate, as the delivering skill's [public ingress](../../delivering-swift-services/references/environment.md#public-ingress) contract says; upstream gRPC services are reachable by name on the internal network and by nothing outside it; how that is expressed is the delivering-swift-services skill's subject. Configure CORS (`CORSMiddleware` on the router, before `ErrorMiddleware`) only for browsers that reach the surface directly; a client whose own server proxies to it is same-origin and needs none. Every surface has a health route in tier 1, answering for this process alone, so the platform can probe it without a token. A gateway has no migration job; a monolith migrates at boot like any service.
 
 ## Tests
 
-Compose the application in tests exactly as the composition root does, over mocks of the controllers' collaborators — mocked use-case protocols for a module's surface, one mocked generated client protocol per `<Entity>Service` for a gateway — and a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key, so the middleware is exercised as shipped, not mocked. Drive it with HummingbirdTesting's `.router` (or `VaporTesting` on Vapor). Cover the tier matrix: anonymous → `401`, a token whose subject is not a user id → `401` from the verifier, the user and admin paths, and distinct error mappings. Exercise a shared status mapper once with explicit input/expected pairs rather than repeating it through every controller. What a use case decides is covered by its own tests (see the building skill's [testing reference](../../building-swift-services/references/testing.md)), so a surface test asserts routing, identification, conversion, and status, not business rules.
+Compose the application in tests exactly as the composition root does, over mocks of the controllers' collaborators — mocked use-case protocols for a module's surface, one mocked generated client protocol per `<Entity>Service` for a gateway — and a real `JWTIssuer<UserIdentity>` and `JWTAuthenticator<UserIdentity>` over a throwaway Ed25519 key, so the middleware runs as shipped. Drive it with HummingbirdTesting's `.router` (`VaporTesting` on Vapor). Cover the tier matrix — anonymous `401` on a requiring route, a token whose subject is not a user id `401` from the verifier, a session-issuing route reaching its handler while carrying an unverifiable token, the user and admin paths with a non-administrator `403` — each route's conversions, and each distinct error mapping. Exercise a shared status mapper once with explicit input/expected pairs rather than through every controller.
+
+What a use case decides is covered by its own tests (the building skill's [testing reference](../../building-swift-services/references/testing.md)), so a surface test asserts routing, identification, conversion, and status, not business rules. A gateway adds one live loopback mTLS suite for what only real connections prove; its harness, mocks, and that suite are in [gateway.md](gateway.md#tests).

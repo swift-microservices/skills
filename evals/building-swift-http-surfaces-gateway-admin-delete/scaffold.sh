@@ -74,9 +74,9 @@ import GRPCCore
 package import Hummingbird
 
 package struct ItemController: Sendable {
-    private let client: Acme_Catalog_V1_ItemService.ClientProtocol
+    private let client: any Acme_Catalog_V1_ItemService.ClientProtocol
 
-    package init(client: Acme_Catalog_V1_ItemService.ClientProtocol) {
+    package init(client: any Acme_Catalog_V1_ItemService.ClientProtocol) {
         self.client = client
     }
 
@@ -107,29 +107,43 @@ cat > acme-api/Sources/API/AcmeAPI.swift <<'SWIFT'
 package import AcmeAuthentication
 package import Authentication
 import AuthenticationHummingbird
+package import CatalogProtos
 package import Hummingbird
 import HummingbirdAuth
 
-package func buildRouter(
-    itemController: ItemController,
-    userAuthenticator: some Authenticator<String, UserIdentity>
-) -> Router<BasicRequestContext> {
-    let router = Router(context: BasicRequestContext.self)
-    router.add(middleware: ErrorMiddleware())
+package struct AcmeAPI: Sendable {
+    package struct Dependencies: Sendable {
+        package let userAuthenticator: any Authenticator<String, UserIdentity>
+        package let items: any Acme_Catalog_V1_ItemService.ClientProtocol
 
-    let v1 = router.group("v1")
+        package init(
+            userAuthenticator: any Authenticator<String, UserIdentity>,
+            items: any Acme_Catalog_V1_ItemService.ClientProtocol
+        ) {
+            self.userAuthenticator = userAuthenticator
+            self.items = items
+        }
+    }
 
-    // Tier 1 — no caller.
-    itemController.addPublicRoutes(to: v1.group("items"))
+    private let dependencies: Dependencies
 
-    // Tier 2 — a caller if there is one.
-    let identified = v1.group(context: IdentityRequestContext.self)
-        .add(middleware: BearerAuthenticationMiddleware<IdentityRequestContext>(authenticator: userAuthenticator))
+    package init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
 
-    // Tier 3 — a caller is required.
-    let authenticated = identified.add(middleware: IsAuthenticatedMiddleware())
-    itemController.addAuthenticatedRoutes(to: authenticated.group("items"))
+    package func addRoutes(to group: RouterGroup<BasicRequestContext>) {
+        let itemController = ItemController(client: dependencies.items)
 
-    return router
+        // Tier 1: no caller.
+        itemController.addPublicRoutes(to: group.group("items"))
+
+        // Tier 2: a caller if there is one.
+        let identified = group.group(context: IdentityRequestContext.self)
+            .add(middleware: BearerAuthenticationMiddleware<IdentityRequestContext>(authenticator: dependencies.userAuthenticator))
+
+        // Tier 3: a caller is required.
+        let authenticated = identified.group().add(middleware: IsAuthenticatedMiddleware())
+        itemController.addAuthenticatedRoutes(to: authenticated.group("items"))
+    }
 }
 SWIFT
