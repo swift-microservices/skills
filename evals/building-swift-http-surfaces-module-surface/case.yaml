@@ -1,4 +1,0 @@
-schema_version: "1.1"
-name: building-swift-http-surfaces-module-surface
-context:
-  scaffold_script: scaffold.sh

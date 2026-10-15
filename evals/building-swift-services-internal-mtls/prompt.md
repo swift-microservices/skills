@@ -1,4 +1,5 @@
 ---
+runs: 1
 max_turns: 60
 timeout_seconds: 900
 allowed_tools: [Read, Glob, Grep, Write, Edit, Skill]
@@ -9,4 +10,4 @@ Our Swift billing service receives payment-provider webhooks and calls the accou
 
 Write focused Swift implementation excerpts under ./acme-billing and ./acme-accounts: the billing-side Core port and gRPC adapter, the accounts-side internal handler and input-only use-case boundary, and each executable's transport configuration and lifecycle. Use the existing AccountInternalService and AccountService generated contracts; assume persistence, protobuf conversions, and business rules already exist. Show how the user-facing service remains authenticated. Put each executable's composition root at Sources/Billing/Serve/Serve.swift and Sources/Accounts/Serve/Serve.swift in its package, the accounts internal handler at ./acme-accounts/Sources/AccountsGRPC/Accounts/AccountInternalService.swift, the billing port at ./acme-billing/Sources/BillingCore/Ports/AccountClient.swift, and its gRPC adapter at ./acme-billing/Sources/BillingGRPC/Clients/GRPCAccountClient.swift. Include the executable's direct package products needed for transport reloading in ./dependencies.md.
 
-Finish with a short explanation of the trust boundary and the checks you would perform for admission and renewal. These are offline excerpts, so do not build, resolve packages, or claim runtime verification. Do not scaffold unrelated features.
+These are offline excerpts, so do not build, resolve packages, or claim runtime verification. Do not scaffold unrelated features.

@@ -1,12 +1,5 @@
 ---
-type: llm
-focus: { source: file, path: Package.swift }
+type: regex
+target: { source: file, path: Package.swift }
+pattern: 'hummingbird(?:\.git)?\"(?:[^()]|\([^()]*\))*?traits:\s*\[\s*\]'
 ---
-
-PASS if all of these hold:
-- The hummingbird package is declared with `traits: []`.
-- The `Hummingbird` product is in the AcmePersistence target's dependencies.
-- `HummingbirdTesting`, if present, appears only in the test target.
-
-FAIL if the `.target(name: "AcmeAuthentication", …)` declaration's own `dependencies:` list includes Hummingbird or GRPCCore (other targets listing `"AcmeAuthentication"` as a dependency are expected), or a new library product is added for the middleware.
-Grade only against these criteria; do not fail for issues they do not mention.

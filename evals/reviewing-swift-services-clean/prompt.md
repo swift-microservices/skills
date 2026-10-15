@@ -1,4 +1,5 @@
 ---
+runs: 1
 max_turns: 30
 allowed_tools: [Read, Glob, Grep, Skill]
 timeout_seconds: 600

@@ -63,36 +63,28 @@ evals/<skill>-<case>/             claude plugin eval cases: a prompt, its grader
 bash .github/scripts/validate.sh   # frontmatter, token budgets, links, contents, eval cases, plugin versions
 claude --plugin-dir .              # try the skills in a session
 claude plugin validate .           # Claude Code's own structural check
-claude plugin eval .               # run every eval case with and without the plugin
+claude plugin eval . --case 'building-swift-services-*' --ablation none   # one skill's cases, once each
 ```
 
-Each skill has at least three positive cases and one near-miss negative named `<skill>-not-for-<case>` whose `skill-not-fired` grader asserts the skill stays unloaded; `reviewing-swift-services` is user-invoked and has no negative. Prompts that test triggering never name the skill.
+The suite follows Anthropic's evaluation guidance: three focused positive cases per skill, each aimed at a rule Claude gets wrong without the skill, plus one near-miss negative named `<skill>-not-for-<case>` whose `skill-not-fired` grader asserts the skill stays unloaded; `reviewing-swift-services` is user-invoked and has no negative. Prompts that test triggering never name the skill. A case asks for the few files its rule lives in, not a whole service, and grades them mostly with `regex` graders, which cost nothing; it keeps at most two `llm` judges. Add a case only for a gap a run without the plugin actually shows, and drop one whose with-plugin and without-plugin scores match.
+
+Every case sets `runs: 1`. While changing a skill, run only that skill's cases with `--ablation none`. Before a release that changes a skill's behavior, run its cases with the default two arms to see the plugin's effect, adding `--runs 3` when a result decides a change, and set `--max-cost-usd` on any wider run.
 
 `reviewing-swift-services` sets `disable-model-invocation`, so its cases invoke it with the `/swift-microservices:reviewing-swift-services` slash command. Without the plugin that command does not exist, so the no-plugin arm measures nothing: run those cases with `--ablation none` (for example `claude plugin eval . --case reviewing-swift-services-clean --scaffold --ablation none`). The review runs in a forked agent, so their judges read the trace (`focus: trace`), and their `no-write` and `no-edit` graders score in both arms.
 
-Graders on long generated files (certificate plans, Compose stacks, workflows, composition roots) are split into short rubrics, but haiku still misjudges some of them; run with `--judge-model sonnet` when a result decides a change.
+Haiku, the default judge, still misjudges some rubrics on long generated files (certificate plans, Compose stacks); run with `--judge-model sonnet` when a result decides a change.
 
-Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-http-monolith --runs 1 --ablation none`. Cases with a `scaffold.sh` need `--scaffold`, and cases that edit or build need `--allow-tools Bash Write Edit`; add `--keep-temp` to keep each run's workspace. The eval loader rejects any symbolic link under `evals/`, so keep SwiftPM `.build` directories out of `evals/results/`.
+Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-tenant-service --ablation none`. Cases with a `scaffold.sh` need `--scaffold`, and cases that edit or build need `--allow-tools Bash Write Edit`; add `--keep-temp` to keep each run's workspace. The eval loader rejects any symbolic link under `evals/`, so keep SwiftPM `.build` directories out of `evals/results/`.
 
 `claude plugin eval` has no script grader, so every `evals/*/checks/verify.py` is a manual check you run on a kept workspace (`--keep-temp`) after the eval; nothing runs it for you. After a `writing-swift-server-code-swift-settings` run, check its kept workspace with `python3 evals/writing-swift-server-code-swift-settings/checks/verify.py <workspace>`: it asserts the tools version, the platform floor, and every target's settings, compiles independent actor and MainActor contract tests against the requested API, and runs the executable.
 
-Library CI evals cover an ordinary tested library, a real PostgreSQL provider, and a generated
-SDK with optional transport traits. Run the corresponding `delivering-swift-services-library-ci*`
-cases with `--scaffold`. Check kept workspaces independently with
-`python3 evals/delivering-swift-services-library-ci/checks/verify.py <workspace>` (requires PyYAML).
-Use `--provider postgres --foundation-exception PostgresNIO` for the database case and
-`--no-tests --traits --foundation-exception generator` for the generated SDK. Add `--warning-exception UnusedImportAccess` when the documented
-Swift 6.4 generator exception is needed. This checker tests workflow artifacts; it does not execute GitHub jobs or prove provider/linkage runtime results.
-
-
-Service CI evals cover a deployable executable and a server/worker command profile. They preserve
+The service CI eval covers a deployable executable with a server and worker command profile. It preserves
 existing tests and explicit application style exceptions without adding infrastructure fixtures.
-Run `delivering-swift-services-service-ci*` with `--scaffold` and inspect kept workspaces with
-`python3 evals/delivering-swift-services-service-ci/checks/verify.py <workspace>`; add `--worker`
-for the worker case. It also runs the copied `check-image.sh` against a fake `docker`: the root-user refusal and its
-`ALLOW_ROOT_IMAGE=true` exception, the binary-path argument, and the worker command; with `--worker`
-it requires the worker deploy steps, and without it their absence. This checks effective workflow and
-image-validation artifacts, not live publication/deployment or GitHub execution.
+Run `delivering-swift-services-service-ci-worker` with `--scaffold` and inspect its kept workspace with
+`python3 evals/delivering-swift-services-service-ci-worker/checks/verify.py --worker <workspace>` (requires PyYAML).
+It also runs the copied `check-image.sh` against a fake `docker`: the root-user refusal and its
+`ALLOW_ROOT_IMAGE=true` exception, the binary-path argument, the worker command, and the worker deploy steps.
+This checks effective workflow and image-validation artifacts, not live publication/deployment or GitHub execution.
 
 ## Contributing
 

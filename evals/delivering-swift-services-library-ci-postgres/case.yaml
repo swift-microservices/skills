@@ -1,4 +1,0 @@
-schema_version: "1.1"
-name: delivering-swift-services-library-ci-postgres
-context:
-  scaffold_script: scaffold.sh

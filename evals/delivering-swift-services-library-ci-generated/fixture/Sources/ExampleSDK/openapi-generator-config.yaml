@@ -1,2 +1,0 @@
-generate: [types, client]
-accessModifier: public
