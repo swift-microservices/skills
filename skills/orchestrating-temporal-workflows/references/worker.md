@@ -50,7 +50,7 @@ There is one image, the package's. The worker application runs it with `worker r
 
 The worker connects to its own service's database directly, as `<service>_worker` (`<project>_worker` in a monolith), with its own secret and a `USING (true)` policy. It never opens another service's database.
 
-- **Migration.** `CreateWorkerRole` lives in `<Service>Postgres/Migrations/Role/` (the executable's `Database/Role/` in a monolith). Adding Temporal to an existing package appends it at the end of `Database/Migrations.swift`, after every migration already applied, followed by any policy that names the role; the migration library refuses a reordered list. The role's grants and policy are the building-swift-services skill's [persistence.md](../../building-swift-services/references/persistence.md).
+- **Migration.** `CreateWorkerRole` lives in `<Service>Postgres/Migrations/Role/` (the executable's `Database/Role/` in a monolith). Adding Temporal to an existing package appends it at the end of `Database/Migrations.swift`, after every migration already applied, followed by any policy that names the role; the migration library refuses a reordered list. The role's grants and policy are the building-swift-services skill's [migrations-and-rls.md](../../building-swift-services/references/migrations-and-rls.md#the-roles).
 
   ```swift
   await migrations.add(CreateReservationsTable())                                       // the last one already applied
@@ -106,7 +106,7 @@ Whether Temporal gets its own pair is the project's decision; record it in `AGEN
 - **Its own pair** (the worked example below): a `temporal.tls` scope with its own certificate and key, trust bundle, primed `TimedCertificateReloader`, and renewer. Choose it when Temporal's trust differs from the services': one Temporal server shared by several environments, a separate CA, or a hosted Temporal. Then never fall back to the service `tls` pair.
 - **The process's pair**: Temporal's transport takes the same `tls` reader and reloader as the process's other connections. It suits a Temporal server per environment that trusts the same CA. A worker whose Activities call no other service still mounts one pair.
 
-Either way the connection is mTLS with an explicit trust bundle and full server verification, and each reloader runs once. The `.mTLS(config:certificateReloader:)` factory is the client one in [composition.md](../../building-swift-services/references/composition.md#transport-security-factories); `TemporalClient` and `TemporalWorker` take the same `HTTP2ClientTransport.Posix.TransportSecurity`.
+Either way the connection is mTLS with an explicit trust bundle and full server verification, and each reloader runs once. The `.mTLS(config:certificateReloader:)` factory is the client one in [transport-security.md](../../building-swift-services/references/transport-security.md#transport-security-factories); `TemporalClient` and `TemporalWorker` take the same `HTTP2ClientTransport.Posix.TransportSecurity`.
 
 ```swift
 let temporalTLSConfig = config.scoped(to: "temporal.tls")
@@ -267,7 +267,7 @@ struct Run: AsyncParsableCommand {
 }
 ```
 
-A worker whose Activities call no other service drops the `tls` reloader and the gRPC client. The provider adapter (`ResendConfirmationEmailSender`) and the consumer adapter (`GRPCOrderClient`) implement Core ports and are injected into the Activity service, never into the container; see [workflows.md](workflows.md#activities).
+A worker whose Activities call no other service drops the `tls` reloader and the gRPC client. The provider adapter (`ResendConfirmationEmailSender`) and the consumer adapter (`GRPCOrderClient`) implement Core ports and are injected into the Activity service, never into the container; see [activities.md](activities.md#activities).
 
 ## Registering several containers
 

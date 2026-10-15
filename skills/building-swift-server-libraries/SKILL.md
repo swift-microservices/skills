@@ -20,9 +20,12 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 | Tests | [testing.md](references/testing.md) — what a library test proves, isolation contract tests, bindings, real providers |
 | README, `AGENTS.md`, DocC, `.spi.yml`, headers, formatter | [repository.md](references/repository.md) |
 | `<project>-core` or `<project>-protos`, or a monolith's shared targets | [organization-layer.md](references/organization-layer.md) — when it is a package, products and their exceptions, protos, private repositories |
-| Writing or reviewing `<project>-core` code, manifest, or tests | [organization-core-code.md](references/organization-core-code.md) — the complete manifest, every source file, the required tests |
+| Writing or reviewing `<project>-core` code, manifest, or tests | [organization-core-code.md](references/organization-core-code.md) — the layout, the complete manifest, `<Project>Testing`, the required tests |
+| `<Project>Authentication` source files | [organization-core-authentication.md](references/organization-core-authentication.md) |
+| `<Project>Persistence` source files and its Vapor form | [organization-core-persistence.md](references/organization-core-persistence.md) |
 | Swift settings, Foundation, style | the writing-swift-server-code skill's [swift-settings.md](../writing-swift-server-code/references/swift-settings.md), [foundation.md](../writing-swift-server-code/references/foundation.md), and [style.md](../writing-swift-server-code/references/style.md) |
 | CI workflows, gates, and exceptions | the delivering skill's [library-ci.md](../delivering-swift-services/references/library-ci.md) |
+| A library adopting `ConfigReader`, or the organization's proto package | the building-swift-services skill's [configuration.md](../building-swift-services/references/configuration.md) and [grpc-and-protos.md](../building-swift-services/references/grpc-and-protos.md) |
 
 ## Principles
 

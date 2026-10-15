@@ -128,7 +128,7 @@ The generated types are plain `Codable`, so encode and decode them through `req.
 
 ## Problem details
 
-Conform each use case's typed error to Vapor's `AbortError` in the surface target, with the same statuses as on Hummingbird ([surface.md](surface.md#error-translation)):
+Conform each use case's typed error to Vapor's `AbortError` in the surface target, with the same statuses as on Hummingbird ([error-translation.md](error-translation.md#error-translation)):
 
 ```swift
 import NotesCore

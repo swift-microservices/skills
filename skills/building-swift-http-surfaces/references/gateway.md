@@ -79,7 +79,7 @@ Tests/
     └── <Resource>ControllerTests.swift, AuthorizationTests.swift, ProblemMappingTests.swift
 ```
 
-The problem plumbing (`ErrorMiddleware`, `Problem`, `HTTPProblemResponse`, the `RPCError` conformance) is the code in [surface.md](surface.md#error-translation). No `Database/`, no migrations, no `PostgresConfiguration`: a gateway owns no data.
+The problem plumbing (`ErrorMiddleware`, `Problem`, `HTTPProblemResponse`, the `RPCError` conformance) is the code in [error-translation.md](error-translation.md#error-translation). No `Database/`, no migrations, no `PostgresConfiguration`: a gateway owns no data.
 
 ## Manifest
 
@@ -228,7 +228,7 @@ The root mounts it under the version prefix (`api.addRoutes(to: router.group("v1
 
 ## Composition root
 
-A gateway's `serve` follows the building skill's section order — Configuration, Logging, Infrastructure, Composition, Router, Hummingbird, Lifecycle — with no gRPC section and no database. Under Infrastructure, build `JWTAuthenticator<UserIdentity>` over the public key through the EdDSA initializer `<Project>Authentication` adds, as the building skill's [identity reference](../../building-swift-services/references/identity-and-access.md) describes, and one `GRPCClient` per upstream: a required host and port, the stack's mTLS client factory and `ServiceConfig.defaults` from the [transport security factories](../../building-swift-services/references/composition.md#transport-security-factories), the gateway's connection config, and the propagating interceptor on that upstream's `<Entity>Service` descriptors alone:
+A gateway's `serve` follows the building skill's section order — Configuration, Logging, Infrastructure, Composition, Router, Hummingbird, Lifecycle — with no gRPC section and no database. Under Infrastructure, build `JWTAuthenticator<UserIdentity>` over the public key through the EdDSA initializer `<Project>Authentication` adds, as the building skill's [identity reference](../../building-swift-services/references/identity-and-access.md) describes, and one `GRPCClient` per upstream: a required host and port, the stack's mTLS client factory and `ServiceConfig.defaults` from the [transport security factories](../../building-swift-services/references/transport-security.md#transport-security-factories), the gateway's connection config, and the propagating interceptor on that upstream's `<Entity>Service` descriptors alone:
 
 ```swift
 // MARK: - Infrastructure

@@ -1,6 +1,6 @@
 ---
 name: writing-swift-server-code
-description: Writes and fixes the Swift source and Package.swift settings of server packages built the swift-microservices way, libraries and services alike: Swift tools 6.3 and Swift 6 language mode, the four shared upcoming features attached to every target, nonisolated default isolation, the settled concurrency rules, FoundationEssentials behind the conditional import, FormatStyle and ParseStrategy instead of legacy formatters, dependency traits that keep full Foundation out, Codable only where something encodes, conversions as initializers on the destination, file style, headers, and formatting. Use when writing Swift source or Package.swift settings in a Swift server package or library, choosing Foundation APIs, date or number formatting, or dependency traits, or resolving a strict-concurrency, import-visibility, or existential diagnostic in one.
+description: "Writes and fixes the Swift source and Package.swift settings of server packages built the swift-microservices way, libraries and services alike: Swift tools 6.3 and Swift 6 language mode, the four shared upcoming features attached to every target, nonisolated default isolation, the settled concurrency rules, FoundationEssentials behind the conditional import, FormatStyle and ParseStrategy instead of legacy formatters, dependency traits that keep full Foundation out, Codable only where something encodes, conversions as initializers on the destination, file style, headers, and formatting. Use when writing Swift source or Package.swift settings in a Swift server package or library, choosing Foundation APIs, date or number formatting, or dependency traits, or resolving a strict-concurrency, import-visibility, or existential diagnostic in one."
 paths: "Package.swift,Sources/**/*.swift,Tests/**/*.swift"
 ---
 
@@ -17,6 +17,8 @@ Read applicable `AGENTS.md` files first: their project profile, styles, and reco
 | Creating or editing a manifest, adding a target, or a concurrency, import, or existential diagnostic | [swift-settings.md](references/swift-settings.md) |
 | Any Foundation import, date or number formatting or parsing, JSON coding, ByteBuffer helpers, or a dependency's traits or version | [foundation.md](references/foundation.md) |
 | Creating or editing any Swift file | [style.md](references/style.md) |
+| The CI that checks these settings, Foundation linkage, headers, and formatting | the delivering skill's [library-ci.md](../delivering-swift-services/references/library-ci.md) and [services-ci.md](../delivering-swift-services/references/services-ci.md) |
+| Isolation contract tests, or logging in use cases | the building-swift-server-libraries skill's [testing.md](../building-swift-server-libraries/references/testing.md), or the building-swift-services skill's [core.md](../building-swift-services/references/core.md) |
 | Tasks, actors, `Sendable`, isolation, or a data-race diagnostic | the `swift-concurrency` skill, [AvdLee/Swift-Concurrency-Agent-Skill](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill) — install it; this skill does not restate it |
 
 ## Principles
@@ -43,7 +45,7 @@ Read applicable `AGENTS.md` files first: their project profile, styles, and reco
 
 ## Completion gates
 
-- Every owned Swift target receives the shared settings array, the package is in Swift 6 language mode with nonisolated default isolation, and `swift build` produces no concurrency diagnostic silenced rather than resolved.
+- Every owned Swift target receives the shared settings array, the package is in Swift 6 language mode with nonisolated default isolation, and `swift build` produces no concurrency diagnostic silenced rather than resolved. Run [scripts/check-swift-settings.py](scripts/check-swift-settings.py) on the package (`python3 scripts/check-swift-settings.py <package-dir>`, with `--exempt` for a C target) after every manifest change and fix each line it prints; a finding that an `AGENTS.md` exception records is not a defect.
 - Every Foundation import is the conditional block; no code uses `DateFormatter`, `ISO8601DateFormatter`, `NumberFormatter`, or `String(format:)`; no target depends on `NIOFoundationCompat`; every declared `swift-configuration`, `hummingbird`, and `swift-openapi-runtime` has an explicit `traits:` argument naming only what it uses.
 - Every `@unchecked Sendable` carries a comment stating what makes it safe; every `@concurrent` has a reason; no type is `Codable` without something encoding it.
 - Claims that a graph avoids full Foundation rest on a linking check, not on a static SDK build or the imports alone; required upstream exceptions are recorded with their versions.
