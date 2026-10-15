@@ -35,7 +35,7 @@ extension UserRole {
 }
 ```
 
-`UserIdentity.swift`: the JWT payload. `sub` decodes straight into a `UUID`, so a token whose subject is not a user id fails to decode.
+`UserIdentity.swift`: the JWT payload. `sub` decodes straight into a `UUID`, so a token whose subject is not a user id fails to decode. The registered claims are plain values under their claim keys; the JWT coders encode dates as seconds since 1970.
 
 ```swift
 public import JWTKit
@@ -50,32 +50,28 @@ public import Foundation
 public struct UserIdentity: JWTPayload, Equatable, Sendable {
     public let userId: UUID
     public let role: UserRole
-    public let iss: IssuerClaim
-    public let iat: IssuedAtClaim
-    public let exp: ExpirationClaim
+    public let issuer: String
+    public let issueDate: Date
+    public let expirationDate: Date
 
-    public init(userId: UUID, role: UserRole, issuer: String, issuedAt: Date, expiration: Date) {
+    public init(userId: UUID, role: UserRole, issuer: String, issueDate: Date, expirationDate: Date) {
         self.userId = userId
         self.role = role
-        self.iss = IssuerClaim(value: issuer)
-        self.iat = IssuedAtClaim(value: issuedAt)
-        self.exp = ExpirationClaim(value: expiration)
-    }
-
-    public var issuer: String { iss.value }
-    public var issuedAt: Date { iat.value }
-    public var expiration: Date { exp.value }
-
-    public func verify(using algorithm: some JWTAlgorithm) throws {
-        try exp.verifyNotExpired()
+        self.issuer = issuer
+        self.issueDate = issueDate
+        self.expirationDate = expirationDate
     }
 
     private enum CodingKeys: String, CodingKey {
         case userId = "sub"
         case role
-        case iss
-        case iat
-        case exp
+        case issuer = "iss"
+        case issueDate = "iat"
+        case expirationDate = "exp"
+    }
+
+    public func verify(using algorithm: some JWTAlgorithm) throws {
+        try ExpirationClaim(value: expirationDate).verifyNotExpired()
     }
 }
 ```
