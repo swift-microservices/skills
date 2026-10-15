@@ -53,7 +53,7 @@ Modules talk through ports. A consumer module declares in its own Core, in its o
 
 Dependency direction between modules is drawn and cycles are rejected, the same as between services. Break a cycle by reconsidering ownership, extracting a third module, or turning one direction into a fact the other module reacts to.
 
-Because the executable is the deployment unit, the monolith has one image, one configuration, one set of key files, and a service credential pair, plus dedicated Temporal credentials when needed. A Temporal worker, when a module needs one, is `worker run` on the same executable, composing the modules that have Activities.
+Because the executable is the deployment unit, the monolith has one image, one configuration, one set of key files, and a service credential pair, plus Temporal credentials when the project gives Temporal its own pair. A Temporal worker, when a module needs one, is `worker run` on the same executable, composing the modules that have Activities.
 
 ## One database, many modules
 

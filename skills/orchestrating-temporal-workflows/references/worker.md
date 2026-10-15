@@ -101,7 +101,12 @@ TEMPORAL_WORKER_HEARTBEATINTERVALMS=60000                 # worker liveness; the
 
 ## Temporal transport security
 
-Temporal has its own credential scope, `temporal.tls`: its own certificate and key, an explicit trust bundle, full server verification, and its own primed `TimedCertificateReloader`. Never fall back to the service `tls` pair. The `.mTLS(config:certificateReloader:)` factory is the client one in [composition.md](../../building-swift-services/references/composition.md#transport-security-factories); `TemporalClient` and `TemporalWorker` take the same `HTTP2ClientTransport.Posix.TransportSecurity`.
+Whether Temporal gets its own pair is the project's decision; record it in `AGENTS.md`:
+
+- **Its own pair** (the worked example below): a `temporal.tls` scope with its own certificate and key, trust bundle, primed `TimedCertificateReloader`, and renewer. Choose it when Temporal's trust differs from the services': one Temporal server shared by several environments, a separate CA, or a hosted Temporal. Then never fall back to the service `tls` pair.
+- **The process's pair**: Temporal's transport takes the same `tls` reader and reloader as the process's other connections. It suits a Temporal server per environment that trusts the same CA. A worker whose Activities call no other service still mounts one pair.
+
+Either way the connection is mTLS with an explicit trust bundle and full server verification, and each reloader runs once. The `.mTLS(config:certificateReloader:)` factory is the client one in [composition.md](../../building-swift-services/references/composition.md#transport-security-factories); `TemporalClient` and `TemporalWorker` take the same `HTTP2ClientTransport.Posix.TransportSecurity`.
 
 ```swift
 let temporalTLSConfig = config.scoped(to: "temporal.tls")
@@ -325,4 +330,4 @@ One `ServiceGroup` with graceful shutdown owns the worker, its Postgres client, 
 
 ## Local development
 
-A local worker connects to Temporal over mTLS like everywhere else, with a `temporal.tls` pair from the local development CA; there is no plaintext mode. Issuing local certificates is the delivering-swift-services skill's [certificates.md](../../delivering-swift-services/references/certificates.md).
+A local worker connects to Temporal over mTLS like everywhere else, with its Temporal pair from the local development CA; there is no plaintext mode. Issuing local certificates is the delivering-swift-services skill's [certificates.md](../../delivering-swift-services/references/certificates.md).

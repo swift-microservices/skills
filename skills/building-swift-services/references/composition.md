@@ -640,7 +640,7 @@ extension ServiceConfig {
 
 Pass it as `serviceConfig:` to every client's `.http2NIOPosix`, beside the mTLS factory. A call's `CallOptions` fill only fields the call sets, so `ServiceConfig` is the base default and `CallOptions` the per-RPC override. `GRPCServer` takes no service config.
 
-Temporal always has its own credential scope, `temporal.tls`, and its own primed reloader; see [worker.md](../../orchestrating-temporal-workflows/references/worker.md).
+Temporal has its own credential scope, `temporal.tls`, and its own primed reloader, or shares the process's `tls` pair and reloader, as the project records; see [worker.md](../../orchestrating-temporal-workflows/references/worker.md#temporal-transport-security).
 
 ## Temporal worker composition root
 

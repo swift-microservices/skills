@@ -32,7 +32,7 @@ Credentials per process, which the skeleton spells out:
 | Process | Database pair | Key files |
 | --- | --- | --- |
 | `<service>` (`serve --migrate-database`) | owner (migrations only), `SERVICE_*`, `INTERNAL_*` for a tenant service, `WORKER_*` when a worker exists (its role migration reads that password) | `/run/tls`, `jwt-public`; `/run/temporal-tls` when it starts workflows |
-| `<service>-worker` (`worker run`) | `WORKER_*` only, never the owner | its own `/run/tls` when its Activities call another service, its own `/run/temporal-tls`; no JWT key |
+| `<service>-worker` (`worker run`) | `WORKER_*` only, never the owner | its own `/run/tls` when its Activities call another service or Temporal shares the process's pair, its own `/run/temporal-tls` otherwise; no JWT key |
 | the authenticating service | as `<service>` | adds `jwt-private` |
 
 Why the owner pair sits in the serving container, and what a migration-order change requires, is in *Migrations* in [delivery.md](delivery.md#migrations).
@@ -55,7 +55,7 @@ Database role passwords are the one secret that stays a variable: the Postgres d
 
 ## Transport security: the certificate volume
 
-All internal gRPC connections use mTLS (gateway upstreams, service calls, worker calls, and Temporal), with explicit trust roots and verified server DNS names, and no plaintext mode, locally included. A client-facing listener is TLS with the same leaf and requires no client certificate ([Public ingress](#public-ingress)); it is the only listener without one. Each process mounts its own credential directory read-only at `/run/tls` (`cert.pem`, `key.pem`, `ca.pem`), and Temporal credentials separately at `/run/temporal-tls`; a renewer per directory is the only writer. Issuance, provisioners, enrollment, renewal, rekey, trust rotation, numeric ownership, the Temporal trust decision, the local development CA, and verification are in [certificates.md](certificates.md).
+All internal gRPC connections use mTLS (gateway upstreams, service calls, worker calls, and Temporal), with explicit trust roots and verified server DNS names, and no plaintext mode, locally included. A client-facing listener is TLS with the same leaf and requires no client certificate ([Public ingress](#public-ingress)); it is the only listener without one. Each process mounts its own credential directory read-only at `/run/tls` (`cert.pem`, `key.pem`, `ca.pem`), and, where the project gives Temporal its own pair, Temporal credentials separately at `/run/temporal-tls`; a renewer per directory is the only writer. Issuance, provisioners, enrollment, renewal, rekey, trust rotation, numeric ownership, the Temporal trust decision, the local development CA, and verification are in [certificates.md](certificates.md).
 
 ## Public ingress
 
