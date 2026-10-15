@@ -250,7 +250,7 @@ struct Run: AsyncParsableCommand {
                 certificateReloader,
                 temporalCertificateReloader,
                 ordersClient,
-                temporalWorker,
+                DrainingTemporalWorker(worker: temporalWorker),
             ],
             gracefulShutdownSignals: [.sigint, .sigterm],
             logger: logger
@@ -314,6 +314,22 @@ Add `temporalCertificateReloader` and `temporalClient` to serve's `ServiceGroup`
 ## Lifecycle
 
 One `ServiceGroup` with graceful shutdown owns the worker, its Postgres client, every long-lived gRPC and provider client its Activities use, the Temporal reloader, and the service `tls` reloader when Activities call another service. A borrowed SDK singleton such as `HTTPClient.shared` follows the exception recorded in `AGENTS.md`. Add no periodic database-to-Temporal reconciliation service.
+
+On a graceful shutdown `TemporalWorker` stops polling and lets running tasks finish, then `run()` rethrows the pollers' `CancellationError` (swift-temporal-sdk 1.2.0). Left alone, that error fails the `ServiceGroup`, which cancels the remaining services (losing the last log batch) and exits 1. Wrap the worker so that error, and only during a graceful shutdown, ends it cleanly; any other failure still fails the process. Keep the wrapper private in `Run.swift`:
+
+```swift
+private struct DrainingTemporalWorker: Service {
+    let worker: TemporalWorker
+
+    func run() async throws {
+        do {
+            try await worker.run()
+        } catch is CancellationError where Task.isShuttingDownGracefully {
+            return
+        }
+    }
+}
+```
 
 ## A monolith
 

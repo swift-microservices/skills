@@ -44,7 +44,9 @@ RUN bin="$(swift build --package-path /build --configuration release --show-bin-
 FROM ubuntu:noble
 
 # Fixed numeric IDs. The certificate renewers write as RENEWER_UID with this APP_GID, so the
-# process can read its credential directory and cannot write it (see certificates.md).
+# process can read its credential directory and cannot write it (see certificates.md). Noble
+# ships an `ubuntu` user and group at 1000; to match existing 1000 ownership, free them first:
+# `if id -u ubuntu >/dev/null 2>&1; then userdel ubuntu; fi` before `groupadd`.
 ARG APP_UID=10001
 ARG APP_GID=10001
 
