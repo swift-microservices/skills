@@ -11,4 +11,4 @@ Use these paths for the main pieces: Sources/AccountsWorkflows/EmailVerification
 
 Add the workflow's tests under Tests/AccountsWorkflowsTests, with the end-to-end workflow tests in EmailVerificationWorkflowTests.swift. We deploy often, so a code change must not break verifications that are already waiting when it ships; put the check for that in Tests/AccountsWorkflowsTests/EmailVerificationWorkflowReplayTests.swift.
 
-Temporal is self-hosted and requires client certificates. Include the client and worker credential configuration and reload lifecycle; credentials are mounted as files and renewed by the deployment.
+Temporal is self-hosted and requires client certificates; its credentials are a separate pair from the service's, because one Temporal server serves both our environments. Include the client and worker credential configuration and reload lifecycle; credentials are mounted as files and renewed by the deployment.
