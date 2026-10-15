@@ -35,9 +35,9 @@ Read the reference that owns a topic before touching it. Each topic has one home
 | The server and client transport security factories | [transport-security.md](references/transport-security.md) |
 | The Temporal worker's root, role, and configuration | the orchestrating-temporal-workflows skill's [worker.md](../orchestrating-temporal-workflows/references/worker.md) |
 | Test targets, mocks, use-case tests, transport tests | [testing.md](references/testing.md) |
-| A binding's isolation tests, or Workflow tests | the building-swift-server-libraries skill's [testing.md](../building-swift-server-libraries/references/testing.md), or the orchestrating-temporal-workflows skill's [testing.md](../orchestrating-temporal-workflows/references/testing.md) |
+| A binding's isolation tests, or Workflow tests | the libraries skill's [testing.md](../building-swift-server-libraries/references/testing.md), or the workflows skill's [testing.md](../orchestrating-temporal-workflows/references/testing.md) |
 | The organization's shared core package, or a library adopting `ConfigReader` | the building-swift-server-libraries skill's [organization-layer.md](../building-swift-server-libraries/references/organization-layer.md) and [api.md](../building-swift-server-libraries/references/api.md) |
-| What the environment supplies: secrets, JWT keys, credential paths, where Postgres runs | the delivering skill's [environment.md](../delivering-swift-services/references/environment.md) |
+| Environment values: secrets, JWT keys, credential paths, where Postgres runs | the delivering skill's [environment.md](../delivering-swift-services/references/environment.md) |
 
 ## Principles
 
@@ -87,7 +87,7 @@ Each rule is the short form; the linked reference holds the detail and the code.
 
 ### Persistence
 
-18. A service owns its whole database; a monolith's modules own their tables in one database. Unqualified names, no schema per module, one create migration per table, nothing across a module boundary. Where the database lives is the project's choice ([migrations-and-rls.md](references/migrations-and-rls.md#where-a-services-data-lives)).
+18. A service owns its whole database; a monolith's modules own their tables in one database. Unqualified names, no schema per module, one create migration per table, nothing across a module boundary. By default one instance holds a database and owner per service; other placements are recorded alternatives ([migrations-and-rls.md](references/migrations-and-rls.md#where-a-services-data-lives)).
 19. The owning database generates service-owned identifiers (`uuidv7()` by default, `gen_random_uuid()` on an older instance); create inputs omit them; external identifiers are validated and preserved.
 20. Name stored dates as nouns (`creation_date`, `creationDate`); store only the SHA-256 digest of a secret token; bcrypt only for passwords.
 21. Every remotely retryable mutation is idempotent through a namespaced key enforced atomically by its owner; guard transitions in `WHERE`; liveness-scoped uniqueness is a partial unique index.
@@ -144,7 +144,7 @@ Build a module or service:
 - [ ] 4. Postgres: one scope per role, statements, row decoding, repositories with error translation, table and policy migrations; in a service the role migrations too
 - [ ] 5. Transport: the gRPC surface (below), the HTTP surface with the building-swift-http-surfaces skill, or both
 - [ ] 6. Root: PostgresConfiguration, logging, migrations behind --migrate-database, one client per role and one database per module per role, the Ports/ adapters, transports, one ServiceGroup
-- [ ] 7. Run scripts/check-rls.py and the writing skill's scripts/check-swift-settings.py on the package; swift build, swift test, then exercise the contract, the identity paths, and the roles
+- [ ] 7. scripts/check-rls.py and the writing skill's check-swift-settings.py; swift build, swift test, then exercise the contract, the identity paths, and the roles
 ```
 
 ```
@@ -169,7 +169,7 @@ Do not call work complete until every applicable gate passes.
 - Service-owned identifiers are database-generated and absent from create inputs; retryable mutations have owner-enforced idempotency; no table is reached from another module.
 - `Database/Migrations.swift` lists every migration explicitly in applied order, roles first in a new package and appended when added later; serving never connects as the owner; no role has `BYPASSRLS`.
 - Where tenant tables exist: every one has a tenant policy with `USING` and `WITH CHECK` and an internal-role policy; every `<Entity>Service` over them carries `UserSettingsInterceptor` after the bearer interceptor, and the identifying HTTP tier `UserSettingsMiddleware` after the bearer middleware; the policies were exercised as each role. Where none exist, the decision record says so.
-- `python3 scripts/check-rls.py <package-dir>` ([check-rls.py](scripts/check-rls.py)) prints OK; it reads the policies' SQL and the migration list's order, and does not replace exercising the policies as each role.
+- [check-rls.py](scripts/check-rls.py) (`python3 scripts/check-rls.py <package-dir>`) prints OK; it reads the SQL and the migration order, and does not replace exercising the policies as each role.
 - Every `<Entity>Service` handler starts with what its RPC requires; internal services carry no application interceptor and sit only on an mTLS listener; a client-facing listener requires no client certificate and carries no internal service; every HTTP surface passes the building-swift-http-surfaces skill's gates.
 - Every process that receives a token verifies it; a token is forwarded only by the propagation interceptor on `<Entity>Service` descriptors; authorization is decided in the use case.
 - Logs identify the local service and carry `user_id` when a user is bound; every long-lived client, server, application, and worker is in one `ServiceGroup` with graceful shutdown.

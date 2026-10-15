@@ -43,11 +43,6 @@ RUN bin="$(swift build --package-path /build --configuration release --show-bin-
 # ================================
 FROM ubuntu:noble
 
-# Fixed numeric IDs. The certificate renewers write as RENEWER_UID with this APP_GID, so the
-# process can read its credential directory and cannot write it (see certificates.md).
-ARG APP_UID=10001
-ARG APP_GID=10001
-
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
     && apt-get -q update \
     && apt-get -q dist-upgrade -y \
@@ -56,18 +51,22 @@ RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
         tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --system --gid "${APP_GID}" app \
-    && useradd --system --uid "${APP_UID}" --gid app \
-        --home-dir /app --no-create-home --shell /usr/sbin/nologin app
+# An unprivileged service account with /app as its home directory.
+RUN useradd \
+    --user-group \
+    --create-home \
+    --system \
+    --skel /dev/null \
+    --home-dir /app \
+    app
 
 WORKDIR /app
 
-# Root-owned and read-only to the process: it cannot replace its own executable.
-COPY --from=build /staging /app
+COPY --from=build --chown=app:app /staging /app
 
 ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all,images=all,interactive=no,swift-backtrace=/app/swift-backtrace-static
 
-USER ${APP_UID}:${APP_GID}
+USER app:app
 
 ENTRYPOINT ["/app/example-service"]
 CMD ["serve"]

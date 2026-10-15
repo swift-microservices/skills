@@ -176,6 +176,9 @@ Tests/
       Values.swift                                    # UUID.user, UUID.missing, Date.reference
     <Entity>UseCaseTests.swift
   <Module>GRPCTests/                                  # with gRPC
+    Mocks/
+      <Entity>UseCaseMocks.swift                      # actor mocks of the use-case protocols the handlers call
+    <Entity>ServiceTests.swift                        # handler tests: the identity matrix and status mapping
     TLSFixtures.swift                                 # a throwaway CA and leaf pairs
     <Entity>ServiceFixtures.swift                     # the loopback server and client
     <Module>GRPCTests.swift
@@ -311,6 +314,7 @@ The same block in every shape; the executable that links them differs. In a one-
     dependencies: [
         "<Module>Core",
         "<Module>GRPC",
+        .product(name: "Authentication", package: "swift-authentication"),     // the Principal a handler test binds
         .product(name: "AuthenticationGRPC", package: "swift-authentication-grpc"),
         .product(name: "AuthenticationJWT", package: "swift-authentication-jwt"),
         .product(name: "Crypto", package: "swift-crypto"),
@@ -320,6 +324,7 @@ The same block in every shape; the executable that links them differs. In a one-
         .product(name: "JWTKit", package: "jwt-kit"),
         .product(name: "Logging", package: "swift-log"),
         .product(name: "NIOCertificateReloading", package: "swift-nio-extras"),
+        .product(name: "OperationContext", package: "swift-operation-context"), // binding the caller in handler tests
         .product(name: "ServiceLifecycle", package: "swift-service-lifecycle"),
         .product(name: "SwiftASN1", package: "swift-asn1"),
         .product(name: "SwiftProtobuf", package: "swift-protobuf"),

@@ -69,7 +69,7 @@ Sources/
 Tests/
   CatalogCoreTests/
   UsersCoreTests/
-  UsersGRPCTests/                                     # with gRPC: one loopback suite per module that serves RPCs
+  UsersGRPCTests/                                     # with gRPC: handler tests and one loopback suite per module that serves RPCs
   CatalogWorkflowsTests/                              # only with Temporal, per module with workflows
 ```
 
