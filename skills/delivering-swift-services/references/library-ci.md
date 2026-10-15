@@ -193,15 +193,12 @@ replacement coverage; revisit it when that dependency's resolved version changes
 ## Private organization libraries
 
 A private library in an organization (its core package, protos, or SDK) keeps every gate above,
-but private repositories pay for hosted minutes and the shared reusable workflows cannot fetch
-private dependencies. The pattern:
+but the shared reusable workflows cannot fetch private dependencies. The pattern:
 
 - One local reusable `.github/workflows/ci.yml`, called from `pull_request.yml` (with an input
-  enabling soundness, DocC, and static SDK jobs) and from `main.yml`. Jobs run on the
-  organization's self-hosted runner (`runs-on: [self-hosted, Linux, X64]`) with each toolchain
-  as the job's `container:`: the same four toolchains, test overrides, and release builds as the
-  compiler matrix. The runner's service account needs Docker; keep self-hosted runners off
-  public repositories.
+  enabling soundness, DocC, and static SDK jobs) and from `main.yml`. Jobs run on GitHub-hosted
+  runners (`runs-on: ubuntu-latest`) with each toolchain as the job's `container:`: the same four
+  toolchains, test overrides, and release builds as the compiler matrix.
 - Soundness and DocC run the upstream scripts from a checkout of `swiftlang/github-workflows`
   pinned to the release's commit SHA; Foundation linking inlines the `vapor/ci` check with the
   same excluded products; the label workflow keeps the shared checker and `pull-requests: read`.
@@ -221,8 +218,8 @@ private dependencies. The pattern:
   ```
 
 - No Swift Package Index: no `.spi.yml` and no documentation badge; DocC builds only in CI, and
-  consumers resolve tags with their own GitHub credentials. Record the runner, the credential,
-  and these replacements in `AGENTS.md`.
+  consumers resolve tags with their own GitHub credentials. Record the credential and these
+  replacements in `AGENTS.md`.
 
 ## Validation and completion
 
