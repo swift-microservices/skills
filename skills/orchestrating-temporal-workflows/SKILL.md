@@ -21,7 +21,7 @@ Read applicable `AGENTS.md` files first: their project profile, styles, and reco
 | Workflow tests, the time-skipping server, recorded histories, replay, Activity-name uniqueness | [testing.md](references/testing.md) |
 | A new Workflow end to end | all three |
 
-The service package, its roles, and its serve composition root are the building-swift-services skill's; load it beside this one when the change touches Core, Postgres, or `serve`. Every Swift change follows the writing-swift-server-code skill's [Swift settings](../writing-swift-server-code/references/swift-settings.md) and [Foundation policy](../writing-swift-server-code/references/foundation.md); modern Foundation API never relaxes Workflow determinism or payload compatibility.
+The service package, its roles, and its serve composition root are the building-swift-services skill's; load it beside this one when the change touches Core, Postgres, or `serve`: its [service-package.md](../building-swift-services/references/service-package.md), [persistence.md](../building-swift-services/references/persistence.md) for roles, [identity-and-access.md](../building-swift-services/references/identity-and-access.md), and [composition.md](../building-swift-services/references/composition.md). Temporal's certificates are issued and renewed as the delivering skill's [certificates.md](../delivering-swift-services/references/certificates.md) describes. Every Swift change follows the writing-swift-server-code skill's [Swift settings](../writing-swift-server-code/references/swift-settings.md) and [Foundation policy](../writing-swift-server-code/references/foundation.md); modern Foundation API never relaxes Workflow determinism or payload compatibility.
 
 ## Principles
 

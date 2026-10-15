@@ -23,6 +23,7 @@ Rules in this skill are conventions the packages and their consumers depend on; 
 | Writing or reviewing `<project>-core` code, manifest, or tests | [organization-core-code.md](references/organization-core-code.md) — the complete manifest, every source file, the required tests |
 | Swift settings, Foundation, style | the writing-swift-server-code skill's [swift-settings.md](../writing-swift-server-code/references/swift-settings.md), [foundation.md](../writing-swift-server-code/references/foundation.md), and [style.md](../writing-swift-server-code/references/style.md) |
 | CI workflows, gates, and exceptions | the delivering skill's [library-ci.md](../delivering-swift-services/references/library-ci.md) |
+| A library adopting `ConfigReader`, or the organization's proto package | the building-swift-services skill's [configuration.md](../building-swift-services/references/configuration.md) and [grpc-and-protos.md](../building-swift-services/references/grpc-and-protos.md) |
 
 ## Principles
 

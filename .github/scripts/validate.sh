@@ -39,6 +39,33 @@ for skill_dir in skills/*; do
     fail "$skill" 'no YAML frontmatter'
     continue
   fi
+  # Strict YAML: other skill loaders reject what Claude Code tolerates, such as ': ' in a plain scalar.
+  if ! yaml_error=$(python3 - "$frontmatter" <<'PY' 2>&1
+import re
+import sys
+
+text = sys.argv[1]
+try:
+    import yaml
+except ImportError:
+    yaml = None
+if yaml:
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        sys.exit(str(error).replace('\n', ' '))
+    if not isinstance(data, dict):
+        sys.exit('frontmatter is not a mapping')
+else:
+    # Without PyYAML, reject the plain scalars a YAML parser would misread.
+    for line in text.splitlines():
+        match = re.match(r'^[A-Za-z][\w-]*:[ \t]+(.*)$', line)
+        if match and match.group(1)[:1] not in '"\'[{>|' and re.search(r': | #', match.group(1)):
+            sys.exit(f'plain scalar needs quoting: {line[:60]}')
+PY
+  ); then
+    fail "$skill" "frontmatter is not valid YAML: $yaml_error"
+  fi
   name=$(awk '/^name:/ {sub(/^name:[[:space:]]*/, ""); sub(/[[:space:]]*$/, ""); print; exit}' <<< "$frontmatter")
   # A folded (>-), literal (|), or plain multi-line description continues on indented lines.
   description=$(awk '
@@ -122,7 +149,11 @@ for skill_dir in skills/*; do
       case $target in http://*|https://*|mailto:*) continue ;; esac
       if [[ $target == /* ]]; then resolved=$target; else resolved="${doc%/*}/$target"; fi
       [[ -e $resolved ]] || fail "$doc" "link to missing file '$target'"
-      if [[ $target == ../* ]]; then
+      if [[ $target == ../../*/references/* && $doc != "$skill" ]]; then
+        # Another skill's reference read through this one would be two levels deep; SKILL.md names it too.
+        grep -qF "](../${target#../../}" "$skill" \
+          || fail "$doc" "links '$target'; name it in $skill so it is one level deep"
+      elif [[ $target == ../* ]]; then
         : # a sibling skill's file; it only has to exist
       elif [[ $doc == "$skill" ]]; then
         parts=$(awk -F/ '{for (i = 1; i <= NF; i++) if ($i != "" && $i != ".") n++; print n + 0}' <<< "$target")

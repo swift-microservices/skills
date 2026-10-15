@@ -23,6 +23,8 @@ Each topic has exactly one home; other skills say only that a value "comes from 
 | The running stack: the suite Compose file and `.env`, where Postgres runs, ports, secrets and JWT keys, the gateway's address, logs, verifying what a service receives | [environment.md](references/environment.md) |
 | The CA contract and `step-ca`: initialization, provisioners, enrollment, renewal and publication, rekey, trust rotation, file ownership, Temporal TLS, the local development CA, verification | [certificates.md](references/certificates.md) |
 
+The process side of what delivery supplies is another skill's: the serve and worker roots and their transport security in the building-swift-services skill's [composition.md](../building-swift-services/references/composition.md), configuration keys in its [configuration.md](../building-swift-services/references/configuration.md), database roles and placement in its [persistence.md](../building-swift-services/references/persistence.md), and the worker and its Temporal credentials in the orchestrating-temporal-workflows skill's [worker.md](../orchestrating-temporal-workflows/references/worker.md).
+
 Templates live in `assets/`; each reference names the ones it uses and whether to copy or execute them.
 
 ## Principles

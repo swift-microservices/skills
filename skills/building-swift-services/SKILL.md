@@ -21,7 +21,7 @@ Read the reference that owns a topic before touching it. Each topic has one home
 | Task | Read |
 | --- | --- |
 | Every task | [architecture.md](references/architecture.md) — the two shapes, the module grammar, target graphs, the cross-module rule, naming, boundaries, ownership |
-| Creating or editing Swift | the writing-swift-server-code skill, and the `swift-concurrency` skill ([AvdLee/Swift-Concurrency-Agent-Skill](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill)) for tasks, actors, `Sendable`, or a data-race diagnostic |
+| Creating or editing Swift | the writing-swift-server-code skill ([swift-settings.md](../writing-swift-server-code/references/swift-settings.md), [foundation.md](../writing-swift-server-code/references/foundation.md)), and the `swift-concurrency` skill ([AvdLee/Swift-Concurrency-Agent-Skill](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill)) for tasks, actors, `Sendable`, or a data-race diagnostic |
 | A package, manifest, source tree, or dependency floor | [service-package.md](references/service-package.md) |
 | Entities, commands, repositories, scopes, use cases, policies, logging, ports to other modules | [core.md](references/core.md) |
 | Statements, repositories, identifiers, idempotency, migrations and the migration list, roles, row-level security, one database for many modules | [persistence.md](references/persistence.md) |
@@ -32,6 +32,9 @@ Read the reference that owns a topic before touching it. Each topic has one home
 | The executable: `PostgresConfiguration`, logging, clients, servers, the complete service and monolith roots, transport security, migrations at boot | [composition.md](references/composition.md) |
 | The Temporal worker's root, role, and configuration | the orchestrating-temporal-workflows skill's [worker.md](../orchestrating-temporal-workflows/references/worker.md) |
 | Test targets, mocks, use-case tests, transport tests | [testing.md](references/testing.md) |
+| A binding's isolation tests, or Workflow tests | the building-swift-server-libraries skill's [testing.md](../building-swift-server-libraries/references/testing.md), or the orchestrating-temporal-workflows skill's [testing.md](../orchestrating-temporal-workflows/references/testing.md) |
+| The organization's shared core package, or a library adopting `ConfigReader` | the building-swift-server-libraries skill's [organization-layer.md](../building-swift-server-libraries/references/organization-layer.md) and [api.md](../building-swift-server-libraries/references/api.md) |
+| What the environment supplies: secrets, JWT keys, credential paths, where Postgres runs | the delivering skill's [environment.md](../delivering-swift-services/references/environment.md) |
 
 ## Principles
 
