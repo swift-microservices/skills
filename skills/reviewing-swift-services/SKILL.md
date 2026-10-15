@@ -103,7 +103,7 @@ Review progress:
 - `// MARK:` sections in the order Configuration, Logging, Infrastructure, Composition, the transport sections, Lifecycle.
 - `serve` is the default subcommand and migrations run before serving: `serve --migrate-database`, a `migrate` one-shot before the rollout, or a recorded advisory-locked apply. An unguarded concurrent migrate path, or none, is a finding. A Temporal worker is `worker run` on the same executable, per [worker.md](../orchestrating-temporal-workflows/references/worker.md).
 - Configuration uses native readers, environment overrides before application defaults, no default or path argument beside a reader, policy defaults from Core's `.standard`, failing security overrides, and validation outside composition roots.
-- Key material is configured by path; `TimedCertificateReloader` is primed before transport construction, passed to the [transport security factories](../building-swift-services/references/composition.md#transport-security-factories), and owned once in the `ServiceGroup`; Temporal has its own pair and reloader.
+- Key material is configured by path; `TimedCertificateReloader` is primed before transport construction, passed to the [transport security factories](../building-swift-services/references/composition.md#transport-security-factories), and owned once in the `ServiceGroup`; Temporal uses the pair the project recorded (its own `temporal.tls` pair and reloader, or the process's).
 - One `PostgresClient` per role; one `PostgresDatabase` per module per role; a comment says which database each use case runs on.
 - Logging is bootstrapped inline with the service label and identity metadata providers; every owned client, server, and worker is in one `ServiceGroup` with graceful shutdown.
 

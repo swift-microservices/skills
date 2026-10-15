@@ -151,7 +151,7 @@ The process starts only after its files exist. `TimedCertificateReloader.makeRel
 
 ## Temporal TLS
 
-Temporal connections use separate credentials under `/run/temporal-tls`, their own `TEMPORAL_TLS_*` overrides, their own reloader, and their own renewer, even when the same CA issues them. Configure the Temporal server's frontend and internode TLS explicitly; its certificate refresh is separate from Swift's reloader, so verify the pinned server's reload behavior, or put its server and UI certificates under a renewer, or calendar their expiry.
+Whether Temporal connections get their own pair is a recorded project choice (the worker skill's [Temporal transport security](../../orchestrating-temporal-workflows/references/worker.md#temporal-transport-security)). With their own pair, which the assets show, they use separate credentials under `/run/temporal-tls`, their own `TEMPORAL_TLS_*` overrides, their own reloader, and their own renewer, even when the same CA issues them; a shared server below needs this. With the process's pair, the leaf's SANs and the Temporal server's client-CA trust cover both uses, and `/run/temporal-tls` and its renewer are dropped. Configure the Temporal server's frontend and internode TLS explicitly; its certificate refresh is separate from Swift's reloader, so verify the pinned server's reload behavior, or put its server and UI certificates under a renewer, or calendar their expiry.
 
 Whether environments share a Temporal server is a decision to record, with its trade-off:
 

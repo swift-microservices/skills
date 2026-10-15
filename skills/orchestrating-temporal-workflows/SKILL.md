@@ -68,7 +68,7 @@ Each rule is one line; the linked section holds the code and the detail.
 19. The worker is `worker run`: a `Worker` command group and its `Run` composition root in `<Service>/Worker/`, in serve's section order with a Worker section, opening no server and reading no verifying key.
 20. It connects to its own database as `<service>_worker` (`<project>_worker` in a monolith): `CreateWorkerRole` appended at the end of `Database/Migrations.swift`, and `Postgres<Service>WorkerScope` the only conformer of its use cases' scopes, which take `input:` alone.
 21. It calls other services through their internal descriptors over mTLS, with no token and no authentication interceptor; the user is a `UUID` in the input.
-22. `TemporalClient.Configuration(configReader:)` and `TemporalWorker.Configuration(configReader:)` read the `temporal` scope; Temporal has its own `temporal.tls` pair and primed reloader. Mind the argument order: `TemporalClient(target:transportSecurity:configuration:logger:)`, `TemporalWorker(configuration:target:transportSecurity:activityContainers:workflows:logger:)`.
+22. `TemporalClient.Configuration(configReader:)` and `TemporalWorker.Configuration(configReader:)` read the `temporal` scope; Temporal's mTLS uses its own `temporal.tls` pair and primed reloader, or the process's pair, as the project records ([Temporal transport security](references/worker.md#temporal-transport-security)). Mind the argument order: `TemporalClient(target:transportSecurity:configuration:logger:)`, `TemporalWorker(configuration:target:transportSecurity:activityContainers:workflows:logger:)`.
 23. One `ServiceGroup` owns the worker, its Postgres client, every long-lived client its Activities use, and the reloaders.
 
 ### Tests ([testing.md](references/testing.md))
