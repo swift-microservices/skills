@@ -5,7 +5,7 @@ context: fork
 agent: Explore
 background: false
 disable-model-invocation: true
-allowed-tools: Read Grep Glob Bash(swift build *) Bash(swift test *) Bash(git *)
+allowed-tools: Read Grep Glob Bash(swift build *) Bash(swift test *) Bash(git *) Bash(python3 *check-rls.py *) Bash(python3 *check-swift-settings.py *)
 argument-hint: [path]
 ---
 
@@ -20,6 +20,8 @@ Read applicable `AGENTS.md` files first: their project profile, styles, and reco
 The package is `$ARGUMENTS` when given, otherwise the current directory. Confirm its shape: a service (`<Service>Core`, `<Service>Postgres`, `<Service>GRPC` or `<Service>HTTP`, `<Service>`); a monolith (the same targets per module, `<Project>HTTP` when it serves HTTP, one `<Project>` executable); or a gateway (`API` and `<Project>`). Otherwise report that it is not a service, monolith, or gateway package and stop; a reusable library is audited against the building-swift-server-libraries skill's completion gates instead, and say so. In a monolith read `<Service>` as each module. In a gateway, sections 2, 3, and the database parts of 7 are not applicable, and section 8 reads `Tests/APITests`.
 
 Read `Package.swift` in full first, then `Sources/<Service>/Serve/Serve.swift` (`Sources/<Project>/…` in a monolith or gateway) and, except in a gateway, `Database/Migrations.swift` beside it. Open anything else only when a check names it.
+
+Then run the two read-only checks on the package and treat each line they print as a candidate finding to confirm in the source: `python3 ../writing-swift-server-code/scripts/check-swift-settings.py <package>` and, except in a gateway, `python3 ../building-swift-services/scripts/check-rls.py <package>`, both relative to this skill's directory. A line that an `AGENTS.md` exception covers is not a finding; a clean run does not replace the checks below.
 
 ## What a finding is
 

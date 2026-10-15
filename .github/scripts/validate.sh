@@ -188,11 +188,27 @@ if ! python3 - <<'PY'
 import ast
 from pathlib import Path
 
-for path in Path('evals').glob('*/checks/*.py'):
+for path in [*Path('evals').glob('*/checks/*.py'), *Path('skills').glob('*/scripts/*.py')]:
     ast.parse(path.read_text(), filename=str(path))
 PY
 then
   fail evals 'invalid Python syntax'
+fi
+
+# The skills' check scripts pass the clean review fixture and catch the tenant-policy one.
+fixtures=$(mktemp -d)
+trap 'rm -rf "$fixtures"' EXIT
+for case_name in clean tenant-policy; do
+  mkdir "$fixtures/$case_name"
+  (cd "$fixtures/$case_name" && bash "$OLDPWD/evals/reviewing-swift-services-$case_name/scaffold.sh")
+done
+for script in skills/writing-swift-server-code/scripts/check-swift-settings.py skills/building-swift-services/scripts/check-rls.py; do
+  python3 "$script" "$fixtures/clean" > /dev/null || fail "$script" 'fails the clean review fixture'
+done
+if python3 skills/building-swift-services/scripts/check-rls.py "$fixtures/tenant-policy" > "$fixtures/rls.out"; then
+  fail skills/building-swift-services/scripts/check-rls.py 'passes a tenant policy with no WITH CHECK'
+elif ! grep -q 'no WITH CHECK' "$fixtures/rls.out"; then
+  fail skills/building-swift-services/scripts/check-rls.py 'does not name the missing WITH CHECK'
 fi
 if ! python3 - <<'PY'
 import re

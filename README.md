@@ -52,6 +52,7 @@ Start a new Codex thread after installing or updating the plugin so it can load 
 skills/<skill>/SKILL.md           the router: principles, rules, references, gates, under ~5,000 tokens
 skills/<skill>/references/*.md    detail, one level deep, loaded as needed
 skills/<skill>/assets/            files a skill copies into a project, such as CI workflows and the formatter
+skills/<skill>/scripts/           checks a skill runs rather than reads: Swift settings, migrations and row-level security
 evals/<skill>-<case>/             claude plugin eval cases: a prompt, its graders, and an optional scaffold
 .github/scripts/validate.sh       the structural and manifest checks CI runs
 .github/scripts/create-release.sh label-based releases with synchronized plugin versions
@@ -60,7 +61,7 @@ evals/<skill>-<case>/             claude plugin eval cases: a prompt, its grader
 ## Development
 
 ```sh
-bash .github/scripts/validate.sh   # frontmatter, token budgets, links, contents, eval cases, plugin versions
+bash .github/scripts/validate.sh   # frontmatter, token budgets, links, contents, check scripts, eval cases, plugin versions
 claude --plugin-dir .              # try the skills in a session
 claude plugin validate .           # Claude Code's own structural check
 claude plugin eval .               # run every eval case with and without the plugin

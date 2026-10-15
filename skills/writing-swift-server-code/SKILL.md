@@ -45,7 +45,7 @@ Read applicable `AGENTS.md` files first: their project profile, styles, and reco
 
 ## Completion gates
 
-- Every owned Swift target receives the shared settings array, the package is in Swift 6 language mode with nonisolated default isolation, and `swift build` produces no concurrency diagnostic silenced rather than resolved.
+- Every owned Swift target receives the shared settings array, the package is in Swift 6 language mode with nonisolated default isolation, and `swift build` produces no concurrency diagnostic silenced rather than resolved. Run [scripts/check-swift-settings.py](scripts/check-swift-settings.py) on the package (`python3 scripts/check-swift-settings.py <package-dir>`, with `--exempt` for a C target) after every manifest change and fix each line it prints; a finding that an `AGENTS.md` exception records is not a defect.
 - Every Foundation import is the conditional block; no code uses `DateFormatter`, `ISO8601DateFormatter`, `NumberFormatter`, or `String(format:)`; no target depends on `NIOFoundationCompat`; every declared `swift-configuration`, `hummingbird`, and `swift-openapi-runtime` has an explicit `traits:` argument naming only what it uses.
 - Every `@unchecked Sendable` carries a comment stating what makes it safe; every `@concurrent` has a reason; no type is `Codable` without something encoding it.
 - Claims that a graph avoids full Foundation rest on a linking check, not on a static SDK build or the imports alone; required upstream exceptions are recorded with their versions.
