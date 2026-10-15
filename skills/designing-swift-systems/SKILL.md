@@ -55,7 +55,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 8. Draw dependency direction between modules and reject cycles. Break one by reconsidering ownership, extracting a third module, or replacing a synchronous edge with a fact the other side reacts to.
 9. Prefer fewer modules when boundaries are uncertain and fewer services always; two modules merge for free, two services cost a data migration.
 10. The owning database generates service-owned identifiers; externally assigned identifiers keep their authority. A consumer stores a returned identifier only after success ([persistence.md](../building-swift-services/references/persistence.md#identifiers-dates-and-secrets)).
-11. Never share tables, query or join across modules or databases, or make a distributed transaction. Postgres placement (instance, database, or schema per service) is a project choice recorded once with no default; another store is a per-module choice from a measured access pattern ([migrations-and-rls.md](../building-swift-services/references/migrations-and-rls.md#database-ownership-and-migrations)).
+11. Never share tables, query or join across modules or databases, or make a distributed transaction. Postgres placement defaults to one instance with a database and owner per service; an instance or a schema per service is a recorded alternative; another store is a per-module choice from a measured access pattern ([migrations-and-rls.md](../building-swift-services/references/migrations-and-rls.md#database-ownership-and-migrations)).
 
 ### Shared code and contracts
 

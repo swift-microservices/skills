@@ -110,7 +110,7 @@ transport: HTTP | gRPC | both
 modules: <name> owns <tables>, exposes <use cases | proto services>
 callers: browsers | apps (REST | gRPC) | partners | internal processes
 identity: verified at <the transport | the gateway and every service>
-postgres placement: instance per service | shared instance, database per service | schema per service
+postgres placement: shared instance, database per service (default) | instance per service | schema per service
 tenant isolation: row-level security | none (<reason>)
 split candidates: <module>: <the concrete reason>, or none
 ```

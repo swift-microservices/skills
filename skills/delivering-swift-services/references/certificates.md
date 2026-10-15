@@ -46,9 +46,9 @@ Alternatives that satisfy it: a cloud private CA or a service mesh that issues, 
 
 Each workload instance (every serving process and every worker) has its own directory with `cert.pem` (leaf plus intermediates), `key.pem`, and `ca.pem` (the trust for peers). The application mounts it read-only at `/run/tls`; its renewer mounts the same directory read-write. Never mount a volume holding every workload's keys into every application. Mount directories, not single files: a file bind mount keeps the old inode after an atomic rename.
 
-Fix the numeric IDs so ownership enforces the split even where a platform cannot mount read-only:
+Use numeric IDs so ownership enforces the split even where a platform cannot mount read-only:
 
-- Images run as `APP_UID:APP_GID`, fixed in the [Containerfile](../assets/Containerfile).
+- Images run as the [Containerfile](../assets/Containerfile)'s `app` user; `APP_GID` is its numeric group, read from the built image with `docker run --rm --entrypoint id <image>`.
 - Renewers and the enrollment one-shot run as `RENEWER_UID:APP_GID`, a different user in the same group.
 - Each directory is `RENEWER_UID:APP_GID` with mode `2750`; `key.pem` is `0640`, `cert.pem` and `ca.pem` are `0644`. The application reads, and cannot create, rename, or replace a file.
 
@@ -153,10 +153,12 @@ The process starts only after its files exist. `TimedCertificateReloader.makeRel
 
 Whether Temporal connections get their own pair is a recorded project choice (the worker skill's [Temporal transport security](../../orchestrating-temporal-workflows/references/worker.md#temporal-transport-security)). With their own pair, which the assets show, they use separate credentials under `/run/temporal-tls`, their own `TEMPORAL_TLS_*` overrides, their own reloader, and their own renewer, even when the same CA issues them; a shared server below needs this. With the process's pair, the leaf's SANs and the Temporal server's client-CA trust cover both uses, and `/run/temporal-tls` and its renewer are dropped. Configure the Temporal server's frontend and internode TLS explicitly; its certificate refresh is separate from Swift's reloader, so verify the pinned server's reload behavior, or put its server and UI certificates under a renewer, or calendar their expiry.
 
-Whether environments share a Temporal server is a decision to record, with its trade-off:
+How Temporal's certificates are issued, and whether environments share a Temporal server, is the project's choice, recorded in `AGENTS.md`. Common arrangements:
 
-- **A server per environment**, trusting only that environment's CA. Transport trust and namespaces are isolated by construction; there is one more server to run per environment.
-- **One shared server** trusting each environment's CA as a separate client CA (the server image's configuration takes more than one client CA, such as a second `TEMPORAL_TLS_CLIENT2_CA_CERT`). Cheaper, but any trusted leaf reaches every namespace: mTLS is not namespace authorization, so add an authorizer and claim mapper that bind each environment's identities to its namespaces. Never let staging clients present leaves from the production CA.
+- **A server per environment**, trusting that environment's CA.
+- **One server for several environments**, with a CA of its own that issues every environment's Temporal pairs, or trusting each environment's CA as a separate client CA.
+
+The client side is the same in every arrangement: the SDK connects over mTLS with a `TimedCertificateReloader`, as its [Connecting to Temporal](https://swiftpackageindex.com/apple/swift-temporal-sdk/main/documentation/temporal/connecting-to-temporal) article shows. mTLS admits a client to the server, not to a namespace; where one server holds several environments' namespaces, separating them is Temporal's own authorization, which the project configures if it needs it.
 
 ## Local development CA
 

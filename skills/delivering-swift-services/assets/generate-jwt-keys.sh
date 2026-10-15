@@ -29,4 +29,4 @@ chmod 0644 "$public_key"
 
 echo "Wrote $private_key (the authenticating service alone) and $public_key."
 echo "Keep $directory out of version control. The private key must be readable by the image's"
-echo "numeric user where it is mounted (for example: chown APP_UID $private_key)."
+echo "user where it is mounted (its numeric UID: docker run --rm --entrypoint id -u IMAGE)."

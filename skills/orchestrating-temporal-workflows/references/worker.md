@@ -101,7 +101,9 @@ TEMPORAL_WORKER_HEARTBEATINTERVALMS=60000                 # worker liveness; the
 
 ## Temporal transport security
 
-Whether Temporal gets its own pair is the project's decision; record it in `AGENTS.md`:
+The SDK's [Connecting to Temporal](https://swiftpackageindex.com/apple/swift-temporal-sdk/main/documentation/temporal/connecting-to-temporal) article is the source for the connection: `.mTLS` over a `TimedCertificateReloader` for a server that requires client certificates, `.plaintext` only for a local development server, and the client run as a `Service` in the `ServiceGroup`. Which CA issues Temporal's certificates, and whether environments share a server, is the project's choice ([certificates.md](../../delivering-swift-services/references/certificates.md#temporal-tls)).
+
+Whether Temporal gets its own pair is the project's decision too; record it in `AGENTS.md`:
 
 - **Its own pair** (the worked example below): a `temporal.tls` scope with its own certificate and key, trust bundle, primed `TimedCertificateReloader`, and renewer. Choose it when Temporal's trust differs from the services': one Temporal server shared by several environments, a separate CA, or a hosted Temporal. Then never fall back to the service `tls` pair.
 - **The process's pair**: Temporal's transport takes the same `tls` reader and reloader as the process's other connections. It suits a Temporal server per environment that trusts the same CA. A worker whose Activities call no other service still mounts one pair.

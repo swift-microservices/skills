@@ -39,7 +39,7 @@ networks:
   internal: {}
 
 volumes:
-  <service>-postgres-data: {}
+  postgres-data: {}
   <service>-tls: {}
   <service>-temporal-tls: {}
   <service>-worker-tls: {}
@@ -48,16 +48,21 @@ volumes:
   loki-data: {}
 
 services:
-  <service>-postgres:
+  # One instance, a database and owner per service (the default placement). postgres-init.sh
+  # creates each database and owner on the first start; nothing that serves connects as the
+  # administrator.
+  postgres:
     image: postgres:18.0
     environment:
-      POSTGRES_DB: <project>_<service>
-      POSTGRES_USER: ${<SERVICE>_OWNER:?set the database owner}
-      POSTGRES_PASSWORD: ${<SERVICE>_OWNER_PASSWORD:?set the database owner's password}
+      POSTGRES_USER: ${POSTGRES_ADMIN:?set the instance's administrator}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set the administrator's password}
+      <SERVICE>_OWNER: ${<SERVICE>_OWNER:?set the database owner}   # per service, read by postgres-init.sh
+      <SERVICE>_OWNER_PASSWORD: ${<SERVICE>_OWNER_PASSWORD:?set the database owner's password}
     volumes:
-      - <service>-postgres-data:/var/lib/postgresql
+      - postgres-data:/var/lib/postgresql
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\""]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -69,7 +74,7 @@ services:
     command: ["serve", "--migrate-database"]
     environment:
       <<: [*tls, *jwt-verification, *temporal, *observability]   # *temporal only with a worker
-      POSTGRES_HOST: <service>-postgres
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: <project>_<service>
       POSTGRES_USER: ${<SERVICE>_OWNER:?set the database owner}                   # migrations only
@@ -87,7 +92,7 @@ services:
       - <service>-tls:/run/tls:ro
       - <service>-temporal-tls:/run/temporal-tls:ro
     depends_on:
-      <service>-postgres:
+      postgres:
         condition: service_healthy
     networks: [internal]
     restart: unless-stopped
@@ -99,7 +104,7 @@ services:
     stop_grace_period: ${<SERVICE>_WORKER_STOP_GRACE_PERIOD:?set the worker's drain budget}
     environment:
       <<: [*tls, *temporal, *observability]   # *tls only when its Activities call another service
-      POSTGRES_HOST: <service>-postgres
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: <project>_<service>
       POSTGRES_WORKER_USER: ${<SERVICE>_WORKER_ROLE:?set the worker role}
@@ -110,7 +115,7 @@ services:
       - <service>-worker-tls:/run/tls:ro
       - <service>-worker-temporal-tls:/run/temporal-tls:ro
     depends_on:
-      <service>-postgres:
+      postgres:
         condition: service_healthy
       <service>:
         condition: service_started   # its migrations create the worker role; restarts until they have

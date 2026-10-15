@@ -13,12 +13,12 @@ Where a module's data lives, its tables and the migration list, the roles each p
 
 ### Where a service's data lives
 
-"Database per service" is an ownership rule, not a hardware rule: a service creates, migrates, reads, and writes its own tables, and nothing else touches them. Where those tables physically live is the project's choice, made once for an environment and recorded in the decision record; the skills set no default. The four shapes, from the most isolated down:
+"Database per service" is an ownership rule, not a hardware rule: a service creates, migrates, reads, and writes its own tables, and nothing else touches them. Where those tables physically live is decided once for an environment and recorded in the decision record. The default is one Postgres instance with a database and an owner per service; an instance per service or a schema per service is a valid alternative a project records instead. The four shapes, from the most isolated down:
 
 | Shape | Isolation | What it costs | When |
 | --- | --- | --- | --- |
 | **An instance per service** | Complete: its own failure domain, version, maintenance window, backups, point-in-time recovery, and quotas | N clusters to tune, patch, back up, and pay for; per-instance connection limits | Independent scaling or availability targets, a compliance boundary, a team that runs its own database, a managed-database-per-service platform |
-| **One instance, a database per service, distinct owners and roles** | Logical: Postgres allows no cross-database query without an FDW; each database has its own owner | One failure domain and maintenance window; point-in-time recovery is cluster-wide; role names are cluster-wide; a noisy neighbour shares buffers and I/O | A small or mid-size workload, a single staging box, a managed cluster billed per instance |
+| **One instance, a database per service, distinct owners and roles** (the default) | Logical: Postgres allows no cross-database query without an FDW; each database has its own owner | One failure domain and maintenance window; point-in-time recovery is cluster-wide; role names are cluster-wide; a noisy neighbour shares buffers and I/O | A small or mid-size workload, a single staging box, a managed cluster billed per instance |
 | **One database, a schema per service, grants per role** | Weak: a join across schemas is one `GRANT` away, and reviewers must hold the line | Cheapest; a schema owner per service that migrates with `search_path` set to its schema; cross-schema foreign keys become possible and must be refused by review | A platform that provisions databases slowly; move up a row when the first cross-schema join is proposed |
 | **Shared tables** | None | Every service couples to every migration | Never; this is the rule the other three exist to keep |
 
@@ -100,7 +100,7 @@ Roles are per process, not per module: a monolith has one set — `<project>_ser
 
 ## The roles
 
-Migrations run as the database's owner — on an instance per service the instance's own `POSTGRES_USER` / `POSTGRES_PASSWORD`; on a shared instance the per-service owner created at provisioning, which needs `CREATEROLE`; under a schema per service the schema's owner — and the owner owns every table. Nothing that serves data connects as the owner: Postgres applies no policy to a table's owner. Every other connection is a role a migration creates, one per way of seeing the data:
+Migrations run as the database's owner — on the default shared instance the per-service owner created at provisioning, which needs `CREATEROLE`; on an instance per service the instance's own `POSTGRES_USER` / `POSTGRES_PASSWORD`; under a schema per service the schema's owner — and the owner owns every table. Nothing that serves data connects as the owner: Postgres applies no policy to a table's owner. Every other connection is a role a migration creates, one per way of seeing the data:
 
 | Role | Created by | Policy on a tenant table | Connects |
 | --- | --- | --- | --- |

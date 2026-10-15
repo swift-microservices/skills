@@ -38,14 +38,14 @@ The image contract, whichever tool builds it:
 - a release build from the locked graph (`--disable-automatic-resolution`, with the strict flags in [services-ci.md](services-ci.md#locked-dependency-resolution) wherever the build runs a compiler step CI controls);
 - the executable, `swift-backtrace-static`, and every `*.resources` bundle staged together, with `SWIFT_BACKTRACE` configured;
 - `ca-certificates` and `tzdata` where the image has an OS layer;
-- an unprivileged, fixed numeric user, the one the certificate renewers' group expects (see [certificates.md](certificates.md#files-owners-and-mounts));
+- an unprivileged user, whose numeric group the certificate renewers write with (see [certificates.md](certificates.md#files-owners-and-mounts));
 - one image per service, serve and worker alike, built natively for the deployment host's architecture (an ARM host means an ARM runner and `linux/arm64`), never under emulation;
 - the image CI validates is the image it publishes.
 
 How it is built is the project's choice, recorded once in `AGENTS.md`:
 
-- **A `Containerfile`** built with Docker Buildx or Apple's `container` (the worked example). Copy [the Containerfile](../assets/Containerfile) and [the ignore file](../assets/dockerignore) (as `.dockerignore`) and replace the product name. Its build stage resolves `Package.*` in its own cached layer, builds with the locked strict flags and `--static-swift-stdlib`, and stages the binary, backtracer, and bundles; its runtime stage installs CA certificates and time-zone data, creates `APP_UID:APP_GID`, copies the staging directory root-owned to `/app`, and runs `/app/<service>`.
-- **A static Linux SDK binary** (`swift build --swift-sdk <arch>-swift-linux-musl`) copied into a minimal base image that sets the same numeric user.
+- **A `Containerfile`** built with Docker Buildx or Apple's `container` (the worked example). Copy [the Containerfile](../assets/Containerfile) and [the ignore file](../assets/dockerignore) (as `.dockerignore`) and replace the product name. Its build stage resolves `Package.*` in its own cached layer, builds with the locked strict flags and `--static-swift-stdlib`, and stages the binary, backtracer, and bundles; its runtime stage installs CA certificates and time-zone data, creates an unprivileged system user `app` with `/app` as its home, copies the staging directory there owned by that user, and runs `/app/<service>` as it.
+- **A static Linux SDK binary** (`swift build --swift-sdk <arch>-swift-linux-musl`) copied into a minimal base image that sets an unprivileged user.
 - **`swift-container-plugin`** (`swift package build-container-image`), with no daemon. It conflicts with the contract in two places, so the project records how it meets them: its images default to root, and the binary sits at `/<product>`. Set a non-root user if the plugin version supports one (or a base image whose user it carries through), and confirm with `docker image inspect --format '{{.Config.User}}'`; otherwise record the root image as a project exception in `AGENTS.md`, with read-only mounts and file ownership as the compensating control. Pass `/<product>` as the check script's binary path, and give the platform that path in its command.
 
 ## Local builds

@@ -54,7 +54,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 
 7. Publish two tags per commit: an immutable short SHA for forensics and rollback, and the moving branch tag the platform application tracks. Build natively for the deployment host's architecture, never under emulation.
 8. One image per service; a worker application runs the same image at the same tag with `worker run` as its command.
-9. The image meets the contract in [delivery.md](references/delivery.md#the-release-image), whichever tool the project recorded: a locked release build, an unprivileged fixed numeric user, the backtracer and every resource bundle, and the image CI validated. Where a tool cannot meet a clause (`swift-container-plugin` images default to root), `AGENTS.md` records the exception and its compensating control.
+9. The image meets the contract in [delivery.md](references/delivery.md#the-release-image), whichever tool the project recorded: a locked release build, an unprivileged user, the backtracer and every resource bundle, and the image CI validated. Where a tool cannot meet a clause (`swift-container-plugin` images default to root), `AGENTS.md` records the exception and its compensating control.
 10. Push with the workflow's own token and `packages: write` on the publishing job only; grant a pre-existing package's Actions access before the first pipeline push. Prune each registry weekly to a recent window per repository.
 
 ### Deploying
