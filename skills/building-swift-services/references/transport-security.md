@@ -4,6 +4,7 @@ The configuration-backed factories that build a listener's or a client's transpo
 
 ## Contents
 
+- [Transport security factories](#transport-security-factories): the client and server mTLS factories, server TLS for a client-facing listener, connection age and keepalive, and a client's bounded wait for its connection
 
 
 ## Transport security factories

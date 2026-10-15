@@ -4,6 +4,7 @@ Every source file of `<Project>Authentication`. The layout, the manifest, `<Proj
 
 ## Contents
 
+- [`<Project>Authentication`](#projectauthentication): `UserRole.swift`, `UserIdentity.swift`, `JWT+EdDSA.swift`, and `OperationContext+User.swift`
 
 
 ## `<Project>Authentication`

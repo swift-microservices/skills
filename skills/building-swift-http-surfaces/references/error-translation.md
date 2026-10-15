@@ -4,6 +4,7 @@ How a use case's typed error becomes an RFC 9457 problem response: the shared pr
 
 ## Contents
 
+- [Error translation](#error-translation): `Problem`, `HTTPProblemResponse`, the `ErrorMiddleware`, each use-case error's mapping, and a gateway's `RPCError` mapping
 
 
 ## Error translation

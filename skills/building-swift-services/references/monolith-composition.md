@@ -4,6 +4,7 @@ The complete root of a modular monolith that serves HTTP and gRPC from one execu
 
 ## Contents
 
+- [A monolith serving HTTP and gRPC](#a-monolith-serving-http-and-grpc): the complete `Serve.swift`, section by section
 
 
 ## A monolith serving HTTP and gRPC
