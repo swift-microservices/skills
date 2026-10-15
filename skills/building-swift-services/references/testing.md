@@ -166,7 +166,7 @@ Keep a test when a plausible regression in code this package owns would fail it.
 ## What a use-case test does not cover
 
 - **Identification.** Requiring a caller is the handler's per-RPC decision ([identity-and-access.md](identity-and-access.md#identifying-a-caller-versus-requiring-one)); use-case tests bind no `OperationContext` and need no token or interceptor. The principal arrives as a value.
-- **Row confinement.** Row-level security is enforced by the database from the stamped transaction; a mock database cannot exercise it. Policies are verified against a real database as the roles ([persistence.md](persistence.md#row-level-security)).
+- **Row confinement.** Row-level security is enforced by the database from the stamped transaction; a mock database cannot exercise it. Policies are verified against a real database as the roles ([migrations-and-rls.md](migrations-and-rls.md#row-level-security)).
 - **Transport.** Status mapping is the transport tests' (below).
 
 `swift test` then runs the Core targets in milliseconds with no containers, which lets CI run them on every pull request.

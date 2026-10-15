@@ -22,14 +22,17 @@ Read the reference that owns a topic before touching it. Each topic has one home
 | --- | --- |
 | Every task | [architecture.md](references/architecture.md) — the two shapes, the module grammar, target graphs, the cross-module rule, naming, boundaries, ownership |
 | Creating or editing Swift | the writing-swift-server-code skill ([swift-settings.md](../writing-swift-server-code/references/swift-settings.md), [foundation.md](../writing-swift-server-code/references/foundation.md)), and the `swift-concurrency` skill ([AvdLee/Swift-Concurrency-Agent-Skill](https://github.com/AvdLee/Swift-Concurrency-Agent-Skill)) for tasks, actors, `Sendable`, or a data-race diagnostic |
-| A package, manifest, source tree, or dependency floor | [service-package.md](references/service-package.md) |
+| A package, manifest, source tree, or dependency floor | [service-package.md](references/service-package.md), and [monolith-package.md](references/monolith-package.md) for a monolith's tree and manifest |
 | Entities, commands, repositories, scopes, use cases, policies, logging, ports to other modules | [core.md](references/core.md) |
-| Statements, repositories, identifiers, idempotency, migrations and the migration list, roles, row-level security, one database for many modules | [persistence.md](references/persistence.md) |
+| Scopes, statements, repositories, identifiers, idempotency, state transitions, transactions | [persistence.md](references/persistence.md) |
+| Where data lives, migrations and the migration list, roles, row-level security, one database for many modules | [migrations-and-rls.md](references/migrations-and-rls.md) |
 | Proto contracts, producer and consumer adapters, status mapping | [grpc-and-protos.md](references/grpc-and-protos.md) |
 | The HTTP surface, or a gateway | the building-swift-http-surfaces skill, loaded beside this one |
 | Identities, tokens, certificates, interceptors, validation at every process, where authorization lives | [identity-and-access.md](references/identity-and-access.md) |
 | Providers, scoping, defaults, native readers, configuration adapters | [configuration.md](references/configuration.md) |
-| The executable: `PostgresConfiguration`, logging, clients, servers, the complete service and monolith roots, transport security, migrations at boot | [composition.md](references/composition.md) |
+| The executable: `PostgresConfiguration`, logging, clients, servers, the complete service root, two listeners, the gateway root, migrations at boot | [composition.md](references/composition.md) |
+| The complete monolith root serving HTTP and gRPC | [monolith-composition.md](references/monolith-composition.md) |
+| The server and client transport security factories | [transport-security.md](references/transport-security.md) |
 | The Temporal worker's root, role, and configuration | the orchestrating-temporal-workflows skill's [worker.md](../orchestrating-temporal-workflows/references/worker.md) |
 | Test targets, mocks, use-case tests, transport tests | [testing.md](references/testing.md) |
 | A binding's isolation tests, or Workflow tests | the building-swift-server-libraries skill's [testing.md](../building-swift-server-libraries/references/testing.md), or the orchestrating-temporal-workflows skill's [testing.md](../orchestrating-temporal-workflows/references/testing.md) |
@@ -66,7 +69,7 @@ Each rule is the short form; the linked reference holds the detail and the code.
 3. Give every module exactly the transport targets the shape serves; one `GRPCServer` registers every module's services and one router mounts every module's controllers.
 4. A module never imports another module's targets; only the executable sees more than one. A module that needs another's behavior declares a port in its own Core, in its own types; the monolith root satisfies it with an executable-local adapter in `Sources/<Project>/Ports/` over the producer's use case, and a service root with a gRPC client adapter ([core.md](references/core.md#ports-to-other-modules)).
 5. A monolith's shared HTTP plumbing is one `<Project>HTTP` target ([surface.md](../building-swift-http-surfaces/references/surface.md)).
-6. In a one-package monolith, `<Project>Authentication`, `<Project>Persistence`, and `<Project>Testing` are in-package targets until a second package needs them; then they move to a tagged `<project>-core`, as in-package protos move to `<project>-protos` ([service-package.md](references/service-package.md#source-tree-of-a-monolith)).
+6. In a one-package monolith, `<Project>Authentication`, `<Project>Persistence`, and `<Project>Testing` are in-package targets until a second package needs them; then they move to a tagged `<project>-core`, as in-package protos move to `<project>-protos` ([monolith-package.md](references/monolith-package.md#source-tree-of-a-monolith)).
 7. Use `XUseCase`, `XUseCaseProtocol`, `XUseCaseInput`, `XUseCaseError`, `XUseCaseScope`, `XRepository`, `XRepositoryError`, `XCommand`, `XPolicy`, `XStatement`, `PostgresXRepository`, `Postgres<Module>Scope` (plus `…InternalScope`, `…WorkerScope`), `XService`/`XInternalService`, `XController`. Types spell `ID`, values `Id`.
 8. Give every target its direct dependencies, as `MemberImportVisibility` requires, and declare a package only when a target links its product or the build uses its plugin. Use `package` access between targets.
 9. Depend on organization packages by tagged URL, never `.package(path:)`.
@@ -84,14 +87,14 @@ Each rule is the short form; the linked reference holds the detail and the code.
 
 ### Persistence
 
-18. A service owns its whole database; a monolith's modules own their tables in one database. Unqualified names, no schema per module, one create migration per table, nothing across a module boundary. Where the database lives is the project's choice ([persistence.md](references/persistence.md#where-a-services-data-lives)).
+18. A service owns its whole database; a monolith's modules own their tables in one database. Unqualified names, no schema per module, one create migration per table, nothing across a module boundary. Where the database lives is the project's choice ([migrations-and-rls.md](references/migrations-and-rls.md#where-a-services-data-lives)).
 19. The owning database generates service-owned identifiers (`uuidv7()` by default, `gen_random_uuid()` on an older instance); create inputs omit them; external identifiers are validated and preserved.
 20. Name stored dates as nouns (`creation_date`, `creationDate`); store only the SHA-256 digest of a secret token; bcrypt only for passwords.
 21. Every remotely retryable mutation is idempotent through a namespaced key enforced atomically by its owner; guard transitions in `WHERE`; liveness-scoped uniqueness is a partial unique index.
 22. Statements, row decoding, enum codables, and repositories follow the skeletons in [persistence.md](references/persistence.md#repositories-and-statements). Core never matches on `PSQLError`: repositories translate the SQLSTATEs they know into `XRepositoryError` and let an unknown cause propagate to the use case's catch-all.
-23. The owner only migrates; serving connects as `<name>_service` and, with tenant tables, `<name>_internal`; the worker as `<name>_worker`; no role has `BYPASSRLS` ([persistence.md](references/persistence.md#the-roles)).
-24. `Database/Migrations.swift` in the executable lists every migration explicitly, in applied order, and only appends ([persistence.md](references/persistence.md#the-migration-list)).
-25. Row-level security is the default for user-owned rows: one tenant predicate on `app.caller_user_id` in `USING` and `WITH CHECK`, plus `TO "<name>_internal" USING (true)`. A module with tenant tables has `Postgres<Module>Scope` and `Postgres<Module>InternalScope`, and each use case's scope protocol is adopted by the one it may run on. No tenant tables is a recorded decision: one role, one scope, no settings interceptor or middleware ([persistence.md](references/persistence.md#row-level-security)).
+23. The owner only migrates; serving connects as `<name>_service` and, with tenant tables, `<name>_internal`; the worker as `<name>_worker`; no role has `BYPASSRLS` ([migrations-and-rls.md](references/migrations-and-rls.md#the-roles)).
+24. `Database/Migrations.swift` in the executable lists every migration explicitly, in applied order, and only appends ([migrations-and-rls.md](references/migrations-and-rls.md#the-migration-list)).
+25. Row-level security is the default for user-owned rows: one tenant predicate on `app.caller_user_id` in `USING` and `WITH CHECK`, plus `TO "<name>_internal" USING (true)`. A module with tenant tables has `Postgres<Module>Scope` and `Postgres<Module>InternalScope`, and each use case's scope protocol is adopted by the one it may run on. No tenant tables is a recorded decision: one role, one scope, no settings interceptor or middleware ([migrations-and-rls.md](references/migrations-and-rls.md#row-level-security)).
 26. A cache is a narrow Core port implemented in a `<Module><Technology>` target, never the source of truth, keyed by tenant, added only for a measured need.
 
 ### gRPC
@@ -117,7 +120,7 @@ Each rule is the short form; the linked reference holds the detail and the code.
 36. `Serve.run()` has `// MARK:` sections Configuration, Logging, Infrastructure, Composition, Router and Hummingbird (HTTP), gRPC (gRPC), Lifecycle, with one `ServiceGroup` owning every long-lived client, server, and application; both transports share one root. Start from the complete roots in [composition.md](references/composition.md#a-grpc-service-with-tenant-tables).
 37. The root builds one `PostgresClient` per role and one `PostgresDatabase` per module per role, and says in a comment which database each use case runs on and why.
 38. One provider hierarchy, environment before application defaults; native readers first, relative-key `init(config:)` adapters otherwise; no validation in commands ([configuration.md](references/configuration.md)).
-39. Prime `TimedCertificateReloader` and pass it to the executable-local `mTLS(config:certificateReloader:)` factories, with explicit trust and full client-side hostname verification, and to `serverTLS(certificateReloader:)` for a client-facing listener; no listener is plaintext ([composition.md](references/composition.md#transport-security-factories)).
+39. Prime `TimedCertificateReloader` and pass it to the executable-local `mTLS(config:certificateReloader:)` factories, with explicit trust and full client-side hostname verification, and to `serverTLS(certificateReloader:)` for a client-facing listener; no listener is plaintext ([transport-security.md](references/transport-security.md#transport-security-factories)).
 
 ### Tests
 

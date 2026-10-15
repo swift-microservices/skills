@@ -16,12 +16,14 @@ Read applicable `AGENTS.md` files first: their project profile, styles, and reco
 
 | Task | Read |
 | --- | --- |
-| A Workflow, Activity, payload, workflow client, signal, query, timer, child workflow, or webhook-triggered workflow | [workflows.md](references/workflows.md) |
+| A Workflow, payload, child workflow, timer, or the feature's file layout | [workflows.md](references/workflows.md) |
+| An Activity, its container and Activity-service port, idempotency keys, options and retries, a provider leaf | [activities.md](references/activities.md) |
+| A workflow client, workflow IDs and their policies, signals and queries, a webhook-triggered workflow, starting after the commit | [workflow-clients.md](references/workflow-clients.md) |
 | The worker command, its database role and scope, Temporal configuration and TLS, the `TemporalClient` in `serve`, a monolith's worker, local development | [worker.md](references/worker.md) |
 | Workflow tests, the time-skipping server, recorded histories, replay, Activity-name uniqueness | [testing.md](references/testing.md) |
-| A new Workflow end to end | all three |
+| A new Workflow end to end | all five |
 
-The service package, its roles, and its serve composition root are the building-swift-services skill's; load it beside this one when the change touches Core, Postgres, or `serve`: its [service-package.md](../building-swift-services/references/service-package.md), [persistence.md](../building-swift-services/references/persistence.md) for roles, [identity-and-access.md](../building-swift-services/references/identity-and-access.md), and [composition.md](../building-swift-services/references/composition.md). Temporal's certificates are issued and renewed as the delivering skill's [certificates.md](../delivering-swift-services/references/certificates.md) describes. Every Swift change follows the writing-swift-server-code skill's [Swift settings](../writing-swift-server-code/references/swift-settings.md) and [Foundation policy](../writing-swift-server-code/references/foundation.md); modern Foundation API never relaxes Workflow determinism or payload compatibility.
+The service package, its roles, and its serve composition root are the building-swift-services skill's; load it beside this one when the change touches Core, Postgres, or `serve`: its [service-package.md](../building-swift-services/references/service-package.md), [migrations-and-rls.md](../building-swift-services/references/migrations-and-rls.md) for roles, [identity-and-access.md](../building-swift-services/references/identity-and-access.md), [composition.md](../building-swift-services/references/composition.md), and [transport-security.md](../building-swift-services/references/transport-security.md). Temporal's certificates are issued and renewed as the delivering skill's [certificates.md](../delivering-swift-services/references/certificates.md) describes. Every Swift change follows the writing-swift-server-code skill's [Swift settings](../writing-swift-server-code/references/swift-settings.md) and [Foundation policy](../writing-swift-server-code/references/foundation.md); modern Foundation API never relaxes Workflow determinism or payload compatibility.
 
 ## Principles
 
@@ -46,19 +48,19 @@ Each rule is one line; the linked section holds the code and the detail.
 6. Every payload is `Codable` and `Sendable`, nested under its Workflow or container, never a Core entity, and changed only by adding optionals ([Payloads](references/workflows.md#payloads)).
 7. Start a child Workflow only for a step another trigger also starts, with an ID derived from the parent's input and an execution timeout.
 
-### Activities ([workflows.md](references/workflows.md#activities))
+### Activities ([activities.md](references/activities.md#activities))
 
 8. One side effect per Activity: issuing a secret, delivering it, and deleting it are three.
 9. Derive a namespaced idempotency key from immutable input or a caller-owned id, `<service>-<process>-<recordId>`, reuse it on every attempt, and pass it through the port; never mint a UUID per attempt or preallocate another service's id.
 10. One container per feature over one Activity-service protocol. Provider adapters and other services' consumer adapters are Core ports named for the capability (`PasswordHasher`, `VerificationEmailSender`), injected into the Activity service, never into the container.
-11. Pass explicit `ActivityOptions` on every call: unlimited attempts with a bounded `startToCloseTimeout` when the effect can wait out an outage, bounded attempts with a `scheduleToCloseTimeout` when it cannot ([Timeouts and retries](references/workflows.md#timeouts-and-retries)).
+11. Pass explicit `ActivityOptions` on every call: unlimited attempts with a bounded `startToCloseTimeout` when the effect can wait out an outage, bounded attempts with a `scheduleToCloseTimeout` when it cannot ([Timeouts and retries](references/activities.md#timeouts-and-retries)).
 12. Translate invalid state, conflicting input, and permanent provider rejections to non-retryable `ApplicationError` at the Activity boundary; leave outages retryable; never inspect `ApplicationError.type` in a Workflow.
 13. Give an Activity a distinct name with `@Activity(name:)` wherever two containers on one worker would share one.
 
-### Clients, signals, queries, timers ([workflows.md](references/workflows.md#workflow-clients))
+### Clients, signals, queries, timers ([workflow-clients.md](references/workflow-clients.md#workflow-clients))
 
 14. `TemporalXWorkflowClient` holds only the `TemporalClient` and the task queue, and lets SDK errors propagate.
-15. An entity-lifetime Workflow's ID is `<service>-<feature>-<id>` with `.rejectDuplicate` and `.useExisting`, and no `WorkflowAlreadyStartedError` catch. A webhook-triggered Workflow's ID is `<service>-<feature>-<entity>-<eventId>` with `.allowDuplicateFailedOnly`, `.useExisting`, and an execution timeout; it treats the payload as a trigger and re-fetches live state in an Activity ([Event-triggered workflows](references/workflows.md#event-triggered-workflows)).
+15. An entity-lifetime Workflow's ID is `<service>-<feature>-<id>` with `.rejectDuplicate` and `.useExisting`, and no `WorkflowAlreadyStartedError` catch. A webhook-triggered Workflow's ID is `<service>-<feature>-<entity>-<eventId>` with `.allowDuplicateFailedOnly`, `.useExisting`, and an execution timeout; it treats the payload as a trigger and re-fetches live state in an Activity ([Event-triggered workflows](references/workflow-clients.md#event-triggered-workflows)).
 16. Commit local work, then start or signal; never call Temporal inside `withTransaction`. No signal-with-start, resume-from-database, or reconciler unless the user requires it.
 17. A signal returns once Temporal accepted it; a query has no side effect; `XWorkflowState` stays separate from persisted business state.
 18. An expiring condition races `context.condition` against `context.timeout`, catches Temporal's `CanceledError`, and runs the expiration Activity before assigning `.expired`.

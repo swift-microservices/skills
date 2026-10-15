@@ -16,11 +16,13 @@ Rules in this skill are conventions the packages and the shared code shape depen
 
 | Task | Read |
 | --- | --- |
-| Every surface task | [surface.md](references/surface.md) — where HTTP lives, the OpenAPI document and its client contract, contexts, tiers, the tenant, route design, controllers, conversions, error plumbing, composition, deployment, tests |
+| Every surface task | [surface.md](references/surface.md) — where HTTP lives, contexts, tiers, the tenant, route design, controllers, conversions, composition, deployment, tests |
+| The OpenAPI document, its generator configuration, and the client contract it makes | [openapi-document.md](references/openapi-document.md) |
+| Typed errors to problem details: the shared protocol, each error's mapping, the error middleware | [error-translation.md](references/error-translation.md) |
 | A gateway in front of services | [gateway.md](references/gateway.md) — the package, source tree, manifest, router builder, composition root, router-harness and live loopback tests |
 | A surface on Vapor 4 | [vapor.md](references/vapor.md) — identity and context, middleware, route collections, problem details, route groups, VaporTesting |
 | A client SDK for apps | [client-sdk.md](references/client-sdk.md) — the package, the synced document, generator configuration, traits, `Problem`, token authentication, tests and CI |
-| The module's use cases, the package manifest, configuration, identity, and the rest of the root | the building-swift-services skill: [service-package.md](../building-swift-services/references/service-package.md), [identity-and-access.md](../building-swift-services/references/identity-and-access.md), [persistence.md](../building-swift-services/references/persistence.md) for the tenant setting, [composition.md](../building-swift-services/references/composition.md), and [testing.md](../building-swift-services/references/testing.md) |
+| The module's use cases, the package manifest, configuration, identity, and the rest of the root | the building-swift-services skill: [service-package.md](../building-swift-services/references/service-package.md), [identity-and-access.md](../building-swift-services/references/identity-and-access.md), [persistence.md](../building-swift-services/references/persistence.md) for the tenant setting, [composition.md](../building-swift-services/references/composition.md), [transport-security.md](../building-swift-services/references/transport-security.md), and [testing.md](../building-swift-services/references/testing.md) |
 | Foundation in conversions, problem details, and dates | the writing-swift-server-code skill's [foundation.md](../writing-swift-server-code/references/foundation.md) |
 | The gateway's environment and address, or the SDK's CI | the delivering skill's [environment.md](../delivering-swift-services/references/environment.md) and [library-ci.md](../delivering-swift-services/references/library-ci.md) |
 

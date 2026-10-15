@@ -1,6 +1,6 @@
 # Certificates
 
-How every internal connection gets its mTLS credentials, and every client-facing listener the server leaf the edge proxy verifies: the contract any CA must satisfy, and Smallstep `step-ca` as its worked example — initialization, provisioners, enrollment, renewal, rekey, trust rotation, Temporal TLS, and the local development CA. The CA is a project choice recorded once in `AGENTS.md`; [environment.md](environment.md) owns how the rest of the stack runs, and the building skill's [transport security factories](../../building-swift-services/references/composition.md#transport-security-factories) own how a process loads and reloads the files.
+How every internal connection gets its mTLS credentials, and every client-facing listener the server leaf the edge proxy verifies: the contract any CA must satisfy, and Smallstep `step-ca` as its worked example — initialization, provisioners, enrollment, renewal, rekey, trust rotation, Temporal TLS, and the local development CA. The CA is a project choice recorded once in `AGENTS.md`; [environment.md](environment.md) owns how the rest of the stack runs, and the building skill's [transport security factories](../../building-swift-services/references/transport-security.md#transport-security-factories) own how a process loads and reloads the files.
 
 ## Contents
 

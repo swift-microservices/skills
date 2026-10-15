@@ -177,7 +177,7 @@ struct CatalogWorkerRegistrationTests {
 }
 ```
 
-A failure is fixed with `@Activity(name:)` on one of the two methods, as [workflows.md](workflows.md#activities) describes. The worker log's `Duplicate activity registration` is the same symptom in a running process.
+A failure is fixed with `@Activity(name:)` on one of the two methods, as [activities.md](activities.md#activities) describes. The worker log's `Duplicate activity registration` is the same symptom in a running process.
 
 ## Recording and replaying histories
 

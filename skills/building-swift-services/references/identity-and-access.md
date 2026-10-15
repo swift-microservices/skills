@@ -54,7 +54,7 @@ The bearer transport binds `Principal<UserIdentity, String>` under `PrincipalKey
 
 Handlers pass the identity to use cases as `subject:`. Core never reads `OperationContext`. Log the local process using the logger's service label and the verified user through `.user`; do not invent a remote process identity from request metadata.
 
-Where tenant tables exist, the user settings interceptor or middleware follows bearer authentication and binds transaction-local `app.caller_user_id`. See [persistence.md](persistence.md).
+Where tenant tables exist, the user settings interceptor or middleware follows bearer authentication and binds transaction-local `app.caller_user_id`. See [migrations-and-rls.md](migrations-and-rls.md#row-level-security).
 
 ## Authorization lives in the use case
 
@@ -132,7 +132,7 @@ Inside a monolith, verify the user at the transport and pass `subject:` to local
 
 Services and workers call internal RPCs over mTLS without an application token or certificate-to-principal mapping. DNS SANs cover the names clients dial. No URI SAN is required by this application model. Certificate issuance and trust determine which peers are admitted.
 
-Temporal uses either its own certificate/key pair, trust configuration, and reloader under `temporal.tls`, or the process's `tls` pair, as the project records ([worker.md](../../orchestrating-temporal-workflows/references/worker.md#temporal-transport-security)). The same scoped configuration adapters serve both. See [composition.md](composition.md#transport-security-factories) for the Swift lifecycle and the delivery skill for provisioning.
+Temporal uses either its own certificate/key pair, trust configuration, and reloader under `temporal.tls`, or the process's `tls` pair, as the project records ([worker.md](../../orchestrating-temporal-workflows/references/worker.md#temporal-transport-security)). The same scoped configuration adapters serve both. See [transport-security.md](transport-security.md#transport-security-factories) for the Swift lifecycle and the delivery skill for provisioning.
 
 ## The three rules
 
