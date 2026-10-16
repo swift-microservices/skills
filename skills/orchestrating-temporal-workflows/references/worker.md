@@ -54,7 +54,7 @@ The worker connects to its own service's database directly, as `<service>_worker
 
   ```swift
   await migrations.add(CreateReservationsTable())                                       // the last one already applied
-  await migrations.add(CreateWorkerRole(role: configuration.workerUser, password: try configuration.workerPassword, database: configuration.database))
+  await migrations.add(CreateWorkerRole(role: workerUser, password: workerPassword, database: database))
   try await migrations.apply(client: client, logger: logger, dryRun: false)
   ```
 
@@ -70,7 +70,7 @@ The worker connects to its own service's database directly, as `<service>_worker
   }
   ```
 
-- **Configuration.** The worker reads from `PostgresConfiguration` only `postgres.worker`, whose password is read when asked for, so its environment carries neither the owner pair nor the serving roles' secrets. The migrating process reads the worker password too, for `CreateWorkerRole`.
+- **Configuration.** The worker reads only its own role, `postgres.workerUser` and `postgres.workerPassword`, beside the host, port, and database, so its environment carries neither the owner pair nor the serving roles' secrets. `serve` reads the worker pair only under `--migrate-database` and hands it to `Migrations`, for `CreateWorkerRole`.
 
 ## Configuration
 
@@ -191,8 +191,18 @@ struct Run: AsyncParsableCommand {
         )
 
         // This service's own database, as the worker role alone.
-        let postgres = try PostgresConfiguration(config: config.scoped(to: "postgres"))
-        let postgresClient = try PostgresClient(configuration: postgres.worker, backgroundLogger: logger)
+        let postgresConfig = config.scoped(to: "postgres")
+        let postgresClient = PostgresClient(
+            configuration: try PostgresClient.Configuration(
+                host: postgresConfig.requiredString(forKey: "host"),
+                port: postgresConfig.int(forKey: "port", default: 5432),
+                username: postgresConfig.requiredString(forKey: "workerUser"),
+                password: postgresConfig.requiredString(forKey: "workerPassword", isSecret: true),
+                database: postgresConfig.requiredString(forKey: "db"),
+                tls: .prefer(.clientDefault)
+            ),
+            backgroundLogger: logger
+        )
 
         // Another service through its internal descriptor: mTLS, no interceptor, no token.
         let ordersConfig = config.scoped(to: "grpc.orders")

@@ -202,7 +202,6 @@ Sources/
   <Service>/
     <Service>.swift
     Configuration/
-      PostgresConfiguration.swift
       InMemoryProvider+ApplicationDefaults.swift
       LokiLogProcessorConfiguration+ConfigReader.swift
       EdDSA.PublicKey+ConfigReader.swift

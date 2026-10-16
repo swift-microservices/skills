@@ -30,7 +30,7 @@ Read the reference that owns a topic before touching it. Each topic has one home
 | The HTTP surface, or a gateway | the building-swift-http-surfaces skill, loaded beside this one |
 | Identities, tokens, certificates, interceptors, validation at every process, where authorization lives | [identity-and-access.md](references/identity-and-access.md) |
 | Providers, scoping, defaults, native readers, configuration adapters | [configuration.md](references/configuration.md) |
-| The executable: `PostgresConfiguration`, logging, clients, servers, the complete service root, two listeners, the gateway root, migrations at boot | [composition.md](references/composition.md) |
+| The executable: logging, clients, servers, the complete service root, two listeners, the gateway root, migrations at boot | [composition.md](references/composition.md) |
 | The complete monolith root serving HTTP and gRPC | [monolith-composition.md](references/monolith-composition.md) |
 | The server and client transport security factories | [transport-security.md](references/transport-security.md) |
 | The Temporal worker's root, role, and configuration | the orchestrating-temporal-workflows skill's [worker.md](../orchestrating-temporal-workflows/references/worker.md) |
@@ -143,7 +143,7 @@ Build a module or service:
 - [ ] 3. Tests: <Module>CoreTests with actor mocks, withDatabase over MockDatabase, makeSubject, Support/Values.swift
 - [ ] 4. Postgres: one scope per role, statements, row decoding, repositories with error translation, table and policy migrations; in a service the role migrations too
 - [ ] 5. Transport: the gRPC surface (below), the HTTP surface with the building-swift-http-surfaces skill, or both
-- [ ] 6. Root: PostgresConfiguration, logging, migrations behind --migrate-database, one client per role and one database per module per role, the Ports/ adapters, transports, one ServiceGroup
+- [ ] 6. Root: logging, migrations behind --migrate-database, one client per role and one database per module per role, the Ports/ adapters, transports, one ServiceGroup
 - [ ] 7. scripts/check-rls.py and the writing skill's check-swift-settings.py; swift build, swift test, then exercise the contract, the identity paths, and the roles
 ```
 

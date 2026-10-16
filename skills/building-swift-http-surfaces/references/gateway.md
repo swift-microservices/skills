@@ -79,7 +79,7 @@ Tests/
     └── <Resource>ControllerTests.swift, AuthorizationTests.swift, ProblemMappingTests.swift
 ```
 
-The problem plumbing (`ErrorMiddleware`, `Problem`, `HTTPProblemResponse`, the `RPCError` conformance) is the code in [error-translation.md](error-translation.md#error-translation). No `Database/`, no migrations, no `PostgresConfiguration`: a gateway owns no data.
+The problem plumbing (`ErrorMiddleware`, `Problem`, `HTTPProblemResponse`, the `RPCError` conformance) is the code in [error-translation.md](error-translation.md#error-translation). No `Database/`, no migrations, no Postgres settings: a gateway owns no data.
 
 ## Manifest
 

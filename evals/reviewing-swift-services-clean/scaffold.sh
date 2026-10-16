@@ -174,10 +174,10 @@ SWIFT
 cat > Sources/Notes/Database/Migrations.swift <<'SWIFT'
 // Migration list, abridged for the fixture. The package started without tenant tables;
 // the internal role was added later and appended, followed by the policy that names it.
-// await migrations.add(CreateServiceRole(role: configuration.serviceUser, password: try configuration.servicePassword, database: configuration.database))
+// await migrations.add(CreateServiceRole(role: serviceUser, password: servicePassword, database: database))
 // await migrations.add(CreateNotesTable())
-// await migrations.add(CreateInternalRole(role: configuration.internalUser, password: try configuration.internalPassword, database: configuration.database))
-// await migrations.add(CreateNotesRLSPolicy(internalRole: configuration.internalUser))
+// await migrations.add(CreateInternalRole(role: internalUser, password: internalPassword, database: database))
+// await migrations.add(CreateNotesRLSPolicy(internalRole: internalUser))
 // try await migrations.apply(client: client, logger: logger, dryRun: false)
 SWIFT
 cat > Sources/Notes/Serve/Serve.swift <<'SWIFT'

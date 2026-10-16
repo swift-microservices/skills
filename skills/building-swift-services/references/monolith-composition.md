@@ -57,7 +57,7 @@ struct Serve: AsyncParsableCommand {
     func run() async throws {
         // MARK: - Configuration
         let config = ConfigReader(providers: [EnvironmentVariablesProvider(), InMemoryProvider.applicationDefaults])
-        let postgres = try PostgresConfiguration(config: config.scoped(to: "postgres"))
+        let postgresConfig = config.scoped(to: "postgres")
         let tlsConfig = config.scoped(to: "tls")
         let grpcServerConfig = config.scoped(to: "grpc.server")
 
@@ -81,14 +81,60 @@ struct Serve: AsyncParsableCommand {
         let logger = Logger(label: "backend")
 
         // MARK: - Infrastructure
+        // One database, a role per purpose. The owner pair is read only to migrate; nothing that
+        // serves connects with it.
+        let postgresHost = try postgresConfig.requiredString(forKey: "host")
+        let postgresPort = postgresConfig.int(forKey: "port", default: 5432)
+        let databaseName = try postgresConfig.requiredString(forKey: "db")
+        let serviceUser = try postgresConfig.requiredString(forKey: "serviceUser")
+        let servicePassword = try postgresConfig.requiredString(forKey: "servicePassword", isSecret: true)
+        let internalUser = try postgresConfig.requiredString(forKey: "internalUser")
+        let internalPassword = try postgresConfig.requiredString(forKey: "internalPassword", isSecret: true)
+
         if migrateDatabase {
-            try await PostgresClient.withClient(configuration: postgres.owner, logger: logger) { client in
-                try await Migrations(client: client, configuration: postgres, logger: logger).run()
+            let owner = try PostgresClient.Configuration(
+                host: postgresHost,
+                port: postgresPort,
+                username: postgresConfig.requiredString(forKey: "user"),
+                password: postgresConfig.requiredString(forKey: "password", isSecret: true),
+                database: databaseName,
+                tls: .prefer(.clientDefault)
+            )
+            try await PostgresClient.withClient(configuration: owner, logger: logger) { client in
+                try await Migrations(
+                    client: client,
+                    database: databaseName,
+                    serviceUser: serviceUser,
+                    servicePassword: servicePassword,
+                    internalUser: internalUser,
+                    internalPassword: internalPassword,
+                    logger: logger
+                ).run()
             }
         }
 
-        let serviceClient = try PostgresClient(configuration: postgres.service, backgroundLogger: logger)
-        let internalClient = try PostgresClient(configuration: postgres.internalService, backgroundLogger: logger)
+        let serviceClient = PostgresClient(
+            configuration: PostgresClient.Configuration(
+                host: postgresHost,
+                port: postgresPort,
+                username: serviceUser,
+                password: servicePassword,
+                database: databaseName,
+                tls: .prefer(.clientDefault)
+            ),
+            backgroundLogger: logger
+        )
+        let internalClient = PostgresClient(
+            configuration: PostgresClient.Configuration(
+                host: postgresHost,
+                port: postgresPort,
+                username: internalUser,
+                password: internalPassword,
+                database: databaseName,
+                tls: .prefer(.clientDefault)
+            ),
+            backgroundLogger: logger
+        )
         let signingKey = try EdDSA.PrivateKey(config: config.scoped(to: "jwt"))
         let userIssuer = await JWTIssuer<UserIdentity>(privateKey: signingKey)
         let userAuthenticator = await JWTAuthenticator<UserIdentity>(publicKey: signingKey.publicKey)

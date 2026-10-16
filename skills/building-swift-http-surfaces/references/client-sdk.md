@@ -37,7 +37,7 @@ Name the package `<organization>-sdk`, with one product and target, `<Project>SD
 
 ## The document
 
-The SDK generates from a copy of the gateway's `Sources/API/openapi.yaml` (or the one surface's document) kept at `Sources/<Project>SDK/openapi.yaml`, where the generator plugin looks. Sync it when the gateway releases a contract change, in a commit that names the gateway version, and release the SDK after it. Never reach a document outside the target with `resources: [.copy("../../openapi.yaml")]`: the path escapes the target, and the copy ships the document as a bundle resource every app then carries. The document must already be a client contract — operation ids, a `security` entry per operation, a `default` problem response, `servers` with the version path ([openapi-document.md](openapi-document.md#the-document-as-a-client-contract)).
+The SDK generates from a copy of the gateway's `Sources/API/openapi.yaml` (or the one surface's document) kept at `Sources/<Project>SDK/openapi.yaml`, where the generator plugin looks. Sync it when the gateway releases a contract change, in a commit that names the gateway commit or the document's `info.version`, and release the SDK after it. Never reach a document outside the target with `resources: [.copy("../../openapi.yaml")]`: the path escapes the target, and the copy ships the document as a bundle resource every app then carries. The document must already be a client contract — operation ids, a `security` entry per operation, a `default` problem response, `servers` with the version path ([openapi-document.md](openapi-document.md#the-document-as-a-client-contract)).
 
 ## Generator configuration
 

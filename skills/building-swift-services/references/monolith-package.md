@@ -18,7 +18,6 @@ Sources/
   <Project>/
     <Project>.swift
     Configuration/
-      PostgresConfiguration.swift
       InMemoryProvider+ApplicationDefaults.swift
       LokiLogProcessorConfiguration+ConfigReader.swift
       EdDSA.PrivateKey+ConfigReader.swift             # the monolith issues tokens; it verifies with the key's public half

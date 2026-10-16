@@ -59,8 +59,8 @@ func makeSubject(id: UUID = .user, role: UserRole = .user) -> UserIdentity {
         userId: id,
         role: role,
         issuer: "users-core-tests",
-        issuedAt: .reference,
-        expiration: Date.reference.addingTimeInterval(60)
+        issueDate: .reference,
+        expirationDate: Date.reference.addingTimeInterval(60)
     )
 }
 ```
