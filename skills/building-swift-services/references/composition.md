@@ -80,72 +80,9 @@ LOG_LEVEL=info
 
 `<name>` is the service name in a service and the project name in a monolith: `users_service` and `backend_service`. Roles belong to the process, so a monolith's ten modules share one set. Temporal's keys, the worker role's password, and the worker's own scope are in the orchestrating-temporal-workflows skill's [worker.md](../../orchestrating-temporal-workflows/references/worker.md).
 
-`PostgresConfiguration` owns every connection the process makes. Each connection reads its password when it is asked for rather than in `init`, so one type serves every command: `serve` reads the service and internal roles, `serve --migrate-database` (or `migrate`) the owner too, and a missing secret still fails at startup, naming the key, because every command builds its clients before its `ServiceGroup` runs. The password properties are exposed for the role migrations.
+The composition root reads the `postgres` scope itself, in Infrastructure: the host, port, and database, each role's name and password, and one `PostgresClient.Configuration` per role it connects as. A command reads only the credentials of the roles it connects as or creates: `serve` the service and internal roles, the owner pair (`user` and `password`, the instance's own variables) only under `--migrate-database`, a worker only its own role. A missing secret fails at startup, naming the key, because every command builds its clients before its `ServiceGroup` runs. No type wraps these values; each command reads what it uses.
 
-```swift
-// Sources/Users/Configuration/PostgresConfiguration.swift
-import Configuration
-import PostgresNIO
-
-struct PostgresConfiguration: Sendable {
-    let host: String
-    let port: Int
-    let database: String
-    let serviceUser: String
-    let internalUser: String                                   // only with tenant tables
-    private let config: ConfigReader
-
-    init(config: ConfigReader) throws {
-        self.host = try config.requiredString(forKey: "host")
-        self.port = config.int(forKey: "port", default: 5432)
-        self.database = try config.requiredString(forKey: "db")
-        self.serviceUser = try config.requiredString(forKey: "serviceUser")
-        self.internalUser = try config.requiredString(forKey: "internalUser")
-        self.config = config
-    }
-
-    /// The owner: migrations only. Nothing that serves connects with it.
-    var owner: PostgresClient.Configuration {
-        get throws {
-            try connection(
-                user: config.requiredString(forKey: "user"),
-                password: config.requiredString(forKey: "password", isSecret: true)
-            )
-        }
-    }
-
-    /// The tenant-scoped role, for the public and the caller's own operations.
-    var service: PostgresClient.Configuration {
-        get throws { try connection(user: serviceUser, password: servicePassword) }
-    }
-
-    var servicePassword: String {
-        get throws { try config.requiredString(forKey: "servicePassword", isSecret: true) }
-    }
-
-    /// The role that sees every row, for administrators and other processes.
-    var internalService: PostgresClient.Configuration {
-        get throws { try connection(user: internalUser, password: internalPassword) }
-    }
-
-    var internalPassword: String {
-        get throws { try config.requiredString(forKey: "internalPassword", isSecret: true) }
-    }
-
-    private func connection(user: String, password: String) -> PostgresClient.Configuration {
-        PostgresClient.Configuration(
-            host: host,
-            port: port,
-            username: user,
-            password: password,
-            database: database,
-            tls: .prefer(.clientDefault)   // `.require` where the database is reached over a network the deployment does not control
-        )
-    }
-}
-```
-
-A package with no tenant tables drops `internalUser` and its two properties; with Temporal, `workerUser`, `worker`, and `workerPassword` follow the same shape. Require topology and secrets where no appropriate default exists; put mount paths, database and role names, listener bindings, and URLs in the application defaults provider. Key material is configured as a path and opened by the cryptographic library, so it fails at startup naming the path ([identity-and-access.md](identity-and-access.md#key-material-in-configuration)). Where the values come from in a running environment is the delivering-swift-services skill's subject.
+A package with no tenant tables drops the internal role; with Temporal, `serve` reads `workerUser` and `workerPassword` only to migrate. Require topology and secrets where no appropriate default exists; put mount paths, database and role names, listener bindings, and URLs in the application defaults provider. Key material is configured as a path and opened by the cryptographic library, so it fails at startup naming the path ([identity-and-access.md](identity-and-access.md#key-material-in-configuration)). Where the values come from in a running environment is the delivering-swift-services skill's subject.
 
 ## The serve composition root
 
@@ -195,7 +132,7 @@ struct Serve: AsyncParsableCommand {
     func run() async throws {
         // MARK: - Configuration
         let config = ConfigReader(providers: [EnvironmentVariablesProvider(), InMemoryProvider.applicationDefaults])
-        let postgres = try PostgresConfiguration(config: config.scoped(to: "postgres"))
+        let postgresConfig = config.scoped(to: "postgres")
         let tlsConfig = config.scoped(to: "tls")
         let serverConfig = config.scoped(to: "grpc.server")
 
@@ -219,14 +156,60 @@ struct Serve: AsyncParsableCommand {
         let logger = Logger(label: "users")
 
         // MARK: - Infrastructure
+        // One database, a role per purpose. The owner pair is read only to migrate; nothing that
+        // serves connects with it.
+        let postgresHost = try postgresConfig.requiredString(forKey: "host")
+        let postgresPort = postgresConfig.int(forKey: "port", default: 5432)
+        let databaseName = try postgresConfig.requiredString(forKey: "db")
+        let serviceUser = try postgresConfig.requiredString(forKey: "serviceUser")
+        let servicePassword = try postgresConfig.requiredString(forKey: "servicePassword", isSecret: true)
+        let internalUser = try postgresConfig.requiredString(forKey: "internalUser")
+        let internalPassword = try postgresConfig.requiredString(forKey: "internalPassword", isSecret: true)
+
         if migrateDatabase {
-            try await PostgresClient.withClient(configuration: postgres.owner, logger: logger) { client in
-                try await Migrations(client: client, configuration: postgres, logger: logger).run()
+            let owner = try PostgresClient.Configuration(
+                host: postgresHost,
+                port: postgresPort,
+                username: postgresConfig.requiredString(forKey: "user"),
+                password: postgresConfig.requiredString(forKey: "password", isSecret: true),
+                database: databaseName,
+                tls: .prefer(.clientDefault)   // `.require` where the database is reached over a network the deployment does not control
+            )
+            try await PostgresClient.withClient(configuration: owner, logger: logger) { client in
+                try await Migrations(
+                    client: client,
+                    database: databaseName,
+                    serviceUser: serviceUser,
+                    servicePassword: servicePassword,
+                    internalUser: internalUser,
+                    internalPassword: internalPassword,
+                    logger: logger
+                ).run()
             }
         }
 
-        let serviceClient = try PostgresClient(configuration: postgres.service, backgroundLogger: logger)
-        let internalClient = try PostgresClient(configuration: postgres.internalService, backgroundLogger: logger)
+        let serviceClient = PostgresClient(
+            configuration: PostgresClient.Configuration(
+                host: postgresHost,
+                port: postgresPort,
+                username: serviceUser,
+                password: servicePassword,
+                database: databaseName,
+                tls: .prefer(.clientDefault)
+            ),
+            backgroundLogger: logger
+        )
+        let internalClient = PostgresClient(
+            configuration: PostgresClient.Configuration(
+                host: postgresHost,
+                port: postgresPort,
+                username: internalUser,
+                password: internalPassword,
+                database: databaseName,
+                tls: .prefer(.clientDefault)
+            ),
+            backgroundLogger: logger
+        )
         let userAuthenticator = await JWTAuthenticator<UserIdentity>(
             publicKey: try EdDSA.PublicKey(config: config.scoped(to: "jwt"))
         )
@@ -344,7 +327,7 @@ The worker is `worker run` on the same executable, in `<Project>/Worker/` or `<S
 
 ## Migrations at boot
 
-`serve --migrate-database` applies migrations after the logging bootstrap and before any long-lived client exists, over an owner client that lives exactly as long as the apply: `PostgresClient.withClient` from `PersistencePostgres` starts it in a task group and cancels it when the operation returns or throws (both roots above). The long-lived clients are built from `postgres.service` and `postgres.internalService` and never hold owner credentials. The owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
+`serve --migrate-database` applies migrations after the logging bootstrap and before any long-lived client exists, over an owner client that lives exactly as long as the apply: `PostgresClient.withClient` from `PersistencePostgres` starts it in a task group and cancels it when the operation returns or throws (both roots above). The long-lived clients connect as the service and internal roles and never hold owner credentials. The owner pair does sit in the serving container's environment, which is the accepted price of migrating in-process: the *process* that serves never connects with it.
 
 `Migrations` is a small struct in `Database/Migrations.swift`. What goes in the list, and in what order, is [migrations-and-rls.md](migrations-and-rls.md#the-migration-list)'s:
 
@@ -359,19 +342,19 @@ import UsersPostgres
 /// Every migration, in the order databases apply them, over a short-lived owner connection. Only append.
 struct Migrations {
     let client: PostgresClient
-    let configuration: PostgresConfiguration
+    let database: String
+    let serviceUser: String
+    let servicePassword: String
+    let internalUser: String
+    let internalPassword: String
     let logger: Logger
 
     func run() async throws {
         let migrations = DatabaseMigrations()
-        try await migrations.add(
-            CreateServiceRole(role: configuration.serviceUser, password: configuration.servicePassword, database: configuration.database)
-        )
-        try await migrations.add(
-            CreateInternalRole(role: configuration.internalUser, password: configuration.internalPassword, database: configuration.database)
-        )
+        await migrations.add(CreateServiceRole(role: serviceUser, password: servicePassword, database: database))
+        await migrations.add(CreateInternalRole(role: internalUser, password: internalPassword, database: database))
         await migrations.add(CreateUsersTable())
-        await migrations.add(CreateUsersRLSPolicy(internalRole: configuration.internalUser))
+        await migrations.add(CreateUsersRLSPolicy(internalRole: internalUser))
         await migrations.add(CreateItemsTable())   // items are not tenant rows: no policy
 
         try await migrations.apply(client: client, logger: logger, dryRun: false)

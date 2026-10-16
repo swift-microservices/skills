@@ -59,9 +59,9 @@ extension InMemoryProvider {
 }
 ```
 
-Only include scopes the application uses. The application provider owns TLS/JWT mount paths, database/role names, listener bindings, task queues, application URLs, and other deployment conventions. Adapters consume these with required accessors; the provider satisfies an omitted environment override. A local wrapper such as `PostgresConfiguration` owns role selection and parsing, not a second copy of deployment defaults. A recorded project exception in `AGENTS.md` may choose another owner. Do not pass `defaultPath` or `certificateDirectory` arguments to reusable initializers. Environment variables still override these values.
+Only include scopes the application uses. The application provider owns TLS/JWT mount paths, database/role names, listener bindings, task queues, application URLs, and other deployment conventions. Adapters consume these with required accessors; the provider satisfies an omitted environment override. The composition root reads role names and passwords; it never repeats these defaults. A recorded project exception in `AGENTS.md` may choose another owner. Do not pass `defaultPath` or `certificateDirectory` arguments to reusable initializers. Environment variables still override these values.
 
-A library's ordinary tuning defaults can stay in its reader or designated initializer. Do not repeat every library default in the application provider. Require topology and secrets where there is no appropriate default. A worker reads only its own role credentials; defer migration/serving credentials until those connections are constructed.
+A library's ordinary tuning defaults can stay in its reader or designated initializer. Do not repeat every library default in the application provider. Require topology and secrets where there is no appropriate default. A command reads only the credentials of the roles it connects as or creates: the owner pair only when migrating, a worker only its own role.
 
 ## Extend types without a reader
 

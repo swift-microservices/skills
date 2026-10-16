@@ -156,7 +156,7 @@ Shared packages carry what is genuinely the same in every package, consumed by t
 
 In a one-package monolith that organization layer is in-package targets until a second package needs it ([monolith-package.md](monolith-package.md#source-tree-of-a-monolith)).
 
-What stays per package is the wiring: configuration readers, transport-security factories, the composition roots, the scopes, the migration lists, the request contexts, the mock repositories. Those start identical and diverge as systems evolve, and duplicating eight lines costs less than a tag and a bump in every consumer for every change to them. The test of where a shape belongs is whether it would ever differ between two packages: a `Database` protocol never does, a `PostgresConfiguration` does the moment one package gains a role. Do not add another shared package, and do not put configuration or composition into `<project>-core`.
+What stays per package is the wiring: configuration readers, transport-security factories, the composition roots, the scopes, the migration lists, the request contexts, the mock repositories. Those start identical and diverge as systems evolve, and duplicating eight lines costs less than a tag and a bump in every consumer for every change to them. The test of where a shape belongs is whether it would ever differ between two packages: a `Database` protocol never does, the Postgres roles a root reads do the moment one package gains a role. Do not add another shared package, and do not put configuration or composition into `<project>-core`.
 
 ## Naming grammar
 
