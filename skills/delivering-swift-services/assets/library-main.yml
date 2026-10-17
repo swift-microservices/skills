@@ -8,32 +8,20 @@ on:
     branches: [main]
 
 jobs:
-  unit-tests:
-    name: Unit tests
-    uses: apple/swift-nio/.github/workflows/unit_tests.yml@main
+  tests:
+    name: Tests
+    uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@3137ed1a48293ae9f4312fce349ed6210251db89  # 0.0.16
     with:
-      minimum_swift_version: "6.3"
-      linux_6_2_enabled: false
-      linux_6_3_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
-      linux_6_4_arguments_override: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
-      linux_nightly_next_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
-      linux_nightly_main_arguments_override: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
-
-  release-builds:
-    name: Release builds
-    uses: apple/swift-nio/.github/workflows/release_builds.yml@main
-    with:
-      minimum_swift_version: "6.3"
-      linux_6_2_enabled: false
+      # Swift 6.3 is the floor: swiftlang's default versions, minus those below it.
+      linux_exclude_swift_versions: '[{"swift_version": "6.1"}, {"swift_version": "6.2"}]'
+      linux_os_versions: '["noble"]'
+      linux_build_command: swift test -c release
+      swift_flags: "-Xswiftc -warnings-as-errors --explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+      swift_nightly_flags: "--explicit-target-dependency-import-check error -Xswiftc -require-explicit-sendable"
+      enable_windows_checks: false
 
   foundation-linking:
     name: Foundation linking
-    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@main
+    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@aa94dc533dba802a4df05327d755bc9077f0a8d7  # main
     with:
       swift_image: swift:6.3-noble
-
-  foundation-linking-swift64:
-    name: Foundation linking Swift 6.4
-    uses: vapor/ci/.github/workflows/check-foundation-linking.yml@main
-    with:
-      swift_image: swift:6.4-noble

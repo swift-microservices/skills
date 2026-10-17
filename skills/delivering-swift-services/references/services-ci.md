@@ -1,193 +1,140 @@
 # Service CI
 
-The recommended standard CI profile for deployable Swift server applications validates the
-configuration that actually ships. Library compiler compatibility belongs to
-[library-ci.md](library-ci.md); publishing, deployment, environments and rollback belong to
-[delivery.md](delivery.md). A modular monolith, gateway or worker uses this same service profile.
-Repository `AGENTS.md` records the deployed toolchain, OS, architecture, executable products,
-worker commands and justified style or coverage exceptions. Explicit user scope takes precedence.
+The standard CI for every deployable Swift executable: a service, a gateway, a monolith, and the
+workers that run its image. Every service gets the same shape; a repository that differs records
+each difference as an exception in its `AGENTS.md`, as for libraries (see
+[Recording the profile](library-ci.md#recording-the-profile)). Publishing, deployment, and
+rollback are [delivery.md](delivery.md)'s; library CI is [library-ci.md](library-ci.md)'s.
 
 ## Contents
 
-- [Events and gates](#events-and-gates)
-- [Workflow layout and references](#workflow-layout-and-references)
+- [The standard shape](#the-standard-shape)
+- [Callers and shared workflows](#callers-and-shared-workflows)
+- [The deployed toolchain](#the-deployed-toolchain)
 - [Source quality and headers](#source-quality-and-headers)
 - [Locked dependency resolution](#locked-dependency-resolution)
+- [Private dependencies](#private-dependencies)
 - [Tests and capability coverage](#tests-and-capability-coverage)
-- [Static SDK compatibility](#static-sdk-compatibility)
-- [Release image and Foundation](#release-image-and-foundation)
-- [Publishing and deployment ordering](#publishing-and-deployment-ordering)
-- [Dependency updates](#dependency-updates)
+- [The release image and Foundation](#the-release-image-and-foundation)
+- [Exceptions](#exceptions)
 
-## Events and gates
+## The standard shape
 
-| Event | Required behavior |
+| Event | Jobs |
 | --- | --- |
-| PR opened/reopened/synchronize, any target branch | Source quality, workflow lint, locked existing tests, a static SDK build where the image path uses it, final release-image build and smoke check; no publication/deployment |
-| Push to develop | Same source/tests checks (and static SDK build where used), then build and smoke-check the release image, publish it, and trigger staging deployment |
-| Push to main | Same checks and image validation/publication, then production deployment where configured |
-| Dependabot | Weekly Swift and Actions update PRs against develop; normal PR checks apply |
+| Pull request | Soundness, tests, and an image build that is checked and never pushed |
+| Push to main | The same checks; then the image is published once as `:<commit-sha>` and deployed to staging |
+| Deploy production, by hand | The latest main commit, or a chosen one, deployed only if staging ran it |
+| Weekly | Old image versions pruned |
+| Dependabot | Weekly Swift and Actions update pull requests against main |
 
-No scheduled CI, snapshot toolchains, macOS/Windows compatibility matrix, API-breaking gate,
-SemVer label gate or automatic service release. A service's source commit is its version.
-Registry cleanup is separate operational housekeeping; its existing schedule is not a scheduled
-test sweep. Keep its retention and deployment policy in delivery.md.
+`main` is the only long-lived branch. A service carries no SemVer, label gate, or release: the
+commit is its version. There are no scheduled test runs, snapshot toolchains, or macOS and
+Windows jobs.
 
-Use one released toolchain, one Linux distribution and the native deployment architecture,
-matching the image build. The templates use Swift 6.3 / Ubuntu Noble / ARM64. Update tests,
-static SDK, formatter and images together when the repository changes its deployed toolchain;
-do not silently switch an application to the latest library matrix.
+## Callers and shared workflows
 
-## Workflow layout and references
+A service's workflows only call shared ones; they hold no logic of their own. Soundness and tests
+come from swiftlang/github-workflows; the image, deployment, and cleanup come from
+[swift-microservices/ci](https://github.com/swift-microservices/ci), whose README documents
+their inputs. Copy the templates and fill in the product, image repository, and Dokploy
+application IDs:
 
-The image tool is the project's choice (see *The release image* in [delivery.md](delivery.md#the-release-image)).
-The service assets are the worked example for a Containerfile built with Buildx; a project on
-Apple's `container`, a static SDK base image or `swift-container-plugin` replaces the image
-workflow's build step and keeps its gates. Copy the assets into these destinations and fill in
-the product, registry, package name, and the optional Containerfile target:
+- [service-pull-request.yml](../assets/service-pull-request.yml) → `.github/workflows/pull_request.yml`
+- [service-main.yml](../assets/service-main.yml) → `.github/workflows/main.yml`
+- [service-deploy.yml](../assets/service-deploy.yml) → `.github/workflows/deploy.yml`
+- [service-cleanup-images.yml](../assets/service-cleanup-images.yml) → `.github/workflows/cleanup-images.yml`
+- [service-dependabot.yml](../assets/service-dependabot.yml) → `.github/dependabot.yml`
+- [Containerfile](../assets/Containerfile) and [dockerignore](../assets/dockerignore) → `Containerfile` and `.dockerignore`
 
-- `service-checks.yml` → `.github/workflows/checks.yml` (reusable source/tests/static checks). When the image path, local or published, does not use the static SDK, set `enable_linux_static_sdk_build: false` and remove the `linux_static_sdk_*` inputs.
-- `service-image.yml` → `.github/workflows/image.yml` (reusable native image build/validation).
-- `service-check-image.sh` → `.github/scripts/check-image.sh`.
-- `service-pull-request.yml`, `service-develop.yml`, `service-main.yml` → `.github/workflows/pull_request.yml`, `develop.yml`, `main.yml`.
-- `service-cleanup-images.yml` → `.github/workflows/cleanup-images.yml` (weekly registry retention).
-- `service-dependabot.yml` → `.github/dependabot.yml`.
-- `Containerfile` and `dockerignore` → `Containerfile` and `.dockerignore`, on the Containerfile path.
+`application_ids` is a JSON list in deploy order: the application that runs migrations first,
+then its worker. Pass `build_target` only when the service image is not the Containerfile's last
+stage. Pin every reusable workflow to its latest release's full commit, with the release in a
+comment; the ci repository passes secrets explicitly, because `secrets: inherit` does not cross
+organizations. The repository's secrets are `DOKPLOY_URL` and `DOKPLOY_TOKEN`, plus
+`PACKAGES_TOKEN` with private dependencies.
 
-With a worker, every call to `image.yml` passes `worker: true` (so the check runs `worker run --help`),
-and develop/main keep the second deploy step with `WORKER_APPLICATION_ID` /
-`PROD_WORKER_APPLICATION_ID`; without one, remove both. Pass `build_target` only when the
-service image is not the Containerfile's last stage.
+## The deployed toolchain
 
-Reuse `swiftlang/github-workflows` soundness and package-test workflows pinned to a reviewed
-release's commit SHA. Their configurable platform/toolchain inputs suit a service's one deployed
-configuration. Keep direct third-party actions SHA-pinned with the reviewed release as a comment.
-Dependabot maintains those references. Upstream workflows may themselves check out moving
-branches/actions; a pinned caller alone does not make the entire workflow immutable. Inspect
-nested references when changing workflow versions. Libraries keep their separate reference policy.
-
-The actionlint step installs a released binary with a checked SHA-256; update its version and
-checksum together. YAML and shell checks are part of soundness. Do not silently ignore failures.
-Use stable named required checks in branch protection where repository settings are in scope;
-do not assume opening a PR configures protection.
+A service tests what production runs: one released toolchain, one Linux distribution, and the
+deployment host's architecture, the same as the image's build stage. The templates use Swift 6.3,
+Ubuntu Noble, and aarch64. Raise them together, in the tests' `linux_swift_versions`, the
+soundness `format_check_container_image`, and the Containerfile's `FROM`, as in the floor
+checklist in [library-ci.md](library-ci.md#toolchains); never move an application to the library
+matrix.
 
 ## Source quality and headers
 
-Run strict swift-format on tracked Swift sources, tests and manifests, plus YAML, shell and
-workflow checks. Prefer the [sample formatter](library-ci.md#formatting-and-headers)
-(`assets/sample.swift-format`, four spaces, 400 columns) and the compact header conventions,
-including the matching template and narrow exclusions. Preserve the actual license and owner;
-headers do not relicense it.
+Soundness turns off `api_breakage_check_enabled` and `docs_check_enabled`, which are library
+gates, and keeps the rest. Prefer the [sample formatter](library-ci.md#formatting-and-headers)
+and the compact header. A repository that records its own formatter or non-uniform headers (such
+as Xcode author headers) keeps them, never mass-reformats, and records
+`license_header_check_enabled: false` as an exception; formatter lint stays on.
 
-A repository profile may record its own formatter or headers, such as varying Xcode author
-headers. Keep them while adding CI; never mass-reformat files or replace headers. With
-non-uniform headers, record that the license-template check is disabled; formatter lint remains
-required. A uniform compact-header project enables that check and provides its matching template.
-
-Disable API-breakage and public DocC checks for executables. Documentation owned by a reusable
-library keeps that library's CI gates. Tests/builds use warnings-as-errors, explicit dependency
-import checking and required explicit Sendable conformances on the supported released toolchain.
-A proven generated-code compiler exception must stay narrow and documented, as in the library
-profile; broad warning suppression is not a solution.
+Tests and the image build use warnings as errors, explicit target dependency import checking,
+and explicit `Sendable`.
 
 ## Locked dependency resolution
 
-A deployable application tracks its validated `Package.resolved`, including dependency-update
-PRs. Every test, release build, static SDK build and image build must use it.
-Use `--disable-automatic-resolution` (also named `--force-resolved-versions`) to reject a stale
-manifest/lockfile pair rather than updating the graph in CI. Fetching the locked graph is allowed.
-Dependencies use released remote requirements; no local paths or moving branches in shipped
-manifests. Library repositories still do not track their resolved files.
-
-Cache layers/build state by manifest, lockfile and toolchain; caching never replaces lockfile
-validation. Every image tool builds with these flags; in the worked Containerfile, copy `Package.*`
-before source and use:
+A service tracks its validated `Package.resolved`, dependency-update pull requests included, and
+every test and image build uses it with `--disable-automatic-resolution`, which fails on a stale
+manifest and lockfile pair instead of updating the graph. Dependencies use released remote
+requirements: no local paths or branches. The Containerfile resolves `Package.*` in its own
+cached layer before copying the sources:
 
 ```dockerfile
-RUN swift package --disable-automatic-resolution resolve
+RUN --mount=type=secret,id=netrc,target=/root/.netrc swift package --disable-automatic-resolution resolve
 RUN swift build --configuration release --disable-automatic-resolution \
     --static-swift-stdlib --explicit-target-dependency-import-check error \
     -Xswiftc -warnings-as-errors -Xswiftc -require-explicit-sendable --product <service>
 ```
 
+## Private dependencies
+
+Neither the repository's `GITHUB_TOKEN` nor swiftlang's workflows can read another private
+repository. A service that depends on one:
+
+- calls the ci repository's `tests.yml` in place of swiftlang's `swift_package_test.yml`, with the
+  same inputs and `secrets: PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}`;
+- passes the same secret to `build-image.yml`, which hands it to the build as the `netrc` secret
+  the Containerfile mounts for `swift package resolve` only, so it never enters a layer;
+- stores `PACKAGES_TOKEN` as a repository secret: a fine-grained token whose resource owner is
+  the organization, limited to the private package repositories, with Contents read-only.
+
+A local build passes `--secret id=netrc,src=$HOME/.netrc`. Without a secret the mount is empty
+and public dependencies resolve as before.
+
 ## Tests and capability coverage
 
-Run the existing focused suites on the deployed Linux architecture. Include Core business
-behavior, configuration readers, real loopback RPC/HTTP and JWT fixtures where they already
-exist. Do not duplicate generic transport failure matrices owned by a shared library.
+Run the existing focused suites on the deployed toolchain and architecture: core behavior,
+configuration, and the loopback RPC, HTTP, and JWT tests that exist. Temporal services keep
+their time-skipping, worker-registration, and replay coverage, using the SDK's test server;
+`serve` and `worker run` are commands of one executable, and both compile.
 
-Temporal services keep their time-skipping, worker-registration and recorded-history replay
-coverage. Use the SDK's test-server fixtures; do not provision a production Temporal cluster in
-ordinary CI. Serve and worker are commands of one executable/image, and both must compile.
+Adding CI does not add PostgreSQL, cache, vendor, or full-stack tests. Attach infrastructure only
+when existing tests need it or that work is requested, and never claim mocks prove migrations or
+tenant isolation. Never skip a required suite to make a workflow green.
 
-Adding service CI does not authorize adding PostgreSQL, Valkey, vendor or full-stack tests.
-Attach a local infrastructure fixture only when existing tests actually require it or that test
-work is explicitly requested. Do not start databases just because a service imports PostgresNIO,
-or claim mocks prove migrations/tenant isolation/idempotent SQL. Record the boundary honestly.
-External provider delivery and full deployment behavior are verified in the running environment.
-Do not skip an existing required suite merely to make a generic workflow green.
+## The release image and Foundation
 
-## Static SDK compatibility
+`build-image.yml` builds the actual release image natively for linux/arm64 from the Containerfile
+and checks it before anything is published: it runs as an unprivileged user, and `ldd` finds
+every library the executable links (a static binary passes). It does not start the image; a
+release first runs on staging. On a push to main it then pushes that same image, never a
+rebuild, as `:<commit-sha>`, once.
 
-If the project's image path, local or published, uses the static Linux SDK, require one released SDK build matching its
-supported toolchain and deployment architecture on PRs and develop/main pushes. This is a
-compatibility build, not a live service test or an image publication.
+Prefer FoundationEssentials in owned code. The library Foundation-linking check does not apply
+to an executable: inspect the binary, and record a dependency that requires full Foundation
+(PostgresNIO, for example) with its version, revisiting it when the dependency changes.
 
-The package-test workflow can run native tests and a static SDK build together: enable
-`enable_linux_static_sdk_build`, set `linux_static_sdk_versions` to the deployed release,
-restrict `linux_host_archs`, and build the actual executable with release optimization and locked
-resolution. Its released setup script selects the host's musl target, including ARM64. No main
-snapshot SDK, unrelated architecture or additional SDK sweep is required for applications.
-A project whose image path does not use the static SDK needs no such build and claims no static support.
+## Exceptions
 
-## Release image and Foundation
+As for libraries, each is recorded in the `## CI` section of `AGENTS.md`:
 
-Build the actual release image with the project's image tool, natively for the deployment
-architecture, meeting the contract in [delivery.md](delivery.md#the-release-image); do not
-substitute a host `swift build`, emulation or library-consumer build. Use the same release
-configuration and lockfile for PR validation and publishing. In the final image,
-`service-check-image.sh` (image, product, worker flag, binary path):
-
-- fails an image that runs as root, unless `AGENTS.md` records that exception and the job sets `ALLOW_ROOT_IMAGE=true`;
-- inspects the executable's dynamic library closure with `ldd` and fails for a missing library, accepting a static binary;
-- runs `--help` and `serve --help`, and `worker run --help` when the worker flag is set;
-- never boots production configuration, contacts infrastructure, or runs migrations.
-
-These commands catch loader and command-packaging failures, not readiness or deployed
-connectivity. The script assumes an image loaded into a local Docker daemon with `ldd` in it;
-pass the binary path the tool uses (`/app/<product>` by default, `/<product>` for
-`swift-container-plugin`). A tool that pushes as it builds pushes to a run-scoped tag
-(`:run-${{ github.run_id }}`); the job pulls and checks that digest (a daemon on the runner for
-validation is fine), then copies the same digest to the short-SHA and branch tags with a
-registry copy (`crane copy`, `skopeo copy`, `docker buildx imagetools create`), never a
-rebuild. A copier or runtime used only to check or re-tag is not a second image tool.
-
-Prefer FoundationEssentials in owned code. Inspect the actual Linux executable; the library
-Foundation consumer workflow cannot validate an application. Full Foundation may be required
-by a released dependency (for example PostgresNIO) or intentional internationalization. Record
-that package/version or capability and ship its required libraries. Do not install a universal
-no-Foundation gate that is guaranteed to fail for the documented graph. A static SDK success
-alone does not prove Essentials-only code. Revisit a documented upstream requirement when the
-resolved dependency changes.
-
-## Publishing and deployment ordering
-
-PR image jobs have read-only permissions and build/load without pushing. On deployment branches,
-source/tests/static checks must succeed before the image job. Build once, smoke-check the final
-image, then tag and publish that same local image with commit and branch tags. Do not rebuild
-an unvalidated image in a separate publishing step. Grant `packages: write` only to publication.
-Deployment runs after successful publication and retains the repository's existing environment
-secret names and server/worker application identifiers. It is never a PR action.
-
-Cancel obsolete PR runs. Serialize whole deployment workflows per branch with
-`cancel-in-progress: false`; do not interrupt an active rollout or allow overlapping runs to
-move a branch tag concurrently. Staging and production use separate groups. GitHub may replace
-a pending run with a newer one; this convention deploys branch state and does not promise that
-every intermediate commit reaches the environment. A deployment API trigger proves acceptance,
-not application health; environment verification remains separate.
-
-## Dependency updates
-
-Dependabot checks Swift and Actions weekly and targets develop; updates are promoted through the
-ordinary develop-to-main merge. A library-only `semver/none` label or release workflow is not a
-service requirement, and CI neither merges updates nor creates releases.
+- **Non-uniform headers:** `license_header_check_enabled: false`, formatter lint kept.
+- **Another image tool** (a static Linux SDK binary, `swift-container-plugin`): the project
+  replaces `build-image.yml` with its own image job meeting the same contract in
+  [delivery.md](delivery.md#the-release-image), and adds a static SDK build to the tests job when
+  the image uses one.
+- **A database or other service in tests:** a local tests workflow with the service container,
+  as in the library exception, keeping the deployed toolchain.

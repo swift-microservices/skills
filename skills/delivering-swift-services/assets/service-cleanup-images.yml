@@ -10,15 +10,9 @@ on:
 
 jobs:
   cleanup:
-    name: Delete old image versions
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    name: Clean up
     permissions:
       packages: write
-    steps:
-      - name: Keep the newest 30 versions
-        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55  # v5
-        with:
-          package-name: example-service
-          package-type: container
-          min-versions-to-keep: 30
+    uses: swift-microservices/ci/.github/workflows/cleanup-images.yml@cd121186f68dc9749d11578df6f8c73a22319383  # 0.1.0
+    with:
+      package_name: example-service

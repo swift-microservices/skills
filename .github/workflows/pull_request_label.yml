@@ -15,4 +15,4 @@ jobs:
     timeout-minutes: 1
     steps:
       - name: Check for Semantic Version label
-        uses: apple/swift-nio/.github/actions/pull_request_semver_label_checker@21de5f08c1a166a6dd293d0e587ad977bf8dac5d  # 2.103.0
+        uses: apple/swift-nio/.github/actions/pull_request_semver_label_checker@6db9d9abd92ad7399b8a564cafbb87d3507245fa  # 2.104.0

@@ -87,4 +87,4 @@ Some required server libraries link full Foundation: [Vapor 4.122.2](https://git
 
 ## Proving what links
 
-Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation. The delivering skill describes [library consumer linking](../../delivering-swift-services/references/library-ci.md#capability-exceptions) and [service executable inspection](../../delivering-swift-services/references/services-ci.md#release-image-and-foundation) separately. Revisit a documented upstream requirement when the resolved dependency changes.
+Static SDK success and conditional imports alone do not prove the resolved graph avoids full Foundation. The delivering skill describes [library consumer linking](../../delivering-swift-services/references/library-ci.md#exceptions) and [service executable inspection](../../delivering-swift-services/references/services-ci.md#the-release-image-and-foundation) separately. Revisit a documented upstream requirement when the resolved dependency changes.

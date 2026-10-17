@@ -1,0 +1,31 @@
+name: Deploy production
+run-name: Deploy ${{ inputs.commit || 'latest main' }} to production
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit to deploy (default the latest on main); an older one rolls back
+        type: string
+        required: false
+
+jobs:
+  production:
+    name: Production
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    uses: swift-microservices/ci/.github/workflows/deploy.yml@cd121186f68dc9749d11578df6f8c73a22319383  # 0.1.0
+    with:
+      environment: production
+      commit: ${{ inputs.commit }}
+      image_repository: ghcr.io/example/example-service
+      application_ids: '["<production service application id>", "<production worker application id>"]'
+    secrets:
+      DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+      DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}

@@ -1,12 +1,12 @@
 # Delivery
 
-How a service moves from a commit to a running process: branches and environments, the release image, per-commit publishing, deployment, migrations, and retention. [services-ci.md](services-ci.md) owns application validation and [library-ci.md](library-ci.md) reusable package CI; [environment.md](environment.md) owns what the deployed system looks like once it runs, and [certificates.md](certificates.md) its credentials.
+How a service moves from a commit to a running process: the branch and its environments, the release image, per-commit publishing, deployment, migrations, and retention. [services-ci.md](services-ci.md) owns application validation and [library-ci.md](library-ci.md) reusable package CI; [environment.md](environment.md) owns what the deployed system looks like once it runs, and [certificates.md](certificates.md) its credentials.
 
 This file is the worked default: GitHub Actions, a container registry, a Containerfile, and a Dokploy-style platform reached by API. The skill's rules state the principle each piece satisfies and name the alternative, so another CI or platform passes the same gates by satisfying the same principle.
 
 ## Contents
 
-- [Branches are environments](#branches-are-environments)
+- [One branch, two environments](#one-branch-two-environments)
 - [Validation before publishing](#validation-before-publishing)
 - [The release image](#the-release-image)
 - [Local builds](#local-builds)
@@ -16,20 +16,20 @@ This file is the worked default: GitHub Actions, a container registry, a Contain
 - [Platform configuration and its traps](#platform-configuration-and-its-traps)
 - [Migrations](#migrations)
 
-## Branches are environments
+## One branch, two environments
 
-Two long-lived branches, each bound to one environment:
+`main` is the only long-lived branch, and every commit on it is a release candidate:
 
-- **`develop` is staging.** Every commit publishes an image and deploys it: tests, image, deploy trigger, boot-time migrations, unattended.
-- **`main` is production.** Every commit publishes an image; the deploy steps exist once a production platform does. Promotion is a merge from develop to main, never a steady-state cherry-pick, so histories stay converged and workflow fixes ride the same merge as code.
+- **Staging follows main.** Every push validates, publishes the commit's image, and deploys it to staging, unattended, with boot-time migrations.
+- **Production is a decision.** The service's Deploy production workflow, run by hand, deploys the latest main commit or a chosen one, and refuses a commit whose push did not deploy it to staging successfully. Deploying an older commit is the rollback; nothing is rebuilt.
 
-Pull requests follow [services-ci.md](services-ci.md) regardless of target branch and never publish or deploy. After successful validation and publication, deployment steps are mandatory: a missing secret or variable fails loudly rather than skipping deployment and reporting green.
+Pull requests follow [services-ci.md](services-ci.md) and never publish or deploy. Deployments are serialized per environment and never cancelled midway. After successful validation and publication, deployment is mandatory: a missing secret or application fails the run loudly rather than reporting green.
 
-Versioning differs by what a repository is for. Services carry no SemVer tags and no releases: the commit is the version, the SHA the deploy identifier. SemVer belongs to the shared packages consumers resolve by range (the protos, the swift-microservices packages, the organization's core package), each released by its recorded mechanism: label-based Auto Release or hand-cut bare tags. A library records API impact with labels and never commits `Package.resolved`; a service executable commits it. Tags never move once anything resolves them: SwiftPM records each tag's commit in `~/.swiftpm/security/fingerprints/<package>-*.json`, and a moved tag fails every consumer's resolve with "does not match previously recorded value" until that file is deleted on every machine that saw the old one, which is also the recovery when an upstream tag moved anyway.
+Versioning differs by what a repository is for. Services carry no SemVer tags and no releases: the commit is the version and the deploy identifier. SemVer belongs to the shared packages consumers resolve by range (the protos, the swift-microservices packages, the organization's core package), released by their recorded mechanism. A library records API impact with labels and never commits `Package.resolved`; a service executable commits it. Tags never move once anything resolves them: SwiftPM records each tag's commit in `~/.swiftpm/security/fingerprints/<package>-*.json`, and a moved tag fails every consumer's resolve with "does not match previously recorded value" until that file is deleted on every machine that saw the old one, which is also the recovery when an upstream tag moved anyway.
 
 ## Validation before publishing
 
-Follow [services-ci.md](services-ci.md) for workflow layout, source quality, locked tests, static SDK compatibility, final-image inspection, and weekly dependency updates. Deployment branches pass their required checks, build and smoke-check the final image, and publish that same image before deployment.
+Follow [services-ci.md](services-ci.md) for the workflows, source quality, locked tests, the final-image checks, and weekly dependency updates. A push to main passes its checks, builds and checks the final image, and publishes that same image before deploying it.
 
 ## The release image
 
@@ -46,14 +46,14 @@ How it is built is the project's choice, recorded once in `AGENTS.md`:
 
 - **A `Containerfile`** built with Docker Buildx or Apple's `container` (the worked example). Copy [the Containerfile](../assets/Containerfile) and [the ignore file](../assets/dockerignore) (as `.dockerignore`) and replace the product name. Its build stage resolves `Package.*` in its own cached layer, builds with the locked strict flags and `--static-swift-stdlib`, and stages the binary, backtracer, and bundles; its runtime stage installs CA certificates and time-zone data, creates an unprivileged system user `app` with `/app` as its home, copies the staging directory there owned by that user, and runs `/app/<service>` as it.
 - **A static Linux SDK binary** (`swift build --swift-sdk <arch>-swift-linux-musl`) copied into a minimal base image that sets an unprivileged user.
-- **`swift-container-plugin`** (`swift package build-container-image`), with no daemon. It conflicts with the contract in two places, so the project records how it meets them: its images default to root, and the binary sits at `/<product>`. Set a non-root user if the plugin version supports one (or a base image whose user it carries through), and confirm with `docker image inspect --format '{{.Config.User}}'`; otherwise record the root image as a project exception in `AGENTS.md`, with read-only mounts and file ownership as the compensating control. Pass `/<product>` as the check script's binary path, and give the platform that path in its command.
+- **`swift-container-plugin`** (`swift package build-container-image`), with no daemon. It conflicts with the contract in two places, so the project records how it meets them: its images default to root, and the binary sits at `/<product>`. Set a non-root user if the plugin version supports one (or a base image whose user it carries through), and confirm with `docker image inspect --format '{{.Config.User}}'`; otherwise record the root image as a project exception in `AGENTS.md`, with read-only mounts and file ownership as the compensating control. Give the platform that path in its command.
 
 ## Local builds
 
-Each service carries a `Makefile` wrapping the project's local build, for a workstation and as the fallback when CI cannot run; the short SHA is the tag CI would push:
+Each service carries a `Makefile` wrapping the project's local build, for a workstation and as the fallback when CI cannot run; the commit SHA is the tag CI would push:
 
 ```make
-TAG ?= $(shell git rev-parse --short=7 HEAD)
+TAG ?= $(shell git rev-parse HEAD)
 IMAGE ?= ghcr.io/<organization>/<organization>-<service>
 
 build:
@@ -65,7 +65,7 @@ build:
 On `swift-container-plugin`, build the plugin's host tool from the locked graph first, then the image with the static SDK:
 
 ```make
-TAG ?= $(shell git rev-parse --short=7 HEAD)
+TAG ?= $(shell git rev-parse HEAD)
 IMAGE ?= ghcr.io/<organization>/<organization>-<service>
 SWIFT_SDK ?= aarch64-swift-linux-musl
 
@@ -79,45 +79,33 @@ build:
 .PHONY: build
 ```
 
-A local build may use a different tool from the published path; only the published path is release evidence, except when refused CI runners force publishing from the local build (the skill's rule 6). A plugin image's creation date is the epoch, so image age says nothing about freshness; probe a feature (`--help` listing a subcommand) instead.
+A local build may use a different tool from the published path; only the published path is release evidence, except when refused CI runners force publishing from the local build (the skill's rule 7). A plugin image's creation date is the epoch, so image age says nothing about freshness; probe a feature (`--help` listing a subcommand) instead.
 
 ## Publishing per commit
 
-The image job runs after all checks on a deployment-branch push: the image tool builds the native image (in the worked example, Buildx loads it using the GitHub Actions layer cache), the final image is smoke-checked, and that same image is pushed with two tags:
+On a push to main, after every check, the image job builds the native image, checks it, and pushes that same image with one tag, the full commit SHA:
 
 ```
-ghcr.io/<organization>/<organization>-<service>:<short-sha>
-ghcr.io/<organization>/<organization>-<service>:<branch>
+ghcr.io/<organization>/<organization>-<service>:<commit-sha>
 ```
 
-The short SHA tag is immutable and exists for forensics and rollback; the moving branch tag (`develop`, `main`) is what the platform applications track. A deploy is therefore a trigger, not a reconfiguration. Rolling back means pinning an older SHA on the application and deploying, an operator action outside the pipeline.
+The tag is written once and never moved: a re-run finds it and skips the push, so two commits never share an image and the image staging ran is the one production gets. There are no branch or environment tags; the platform is told which image to run on each deployment.
 
 ## The registry and retention
 
 The workflow's own `GITHUB_TOKEN` pushes, with `permissions: packages: write` on the publishing job only. A package that already exists (created by a manual push under a personal token) does not trust any repository's token until its *Manage Actions access* setting grants the repository write (admin, for the cleanup workflow to delete versions). The setting is UI-only; the first pipeline push of every pre-existing package fails `permission_denied` until it is made.
 
-Per-commit publishing fills a registry. Each repository carries [the weekly cleanup workflow](../assets/service-cleanup-images.yml) (`.github/workflows/cleanup-images.yml`, the package name filled in), keeping the newest 30 versions. It lives in each repository because schedules fire only in the repository that hosts them and deletion needs that repository's token. A SHA older than the window cannot be pulled again, so rollback targets are recent by construction, and recovery from a very old deploy is forward to a current SHA.
+Per-commit publishing fills a registry. Each repository carries [the weekly cleanup workflow](../assets/service-cleanup-images.yml) (`.github/workflows/cleanup-images.yml`, the package name filled in), keeping the newest 30 versions by default. It lives in each repository because schedules fire only in the repository that hosts them and deletion needs that repository's token. A SHA older than the window cannot be pulled again, so rollback targets are recent by construction, and recovery from a very old deploy is forward to a current SHA.
 
 ## Deploying to the platform
 
-Each process is one platform application, image-sourced, tracking the branch's moving tag. The deploy step is a single trigger: a SHA-pinned action that calls the platform's deploy endpoint and nothing else, bound to three plain secrets. A service with a worker deploys the worker application from the same image in a second step with its own application id:
+Each process is one platform application with the image as its source and auto-deploy off, so only the pipeline changes what runs. Every deployment, staging from main and production by hand, runs the ci repository's `deploy.yml` for an environment and a commit:
 
-```yaml
-      - name: Deploy to staging Dokploy
-        uses: benbristow/dokploy-deploy-action@<commit-sha>  # <version>
-        with:
-          dokploy_url: ${{ secrets.DOKPLOY_URL }}
-          api_token: ${{ secrets.API_TOKEN }}
-          application_id: ${{ secrets.APPLICATION_ID }}
-      - name: Deploy worker to staging Dokploy
-        uses: benbristow/dokploy-deploy-action@<commit-sha>  # <version>
-        with:
-          dokploy_url: ${{ secrets.DOKPLOY_URL }}
-          api_token: ${{ secrets.API_TOKEN }}
-          application_id: ${{ secrets.WORKER_APPLICATION_ID }}
-```
+1. It resolves the commit to `<image-repository>:<commit-sha>@sha256:<digest>`; the platform shows the commit, and Docker pulls by digest.
+2. For production, it requires a successful `Deploy staging` job in a push run of that commit, and reports whether the commit is still on its way to staging or never got there.
+3. It checks that every ID in `application_ids` names an application before changing any, then, one at a time in the listed order, sets the image, requests a deployment titled with the short commit, and waits until the platform reports a deployment newer than the one before the request `done`. An error, a cancellation, or 15 minutes fails the run and leaves the remaining applications as they were.
 
-Production's workflow carries the same steps with `PROD_DOKPLOY_URL`, `PROD_API_TOKEN`, `PROD_APPLICATION_ID`, and `PROD_WORKER_APPLICATION_ID`. The steps are mandatory, never conditional on a secret. The platform API must be reachable from the runner: a public endpoint is one HTTPS call with a bearer key; a tailnet-only endpoint means a tailnet-join step or publish-only CI with deploys triggered from inside. The API key can reconfigure every application: rotate it on any suspicion and keep the platform account behind a second factor.
+A service with a worker lists both applications, the one that migrates first. The secrets are `DOKPLOY_URL` and `DOKPLOY_TOKEN`; the application IDs live in the callers. The platform API must be reachable from the runner: a public endpoint is one HTTPS call with an API key; a tailnet-only endpoint needs a tailnet-join step. The key can reconfigure every application: rotate it on any suspicion and keep the platform account behind a second factor.
 
 ## Platform configuration and its traps
 
@@ -133,12 +121,12 @@ The CA, its enrollment one-shots, and the renewers are deployed as [certificates
 - **Names get a random suffix at creation and cannot change.** Give each workload a stable network alias on the platform's shared network and issue SANs for the alias (and the suffixed name), so a recreated application keeps a valid certificate and clients dial a name that never changes.
 - **Bind-mounted files persist only under the platform's files directory** (`../files/` relative to a Compose resource). Keep renewal scripts, the CA root, and enrollment tokens there; any other host path is not managed and may vanish.
 - **Volumes shared between resources are external, named, and primed first.** Create each credential volume with an explicit name, run permission initialization and enrollment into it, and declare it `external: true` in every resource that mounts it; otherwise the platform creates an empty, project-prefixed volume and the application starts without credentials. On more than one node, provide shared storage or re-enroll on the new node.
-- **Disable auto-deploy on the CA's resource**, so a push never restarts or re-creates the CA.
+- **Disable auto-deploy on every application and on the CA's resource**, so only the pipeline changes a service's image and nothing restarts or re-creates the CA.
 - **Swarm's default stop grace period is ten seconds**, which kills a draining worker mid-Activity. Set the worker application's stop grace period longer than its longest Activity's drain.
 - **A worker exits 0 on SIGTERM after draining.** A worker whose run loop throws after a graceful drain fails its `ServiceGroup` and exits 1, which cancels its other services and loses its last log lines; see the workflow skill's [worker reference](../../orchestrating-temporal-workflows/references/worker.md).
 - **Do not link an application to a registry entry**: that designates a cluster registry and re-uploads every image on deploy, which a read-only pull token cannot do. Registry credentials entered once in the platform UI cover pulls for every application.
 - **A crash-looping application can pin a stale spec**: after fixing configuration, stop it, then deploy.
-- **A green publish run is not proof the tag exists.** The production workflow is a near-copy of staging's, and the classic copy-paste failure publishes the staging tag from the production branch while every run stays green. When a deploy fails pulling `:main`, check the manifest with an authenticated registry call first.
+- **A deployment reported `done` is not proof of health.** The platform finished rolling the container; whether the service answers is verified in the environment.
 
 ## Migrations
 
