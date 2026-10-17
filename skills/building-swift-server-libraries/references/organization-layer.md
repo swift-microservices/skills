@@ -123,7 +123,7 @@ The users service serves it; the gateway and the authentication service call it.
 - ``<Organization>_Users_V1_UserInternalService``
 ```
 
-**Consumer fixture.** A generated package has no runtime tests, so `.github/Fixtures/Consumer` is a separate package, `.package(path: "../../..")`, with the shared settings, linking every `<Module>Protos` product and declaring `public typealias`es of generated messages, `ClientProtocol`s, and `ServiceProtocol`s from `public import`s; a contract whose generated API is not public, or whose imports are not, fails to build there. `.gitignore` ignores `.github/Fixtures/**/.build/` and every `Package.resolved`. CI is the library profile's build-and-consumer variant for generated packages.
+**CI.** A generated package has no runtime tests, so its CI is the library profile's no-tests exception, `swift build -c release`, and the Foundation-linking check builds a downstream release consumer that imports every product. The services that use a contract compile its generated API in their own CI.
 
 **Wire enums are not token roles.** A contract's `UserRole` enum (`USER_ROLE_UNSPECIFIED`, `USER_ROLE_USER`, `USER_ROLE_ADMIN`) is what the owning service persists and returns; the token's `UserRole` in `<Project>Authentication` is an open string. Map them at the transport boundary and refuse `UNSPECIFIED`. Adding a role changes `<project>-core` first, then the contract, then the issuing service.
 

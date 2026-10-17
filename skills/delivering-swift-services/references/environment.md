@@ -20,7 +20,7 @@ This file is the worked default: a Compose suite, a `step`-issued CA, Loki. Each
 
 One `compose.yaml` at the workspace root runs the whole system from published images and never builds them. Start from [the suite skeleton](../assets/compose.yaml), [the variables](../assets/env.example), and [the certificate machinery](../assets/ca-compose.yaml), merged through `COMPOSE_FILE` in `.env`:
 
-- every image is `${REGISTRY}/<organization>-<service>:${<SERVICE>_IMAGE_TAG:?…}`, a published short SHA (pinned) or branch tag (followed); every third-party image is pinned to a reviewed version or digest, never `latest`;
+- every image is `${REGISTRY}/<organization>-<service>:${<SERVICE>_IMAGE_TAG:?…}`, a published commit SHA; every third-party image is pinned to a reviewed version or digest, never `latest`;
 - `.env.example` names every variable with the required ones empty, copied to a git-ignored `.env`; each required value is `${VAR:?message}`, so Compose refuses to start with an actionable error rather than a guessable default;
 - startup is gated by health: a service `depends_on` its Postgres with `condition: service_healthy` and on its renewer the same way; a one-shot is `service_completed_successfully`. Gating helps ordering and does not replace runtime recovery: the application must tolerate a dependency restarting;
 - consumers reach producers by service name on the internal network: `GRPC_<SERVICE>_HOST=<service>`, `GRPC_<SERVICE>_PORT=50051`, the container port.

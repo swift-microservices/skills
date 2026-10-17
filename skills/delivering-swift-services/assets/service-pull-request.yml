@@ -12,17 +12,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
-    name: Checks
-    uses: ./.github/workflows/checks.yml
+  soundness:
+    name: Soundness
+    uses: swiftlang/github-workflows/.github/workflows/soundness.yml@3137ed1a48293ae9f4312fce349ed6210251db89  # 0.0.16
     with:
-      service_product: example-service
+      api_breakage_check_enabled: false
+      docs_check_enabled: false
+      license_header_check_enabled: true
+      format_check_container_image: swift:6.3-noble
+
+  tests:
+    name: Tests
+    # With private dependencies, call swift-microservices/ci/.github/workflows/tests.yml@<commit> instead: the same inputs, plus
+    # `secrets: PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}`.
+    uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@3137ed1a48293ae9f4312fce349ed6210251db89  # 0.0.16
+    with:
+      linux_swift_versions: '["6.3"]'
+      linux_os_versions: '["noble"]'
+      linux_host_archs: '["aarch64"]'
+      linux_build_command: swift test --disable-automatic-resolution
+      swift_flags: >-
+        -Xswiftc -warnings-as-errors
+        --explicit-target-dependency-import-check error
+        -Xswiftc -require-explicit-sendable
+      enable_windows_checks: false
 
   image:
-    name: Release image
-    uses: ./.github/workflows/image.yml
+    name: Build image
+    uses: swift-microservices/ci/.github/workflows/build-image.yml@cd121186f68dc9749d11578df6f8c73a22319383  # 0.1.0
     with:
       service_product: example-service
       image_repository: ghcr.io/example/example-service
       # build_target: example-service  # only when the image is not the Containerfile's last stage
-      worker: true  # only when the executable has `worker run`
+    secrets:
+      PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}

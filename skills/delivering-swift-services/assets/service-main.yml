@@ -7,48 +7,60 @@ on:
   push:
     branches: [main]
 
-concurrency:
-  group: deploy-main
-  cancel-in-progress: false
-
 jobs:
-  checks:
-    name: Checks
-    uses: ./.github/workflows/checks.yml
+  soundness:
+    name: Soundness
+    uses: swiftlang/github-workflows/.github/workflows/soundness.yml@3137ed1a48293ae9f4312fce349ed6210251db89  # 0.0.16
     with:
-      service_product: example-service
+      api_breakage_check_enabled: false
+      docs_check_enabled: false
+      license_header_check_enabled: true
+      format_check_container_image: swift:6.3-noble
+
+  tests:
+    name: Tests
+    # With private dependencies, call swift-microservices/ci/.github/workflows/tests.yml@<commit> instead: the same inputs, plus
+    # `secrets: PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}`.
+    uses: swiftlang/github-workflows/.github/workflows/swift_package_test.yml@3137ed1a48293ae9f4312fce349ed6210251db89  # 0.0.16
+    with:
+      linux_swift_versions: '["6.3"]'
+      linux_os_versions: '["noble"]'
+      linux_host_archs: '["aarch64"]'
+      linux_build_command: swift test --disable-automatic-resolution
+      swift_flags: >-
+        -Xswiftc -warnings-as-errors
+        --explicit-target-dependency-import-check error
+        -Xswiftc -require-explicit-sendable
+      enable_windows_checks: false
 
   publish:
     name: Publish image
-    needs: [checks]
+    needs: [soundness, tests]
     permissions:
       contents: read
       packages: write
-    uses: ./.github/workflows/image.yml
+    uses: swift-microservices/ci/.github/workflows/build-image.yml@cd121186f68dc9749d11578df6f8c73a22319383  # 0.1.0
     with:
       service_product: example-service
       image_repository: ghcr.io/example/example-service
       # build_target: example-service  # only when the image is not the Containerfile's last stage
-      worker: true  # only when the executable has `worker run`; also checks that command
       publish: true
+    secrets:
+      PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
 
-  deploy:
-    name: Deploy production
+  staging:
+    name: Staging
     needs: [publish]
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 5
-    steps:
-      - name: Deploy to production Dokploy
-        uses: benbristow/dokploy-deploy-action@3a2a16f0158b41377adf300c9dd6d3d396aa7586  # 0.2.2
-        with:
-          dokploy_url: ${{ secrets.PROD_DOKPLOY_URL }}
-          api_token: ${{ secrets.PROD_API_TOKEN }}
-          application_id: ${{ secrets.PROD_APPLICATION_ID }}
-      # Only with a worker application: it runs the same image with `worker run`.
-      # Remove this step when there is none; a missing secret fails the run.
-      - name: Deploy worker to production Dokploy
-        uses: benbristow/dokploy-deploy-action@3a2a16f0158b41377adf300c9dd6d3d396aa7586  # 0.2.2
-        with:
-          dokploy_url: ${{ secrets.PROD_DOKPLOY_URL }}
-          api_token: ${{ secrets.PROD_API_TOKEN }}
-          application_id: ${{ secrets.PROD_WORKER_APPLICATION_ID }}
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    uses: swift-microservices/ci/.github/workflows/deploy.yml@cd121186f68dc9749d11578df6f8c73a22319383  # 0.1.0
+    with:
+      environment: staging
+      image_repository: ghcr.io/example/example-service
+      # Deploy order: the application that migrates first, then its worker, if any.
+      application_ids: '["<staging service application id>", "<staging worker application id>"]'
+    secrets:
+      DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+      DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}

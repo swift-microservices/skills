@@ -82,8 +82,8 @@ Build a client SDK:
 - [ ] 2. The surface's openapi.yaml synced into Sources/<Project>SDK/, generator config types and client, public, Problem override
 - [ ] 3. Problem, the AuthenticationResponse conformance, the AuthenticationClient with 401-only classification
 - [ ] 4. <Project>Client: authenticated, anonymous, and ifAvailable generated clients by security; URLSession initializers under the trait
-- [ ] 5. Consumer fixture in both trait configurations; runtime tests for the authentication client only
-- [ ] 6. swift build, swift test when tests exist, and the consumer builds
+- [ ] 5. Runtime tests for the authentication client only
+- [ ] 6. swift build with the default traits and with --disable-default-traits, and swift test when tests exist
 ```
 
 ## Completion gates

@@ -79,13 +79,10 @@ Evals call the model on your account. Run one case while iterating: `claude plug
 
 `claude plugin eval` has no script grader, so every `evals/*/checks/verify.py` is a manual check you run on a kept workspace (`--keep-temp`) after the eval; nothing runs it for you. After a `writing-swift-server-code-swift-settings` run, check its kept workspace with `python3 evals/writing-swift-server-code-swift-settings/checks/verify.py <workspace>`: it asserts the tools version, the platform floor, and every target's settings, compiles independent actor and MainActor contract tests against the requested API, and runs the executable.
 
-The service CI eval covers a deployable executable with a server and worker command profile. It preserves
-existing tests and explicit application style exceptions without adding infrastructure fixtures.
-Run `delivering-swift-services-service-ci-worker` with `--scaffold` and inspect its kept workspace with
-`python3 evals/delivering-swift-services-service-ci-worker/checks/verify.py --worker <workspace>` (requires PyYAML).
-It also runs the copied `check-image.sh` against a fake `docker`: the root-user refusal and its
-`ALLOW_ROOT_IMAGE=true` exception, the binary-path argument, the worker command, and the worker deploy steps.
-This checks effective workflow and image-validation artifacts, not live publication/deployment or GitHub execution.
+The CI evals grade the standard shapes and their recorded exceptions: `delivering-swift-services-service-ci-worker`
+gives a service with a worker its pull request, main, production deploy, and cleanup workflows, and
+`delivering-swift-services-library-ci-postgres` gives a single-product PostgreSQL library the database-tests
+and Foundation-linking exceptions. Both check workflow files, not GitHub execution.
 
 ## Contributing
 

@@ -242,6 +242,6 @@ The URLSession initializers, in `<Project>Client+URLSession.swift` under `#if Op
 
 ## Tests and CI
 
-A consumer fixture is required: a package in `.github/Fixtures/Consumer` that depends on the checkout by path and imports the generated client, schemas, and hand-written types, built with the default trait and with `--disable-default-traits`. It alone proves the public generated API and both trait configurations compile for a downstream package. Runtime tests are written only for hand-written behavior that decides something — the authentication client's status classification and propagation — with swift-testing over a stub `ClientTransport`, no network; generated wrappers get none, and no placeholder test target exists to fit a profile.
+Runtime tests are written only for hand-written behavior that decides something — the authentication client's status classification and propagation — with swift-testing over a stub `ClientTransport`, no network; generated wrappers get none, and no placeholder test target exists to fit a profile.
 
-CI is the library profile's generated-SDK variant: a build matrix plus the consumer fixture in both trait configurations ([library-ci.md](../../delivering-swift-services/references/library-ci.md#capability-exceptions)), with `swift test` in the matrix when runtime tests exist.
+CI is the standard library shape ([library-ci.md](../../delivering-swift-services/references/library-ci.md#exceptions)): `swift test -c release` when runtime tests exist, `swift build -c release` otherwise, with the default traits; the custom-transport configuration is built locally when its code changes.

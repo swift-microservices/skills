@@ -118,8 +118,8 @@ Review progress:
 
 **9. Delivery** — read `.github/workflows`, the recorded image build, and `Package.resolved`; rules in [services-ci.md](../delivering-swift-services/references/services-ci.md) and [delivery.md](../delivering-swift-services/references/delivery.md).
 - The executable commits `Package.resolved` and CI resolves from it. The image tool is the project's choice; with the static Linux SDK, CI keeps a static SDK build.
-- Claims about avoiding full Foundation rest on [executable inspection](../delivering-swift-services/references/services-ci.md#release-image-and-foundation), not a static SDK build; a previously passing linking gate stays enabled.
-- Every commit to a deployment branch publishes a SHA tag and the branch tag; the deploy step is mandatory. A pre-existing infrastructure failure is a decision, not a defect.
+- Claims about avoiding full Foundation rest on [executable inspection](../delivering-swift-services/references/services-ci.md#the-release-image-and-foundation), not a static SDK build; a previously passing linking gate stays enabled.
+- Every push to main publishes one image tagged with the full commit SHA and deploys it to staging; production deploys only a commit staging ran; deployment is mandatory. A pre-existing infrastructure failure is a decision, not a defect.
 - Migrations run before serving from a short-lived owner client; serving clients never hold owner credentials.
 
 ## Report
