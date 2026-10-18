@@ -62,11 +62,8 @@ deploy_to() {
   local url token digest image api id name previous result request code attempt deadline deployment status
   url=$(setting DOKPLOY_URL)
   token=$(setting DOKPLOY_TOKEN)
-  if [ -z "$token" ] && [ -n "$(setting DOKPLOY_TOKEN_FILE)" ]; then
-    token=$(tr -d '[:space:]' < "$(setting DOKPLOY_TOKEN_FILE)")
-  fi
   [ -n "$url" ] || fail "set DOKPLOY_URL in .env"
-  [ -n "$token" ] || fail "set DOKPLOY_TOKEN_FILE (or DOKPLOY_TOKEN) in .env"
+  [ -n "$token" ] || fail "set DOKPLOY_TOKEN in .env"
   [ -n "$ids" ] || fail "set the $environment application IDs in .env"
   api="${url%/}/api"
 

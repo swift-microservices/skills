@@ -64,8 +64,8 @@ The registry credentials come from `~/.netrc` (`machine ghcr.io`, a token with `
 
 ```
 DOKPLOY_URL=https://dokploy.example.com
-# A file holding the API key, kept outside the repository; DOKPLOY_TOKEN works too.
-DOKPLOY_TOKEN_FILE=
+# The platform's API key; .env is never committed.
+DOKPLOY_TOKEN=
 STAGING_APPLICATION_IDS="<service-id> <worker-id>"
 PRODUCTION_APPLICATION_IDS="<service-id> <worker-id>"
 ```
