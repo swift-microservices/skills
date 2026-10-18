@@ -49,7 +49,7 @@ The rules follow from these. When a situation is not covered, decide from the pr
 4. Pin every reusable workflow and action to its latest release's full commit with the release as a comment; only an upstream without releases is pinned to a `main` commit. Dependabot targets main.
 5. A service executable commits its validated `Package.resolved`; a library never commits it and records API impact with SemVer labels. Released dependency tags never move: consumers remember their fingerprints.
 6. The templates' Swift version (6.3) is the current floor, not a fixed rule. Raise it in libraries, services, and the ci repository together, with the checklist in [library-ci.md](references/library-ci.md#toolchains).
-7. When a private repository's runners are refused for billing, do not weaken the pipeline to pass: fund it, self-host, narrow a private library as its recorded exception allows, or publish through the local image build until CI returns.
+7. When a private repository's runners are refused for billing, do not weaken the pipeline to pass: fund it, self-host, narrow a private library as its recorded exception allows, or publish and deploy with the Makefile's `publish`, `stage`, and `deploy` until CI returns, production still only after staging.
 
 ### Images and publishing
 
@@ -81,7 +81,7 @@ Copy the checklist you need and check items off as you go.
 
 ```
 Deliver a service:
-- [ ] 1. The image build with the project's recorded tool (Containerfile and .dockerignore from assets, a static SDK build, or swift-container-plugin with its user exception decided); a local Makefile build
+- [ ] 1. The image build with the project's recorded tool (Containerfile and .dockerignore from assets, a static SDK build, or swift-container-plugin with its user exception decided); the Makefile and scripts/delivery.sh from assets, with .env's Dokploy settings
 - [ ] 2. pull_request.yml, main.yml, deploy.yml, and cleanup-images.yml from the service templates, pinned by commit; application_ids in deploy order, the worker's included; Dependabot
 - [ ] 3. With private dependencies: the ci repository's tests.yml and PACKAGES_TOKEN, passed to the image build too
 - [ ] 4. The `## CI` section of AGENTS.md: the standard shape, then each exception with its reason
