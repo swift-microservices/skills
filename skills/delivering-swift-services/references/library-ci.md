@@ -60,7 +60,7 @@ Raise the floor in one change per repository, and in the services and the ci rep
 
 ```
 Raise the Swift floor:
-- [ ] Libraries: add the old floor to linux_exclude_swift_versions; move format_check_container_image and the Foundation-linking swift_image to the new floor; update a narrowed matrix's linux_swift_versions; raise the tools version
+- [ ] Libraries: add the old floor to linux_exclude_swift_versions; move format_check_container_image and the Foundation-linking swift_image to the new floor; update a narrowed matrix's linux_swift_versions and a database tests.yml matrix; raise the tools version
 - [ ] Services: tests' linux_swift_versions, the soundness format image, and the Containerfile's build stage, together (services-ci.md)
 - [ ] The ci repository: tests.yml's default linux_swift_versions, released, then each caller's pin bumped
 - [ ] Each AGENTS.md that names the toolchain
@@ -132,7 +132,8 @@ FoundationEssentials where it can.
 **Tests need a database.** swiftlang's workflow cannot attach a service container. Copy
 [library-postgres-tests.yml](../assets/library-postgres-tests.yml) to `.github/workflows/tests.yml`
 (the same toolchains and flags, beside PostgreSQL) and call it from both workflows in place of
-the tests job. On pull requests, keep the static SDK builds with swiftlang's workflow and its
+the tests job. Its matrix is written out, so keep it equal to the pinned swiftlang release's
+default versions above the floor when Dependabot bumps that pin. On pull requests, keep the static SDK builds with swiftlang's workflow and its
 tests turned off:
 
 ```yaml

@@ -73,7 +73,7 @@ Every case sets `runs: 1`. While changing a skill, run only that skill's cases w
 
 `reviewing-swift-services` sets `disable-model-invocation`, so its cases invoke it with the `/swift-microservices:reviewing-swift-services` slash command. Without the plugin that command does not exist, so the no-plugin arm measures nothing: run those cases with `--ablation none` (for example `claude plugin eval . --case reviewing-swift-services-clean --scaffold --ablation none`). The review runs in a forked agent, so their judges read the trace (`focus: trace`), and their `no-write` and `no-edit` graders score in both arms.
 
-Haiku, the default judge, still misjudges some rubrics on long generated files (certificate plans, Compose stacks); run with `--judge-model sonnet` when a result decides a change.
+Haiku, the default judge, still misjudges some rubrics on long generated files (Compose stacks); run with `--judge-model sonnet` when a result decides a change.
 
 Evals call the model on your account. Run one case while iterating: `claude plugin eval . --case building-swift-services-tenant-service --ablation none`. Cases with a `scaffold.sh` need `--scaffold`, and cases that edit or build need `--allow-tools Bash Write Edit`; add `--keep-temp` to keep each run's workspace. The eval loader rejects any symbolic link under `evals/`, so keep SwiftPM `.build` directories out of `evals/results/`.
 

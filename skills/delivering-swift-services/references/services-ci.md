@@ -46,6 +46,7 @@ application IDs:
 - [service-cleanup-images.yml](../assets/service-cleanup-images.yml) → `.github/workflows/cleanup-images.yml`
 - [service-dependabot.yml](../assets/service-dependabot.yml) → `.github/dependabot.yml`
 - [Containerfile](../assets/Containerfile) and [dockerignore](../assets/dockerignore) → `Containerfile` and `.dockerignore`
+- [Makefile](../assets/Makefile) and [delivery.sh](../assets/delivery.sh) → `Makefile` and `scripts/delivery.sh`, the pipeline's steps run locally (see [delivery.md](delivery.md#local-builds))
 
 `application_ids` is a JSON list in deploy order: the application that runs migrations first,
 then its worker. Pass `build_target` only when the service image is not the Containerfile's last
