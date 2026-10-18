@@ -99,7 +99,24 @@ repository. A service that depends on one:
 - passes the same secret to `build-image.yml`, which hands it to the build as the `netrc` secret
   the Containerfile mounts for `swift package resolve` only, so it never enters a layer;
 - stores `PACKAGES_TOKEN` as a repository secret: a fine-grained token whose resource owner is
-  the organization, limited to the private package repositories, with Contents read-only.
+  the organization, limited to the private package repositories, with Contents read-only;
+- gives Dependabot the same token as a Dependabot secret (Dependabot cannot read Actions
+  secrets) and a `git` registry its Swift updates use:
+
+  ```yaml
+  registries:
+    github:
+      type: git
+      url: https://github.com
+      username: x-access-token
+      password: ${{secrets.PACKAGES_TOKEN}}
+  updates:
+    - package-ecosystem: swift
+      directory: /
+      registries: [github]
+      schedule:
+        interval: weekly
+  ```
 
 A local build passes `--secret id=netrc,src=$HOME/.netrc`. Without a secret the mount is empty
 and public dependencies resolve as before.
