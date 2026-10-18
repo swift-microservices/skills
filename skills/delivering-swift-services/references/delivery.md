@@ -50,33 +50,36 @@ How it is built is the project's choice, recorded once in `AGENTS.md`:
 
 ## Local builds
 
-Each service carries a `Makefile` wrapping the project's local build, for a workstation and as the fallback when CI cannot run; the commit SHA is the tag CI would push:
+Each service carries [the Makefile](../assets/Makefile) and [delivery.sh](../assets/delivery.sh) (as `scripts/delivery.sh`), which run the pipeline's steps from a workstation, the fallback when CI cannot run. Replace the image repository:
 
-```make
-TAG ?= $(shell git rev-parse HEAD)
-IMAGE ?= ghcr.io/<organization>/<organization>-<service>
+| Target | What it does |
+| --- | --- |
+| `make test` | The tests CI runs, on the committed graph with the strict flags |
+| `make build` | The release image, loaded locally and never pushed |
+| `make publish` | Pushes HEAD's image once as `:<commit-sha>`; refuses a dirty tree or a commit not on `origin/main`, and skips a tag that exists |
+| `make stage` | Deploys `COMMIT` (default HEAD) by digest to the staging applications, in order, waiting for each |
+| `make deploy` | Deploys `COMMIT` by digest to production, only if every staging application reports a successful deployment titled with its short SHA |
 
-build:
-	docker buildx build --platform linux/arm64 --load --tag $(IMAGE):$(TAG) .
+The registry credentials come from `~/.netrc` (`machine ghcr.io`, a token with `write:packages`); the script reads the rest from the environment or the git-ignored `.env`, without sourcing it, and the IDs are the workflows' `application_ids`, space-separated:
 
-.PHONY: build
+```
+DOKPLOY_URL=https://dokploy.example.com
+# A file holding the API key, kept outside the repository; DOKPLOY_TOKEN works too.
+DOKPLOY_TOKEN_FILE=
+STAGING_APPLICATION_IDS="<service-id> <worker-id>"
+PRODUCTION_APPLICATION_IDS="<service-id> <worker-id>"
 ```
 
-On `swift-container-plugin`, build the plugin's host tool from the locked graph first, then the image with the static SDK:
+Production checks the platform's staging deployments, not a pipeline run, so a commit staged locally goes to production with `make deploy`, and one staged by CI with either.
 
-```make
-TAG ?= $(shell git rev-parse HEAD)
-IMAGE ?= ghcr.io/<organization>/<organization>-<service>
-SWIFT_SDK ?= aarch64-swift-linux-musl
+On `swift-container-plugin`, the Makefile adds and exports `PRODUCT := <service>` and `SWIFT_SDK ?= aarch64-swift-linux-musl`; `build` becomes `swift build --configuration release --disable-automatic-resolution --swift-sdk $(SWIFT_SDK) --product $(PRODUCT)`, and `publish` in `delivery.sh` builds the plugin's host tool from the locked graph, then the image with the static SDK:
 
-build:
-	swift build --configuration release --disable-automatic-resolution --product containertool
-	swift package --disable-automatic-resolution --swift-sdk $(SWIFT_SDK) \
-		--configuration release \
-		--allow-network-connections all build-container-image \
-		--product <service> --repository $(IMAGE) --tag $(TAG)
-
-.PHONY: build
+```bash
+swift build --configuration release --disable-automatic-resolution --product containertool
+swift package --disable-automatic-resolution --swift-sdk "$SWIFT_SDK" \
+  --configuration release \
+  --allow-network-connections all build-container-image \
+  --product "$PRODUCT" --repository "$IMAGE_REPOSITORY" --tag "$commit"
 ```
 
 A local build may use a different tool from the published path; only the published path is release evidence, except when refused CI runners force publishing from the local build (the skill's rule 7). A plugin image's creation date is the epoch, so image age says nothing about freshness; probe a feature (`--help` listing a subcommand) instead.
