@@ -1,6 +1,6 @@
 ---
 name: delivering-swift-services
-description: Delivers Swift services from a commit to a running, mutually authenticated stack, and defines the standard CI profiles for Swift server libraries and deployable services. Covers the standard library and service CI and their recorded exceptions, toolchain upgrades, locked resolution, formatting, the release image (Containerfile, static Linux SDK, or swift-container-plugin), per-commit publishing, staging and production deployment of serving and worker applications on a Dokploy-style platform, rollback, migrations in the pipeline, the Compose suite and its .env, mounted secrets and JWT signing keys, and mTLS certificates from a private CA such as Smallstep step-ca with enrollment and renewal. Use when creating or changing CI workflows, a Containerfile, image publishing, deployment, a compose.yaml or .env, certificates, step-ca, enrollment, renewal, or rotation, or when bootstrapping a stack or debugging its first start.
+description: Delivers Swift services from a commit to a running, mutually authenticated stack, and defines the standard CI profiles for Swift server libraries and deployable services. Covers the standard library and service CI and their recorded exceptions, the release image (Containerfile, static Linux SDK, or swift-container-plugin), per-commit publishing, staging and production deployment of serving and worker applications on a Dokploy-style platform, rollback, migrations in the pipeline, the Compose suite and its .env, mounted secrets and JWT signing keys, and mTLS certificates from a private CA such as Smallstep step-ca with enrollment and renewal. Use when creating or changing CI workflows, a Containerfile, image publishing, deployment, a compose.yaml or .env, certificates, step-ca, enrollment, renewal, or rotation, or when bootstrapping a stack or debugging its first start.
 ---
 
 # Delivering Swift services
@@ -94,7 +94,7 @@ Deliver a service:
 ```
 Bring CI to the standard:
 - [ ] 1. Read the repository's AGENTS.md: its toolchain, products, and recorded exceptions
-- [ ] 2. Copy the library or service templates; keep only differences an exception in library-ci.md or services-ci.md allows
+- [ ] 2. Copy the library or service templates (a service's Makefile and scripts/delivery.sh too); keep only differences an exception in library-ci.md or services-ci.md allows
 - [ ] 3. Pin every reusable workflow and action to its latest release's commit
 - [ ] 4. Write the `## CI` section: the standard, then each exception's reason, coverage, and revisit condition
 - [ ] 5. actionlint and yamllint pass; report what only GitHub can run
