@@ -75,6 +75,11 @@ as Xcode author headers) keeps them, never mass-reformats, and records
 Tests and the image build use warnings as errors, explicit target dependency import checking,
 and explicit `Sendable`.
 
+A service that runs `swift-openapi-generator`, such as an HTTP gateway, passes
+`-Xswiftc -Wwarning -Xswiftc UnusedImportAccess` right after `-warnings-as-errors` in `make test`,
+both test jobs, and the Containerfile: the generator writes `package import` lines its output does
+not always use. Every other warning stays an error. A service without the generator omits it.
+
 ## Locked dependency resolution
 
 A service tracks its validated `Package.resolved`, dependency-update pull requests included, and
