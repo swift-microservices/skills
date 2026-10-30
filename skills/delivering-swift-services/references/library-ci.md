@@ -108,8 +108,8 @@ requirements in fresh CI checkouts, without `--disable-automatic-resolution`.
 
 Pin every reusable workflow and action to its latest release's full commit, with the release in
 a comment (`@<commit>  # 0.0.16`); an upstream without releases is pinned to a `main` commit
-(`# main`). Dependabot checks `github-actions` weekly and labels its pull requests
-`semver/none`, so pins move by reviewed pull requests.
+(`# main`). Dependabot checks `github-actions` weekly and groups every update into one pull
+request labeled `semver/none`, so pins move by reviewed pull requests.
 
 Every pull request carries exactly one label: `⚠️ semver/major`, `🆕 semver/minor`,
 `🔨 semver/patch`, or `semver/none`. The label workflow grants `pull-requests: read`, which a

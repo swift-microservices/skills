@@ -26,7 +26,7 @@ rollback are [delivery.md](delivery.md)'s; library CI is [library-ci.md](library
 | Push to main | The same checks; then the image is published once as `:<commit-sha>` and deployed to staging |
 | Deploy production, by hand | The latest main commit, or a chosen one, deployed only if staging ran it |
 | Weekly | Old image versions pruned |
-| Dependabot | Weekly Swift and Actions update pull requests against main |
+| Dependabot | One weekly pull request for the Swift packages and one for the Actions, against main |
 
 `main` is the only long-lived branch. A service carries no SemVer, label gate, or release: the
 commit is its version. There are no scheduled test runs, snapshot toolchains, or macOS and
@@ -123,6 +123,10 @@ repository. A service that depends on one:
       registries: [github]
       schedule:
         interval: weekly
+      groups:
+        swift:
+          patterns:
+            - "*"
   ```
 
 A local build passes `--secret id=netrc,src=$HOME/.netrc`. Without a secret the mount is empty

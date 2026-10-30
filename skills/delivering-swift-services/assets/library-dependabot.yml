@@ -6,3 +6,7 @@ updates:
       interval: weekly
     labels:
       - "semver/none"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
